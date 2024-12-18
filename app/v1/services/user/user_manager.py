@@ -1,26 +1,25 @@
-from app.v1.models import User
+# app/v1/middleware/user_manager.py
+
 import random
+from app.v1.models import User
 from app.v1.models import user_collection
-
-
-def generate_otp() -> str:
-    return f"{random.randint(100000, 999999)}"
-
-
-async def send_email(email: str, otp: str):
-    # Dummy email sender (replace with an email service)
-    print(f"Sending OTP {otp} to email {email}")
+from app.v1.utils.email import send_email
 
 
 class UserManager:
+    def generate_otp(self) -> str:
+        """Generate a random OTP."""
+        return f"{random.randint(100000, 999999)}"
+
     async def create_user(self, user: User) -> dict:
+        """Create a new user in the database."""
         existing_user = await user_collection.find_one(
             {"$or": [{"email": user.email}, {"phone": user.phone}]}
         )
         if existing_user:
             raise ValueError("User with this email or phone already exists")
 
-        otp = generate_otp()
+        otp = self.generate_otp()
 
         if user.email:
             await send_email(user.email, otp)
@@ -34,6 +33,7 @@ class UserManager:
         return user_dict  # Returns a valid dictionary
 
     async def get_user(self, email: str) -> dict:
+        """Retrieve user details by email."""
         user = await user_collection.find_one({"email": email})
         if not user:
             raise ValueError(f"User with email '{email}' does not exist")
@@ -41,6 +41,7 @@ class UserManager:
         return user
 
     async def list_users(self) -> list:
+        """List all users."""
         users = []
         async for user in user_collection.find():
             user["_id"] = str(user["_id"])  # Convert ObjectId to string
@@ -48,6 +49,7 @@ class UserManager:
         return users
 
     async def update_user(self, email: str, update_data: dict) -> dict:
+        """Update user details."""
         result = await user_collection.find_one_and_update(
             {"email": email},
             {"$set": update_data},
@@ -59,6 +61,7 @@ class UserManager:
         return result
 
     async def delete_user(self, email: str) -> dict:
+        """Delete a user by email."""
         result = await user_collection.find_one_and_delete({"email": email})
         if not result:
             raise ValueError(f"User with email '{email}' does not exist")

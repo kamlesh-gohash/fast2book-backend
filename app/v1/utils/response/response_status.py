@@ -1,0 +1,10 @@
+# app/v1/utils/response/response_status.py
+
+class ResponseStatus:
+    SUCCESS = "SUCCESS"
+    FAILURE = "FAILURE"
+    SERVER_ERROR = "SERVER_ERROR"
+    BAD_REQUEST = "BAD_REQUEST"
+    RECORD_NOT_FOUND = "RECORD_NOT_FOUND"
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    UNAUTHORIZED = "UNAUTHORIZED"

@@ -1,26 +1,23 @@
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
-from contextlib import asynccontextmanager
-
-from app.v1.routers import base_router as v1_router
 from app.v1.config.db import initiate_database
+from app.v1.routers.base_router import router
+from app.v1.middleware.exception_handlers.custom_handlers import exception_handlers
+from app.v1.middleware.response_format import add_response_format
+from contextlib import asynccontextmanager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Initialize the database connection when the app starts
     await initiate_database()
     yield
 
-app = FastAPI(lifespan=lifespan, openapi=False)
 
-app.include_router(v1_router.router)
+# Initialize FastAPI app
+app = FastAPI(lifespan=lifespan, exception_handlers=exception_handlers, openapi=False)
 
+# Include versioned API router
+app.include_router(router)
 
-@app.get("/up")
-async def up() -> str:
-    return "ok"
-
-
-# @app.get("/")
-# async def root() -> RedirectResponse:
-#     return RedirectResponse(url="/docs")
+# Apply the global response middleware
+app.middleware("http")(add_response_format)
