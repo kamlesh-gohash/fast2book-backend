@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 
 def test_create_user(client: TestClient) -> None:
-    user_data = {"username": "testuser", "email": "test@example.com"}
+    user_data = { "email": "test@example.com"}
     response = client.post("/v1/users/", json=user_data)
     assert response.status_code == 200
     assert response.json() == user_data
@@ -10,7 +10,7 @@ def test_create_user(client: TestClient) -> None:
 
 def test_get_user(client: TestClient) -> None:
     # First, create a user
-    user_data = {"username": "getuser", "email": "get@example.com"}
+    user_data = { "email": "get@example.com"}
     client.post("/v1/users/", json=user_data)
 
     # Then, retrieve the user
@@ -21,8 +21,8 @@ def test_get_user(client: TestClient) -> None:
 
 def test_list_users(client: TestClient) -> None:
     # Create two users
-    user1 = {"username": "user1", "email": "user1@example.com"}
-    user2 = {"username": "user2", "email": "user2@example.com"}
+    user1 = { "email": "user1@example.com"}
+    user2 = { "email": "user2@example.com"}
     client.post("/v1/users/", json=user1)
     client.post("/v1/users/", json=user2)
 
@@ -36,11 +36,11 @@ def test_list_users(client: TestClient) -> None:
 
 def test_update_user(client: TestClient) -> None:
     # First, create a user
-    original_data = {"username": "updateuser", "email": "original@example.com"}
+    original_data = { "email": "original@example.com"}
     client.post("/v1/users/", json=original_data)
 
     # Then, update the user
-    updated_data = {"username": "updateuser", "email": "updated@example.com"}
+    updated_data = { "email": "updated@example.com"}
     response = client.put("/v1/users/updateuser", json=updated_data)
     assert response.status_code == 200
     assert response.json() == updated_data
@@ -48,7 +48,7 @@ def test_update_user(client: TestClient) -> None:
 
 def test_delete_user(client: TestClient) -> None:
     # First, create a user
-    user_data = {"username": "deleteuser", "email": "delete@example.com"}
+    user_data = { "email": "delete@example.com"}
     client.post("/v1/users/", json=user_data)
 
     # Then, delete the user
@@ -62,11 +62,10 @@ def test_delete_user(client: TestClient) -> None:
 
 
 def test_create_duplicate_user(client: TestClient) -> None:
-    user_data = {"username": "duplicate", "email": "duplicate@example.com"}
+    user_data = { "email": "duplicate@example.com"}
     client.post("/v1/users/", json=user_data)
 
-    # Try to create a user with the same username
-    response = client.post("/v1/users/", json=user_data)
+    # Try to create a user with the same.post("/v1/users/", json=user_data)
     assert response.status_code == 409
 
 
@@ -76,7 +75,7 @@ def test_get_nonexistent_user(client: TestClient) -> None:
 
 
 def test_update_nonexistent_user(client: TestClient) -> None:
-    user_data = {"username": "nonexistent", "email": "nonexistent@example.com"}
+    user_data = { "email": "nonexistent@example.com"}
     response = client.put("/v1/users/nonexistent", json=user_data)
     assert response.status_code == 404
 
