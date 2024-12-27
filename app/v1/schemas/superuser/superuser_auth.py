@@ -1,10 +1,10 @@
 import zon
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, validator, Field
 from app.v1.utils.response.response_format import validation_error
-from typing import Optional
+from typing import Optional, List
 import bcrypt
 from datetime import datetime
-
+from app.v1.models.user import *
 
 
 super_user_sign_in_validator = zon.record({
@@ -124,11 +124,16 @@ class SuperUserChangePassword(BaseModel):
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
     
+
+class StatusEnum(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    DRAFT = "draft"    
+
 create_super_user_validator = zon.record({
     "first_name": zon.string().min(1).max(50),
     "last_name": zon.string().min(1).max(50),
     "email": zon.string().email(),
-    "user_role": zon.string(),
     "phone": zon.string().min(10).max(10),
     "password": zon.string().min(6).max(20),
 })    
@@ -137,8 +142,9 @@ class SuperUserCreateRequest(BaseModel):
     first_name: str
     last_name: str
     email: str
-    user_role: str
+    roles: List[Role] = Field(default=["admin"])
     phone: str
+    status: StatusEnum = StatusEnum.ACTIVE
     password: str
 
     def validate(self):
@@ -148,3 +154,56 @@ class SuperUserCreateRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
+    
+get_super_user_list_validator = zon.record({
+    
+})
+
+class SuperUserListRequest(BaseModel):
+
+    def validate(self):
+        try:
+            get_super_user_list_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
+    
+update_super_user_validator = zon.record({
+    "first_name": zon.string().min(1).max(50).optional(),
+    "last_name": zon.string().min(1).max(50).optional(),
+    "email": zon.string().email().optional(),
+    "phone": zon.string().min(10).max(10).optional(),
+
+})    
+
+class SuperUserUpdateRequest(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    status: StatusEnum = StatusEnum.ACTIVE
+
+    def validate(self):
+        try:
+            update_super_user_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
+
+delete_super_user_validator = zon.record({
+    "id": zon.string()
+})    
+
+class SuperUserDeleteRequest(BaseModel):
+    id: str
+
+    def validate(self):
+        try:
+            delete_super_user_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
+    

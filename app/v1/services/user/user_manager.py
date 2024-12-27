@@ -101,10 +101,8 @@ class UserManager:
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid credentials"
                 )
-            print(result,'result')
             # Check if the entered password matches the stored hashed password
             stored_password_hash = result.get("password")
-            print(stored_password_hash,'stored_password_hash')
             if not stored_password_hash:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -112,8 +110,6 @@ class UserManager:
                 )
             # Check if the entered password matches the stored hashed password
             if not bcrypt.checkpw(password.encode('utf-8'), stored_password_hash.encode('utf-8') if isinstance(stored_password_hash, str) else stored_password_hash):
-                print(password,'password')
-                print(bcrypt.checkpw(password.encode('utf-8'), stored_password_hash.encode('utf-8') if isinstance(stored_password_hash, str) else stored_password_hash))
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid Password"

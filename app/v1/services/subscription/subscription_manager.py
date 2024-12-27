@@ -45,10 +45,8 @@ class SubscriptionManager():
             return response_data
 
         except HTTPException as e:
-            print(f"HTTPException: {e.detail}")
             raise e
         except Exception as ex:
-            print(f"Unexpected Error: {str(ex)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}"
@@ -82,11 +80,10 @@ class SubscriptionManager():
             
             return {
                     "data": subscription_data,
-                    "total_pages": total_pages,
-                    "total_subscriptions": total_subscriptions
+                    "total_items": total_subscriptions,
+                    "total_pages": total_pages
             }
         except Exception as ex:
-            print(f"Unexpected Error: {str(ex)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}"
@@ -109,7 +106,6 @@ class SubscriptionManager():
                 "created_at": subscription["created_at"]
             }
         except Exception as ex:
-            print(f"Unexpected Error: {str(ex)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}"
@@ -165,7 +161,6 @@ class SubscriptionManager():
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(f"Unexpected Error: {str(ex)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}"
@@ -175,7 +170,6 @@ class SubscriptionManager():
             await subscription_collection.delete_one({"_id": ObjectId(id)})
             return {"data": None}
         except Exception as ex:
-            print(f"Unexpected Error: {str(ex)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}"

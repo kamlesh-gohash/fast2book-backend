@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, exception_handlers=exception_handlers, openapi=False)
-app.mount("/media", StaticFiles(directory="/var/www/python/fast-api/fast2book-backend/app/v1/media"), name="media")
+# app.mount("/media", StaticFiles(directory="/var/www/python/fast-api/fast2book-backend/app/v1/media"), name="media")
 
 
 app.add_middleware(

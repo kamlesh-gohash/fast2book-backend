@@ -16,8 +16,6 @@ class ServicesManager:
     
     async def service_create(self, service_request: CreateServiceRequest) -> dict:
         try:
-            # Check if the category exists
-            print(f"Looking for category: {service_request.category_id}")
             category = await category_collection.find_one({"_id": ObjectId(service_request.category_id)})
             if not category:
                 raise HTTPException(
@@ -25,8 +23,6 @@ class ServicesManager:
                     detail=f"Category with ID '{service_request.category_id}' does not exist."
                 )
 
-            # Check for duplicate service name
-            print(f"Checking for existing service: {service_request.name}")
             existing_service = await services_collection.find_one({"name": service_request.name})
             if existing_service:
                 raise HTTPException(
@@ -39,11 +35,10 @@ class ServicesManager:
                 "name": service_request.name,
                 "status": service_request.status,
                 "category_id": ObjectId(service_request.category_id),
+                "category_name": category["name"],
                 "created_at": datetime.utcnow()
             }
 
-            # Insert into the database
-            print(f"Inserting service: {service_data}")
             result = await services_collection.insert_one(service_data)
 
             # Fetch the inserted service
@@ -53,16 +48,15 @@ class ServicesManager:
                 "name": created_service["name"],
                 "status": created_service["status"],
                 "category_id": str(created_service["category_id"]),
+                "category_name": created_service["category_name"],
                 "created_at": created_service["created_at"]
             }
 
-            return response_data
+            return {"data": response_data}
 
         except HTTPException as e:
-            print(f"HTTPException: {e.detail}")
             raise e
         except Exception as ex:
-            print(f"Unexpected Error: {str(ex)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}"
@@ -71,25 +65,21 @@ class ServicesManager:
     async def service_list(self, page: int, limit: int, search: str = None):
         try:
             skip = (page - 1) * limit
-            query = {}  # Start with an empty query
+            query = {}
 
             if search:
                 search_regex = {"$regex": search, "$options": "i"}  
                 query["$or"] = [
-                    {"name": search_regex},  # Search by service name
+                    {"name": search_regex},
                 ]
                 
                 category = await category_collection.find_one({"name": {"$regex": search, "$options": "i"}})
                 if category:
-                    print(f"Category found: {category['name']} with _id: {category['_id']}")
                     query["$or"].append({"category_id": category["_id"]})
-                else:
-                    print("No matching category found.")
+                
             services = await services_collection.find(query).skip(skip).limit(limit).to_list(length=None)
             service_data = []
             for service in services:
-                # Fetch the category name for each service
-                print(f"Fetching category for service: {service}")
                 category = await category_collection.find_one({"_id": service["category_id"]})
                 category_name = category["name"] if category else "Unknown Category"
                 service_data.append({
@@ -106,11 +96,10 @@ class ServicesManager:
             
             return {
                     "data": service_data,
-                    "total_pages": total_pages,
-                    "total_services": total_services
+                    "total_items": total_services,
+                    "total_pages": total_pages
             }
         except Exception as ex:
-            print(f"Unexpected Error: {str(ex)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}"
@@ -139,7 +128,6 @@ class ServicesManager:
                 "created_at": service["created_at"]
             }
         except Exception as ex:
-            print(f"Unexpected Error: {str(ex)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}"
@@ -209,7 +197,6 @@ class ServicesManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(f"Unexpected Error: {str(ex)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}"
@@ -219,7 +206,6 @@ class ServicesManager:
             await services_collection.delete_one({"_id": ObjectId(id)})
             return {"data": None}
         except Exception as ex:
-            print(f"Unexpected Error: {str(ex)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}"
@@ -241,10 +227,8 @@ class ServicesManager:
             return {"categories": category_data}
 
         except HTTPException as e:
-            print(e)
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred"

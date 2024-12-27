@@ -21,13 +21,11 @@ async def create_category(category_request: CreateCategoryRequest, category_mana
         
         return success({"message": "Category Created successfully", "data": result})
     except HTTPException as http_ex:
-        print(http_ex)
         # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @router.get("/category-list",status_code=status.HTTP_200_OK)
@@ -47,7 +45,6 @@ async def category_list(page: int = Query(1, ge=1, description="Page number (mus
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @router.get("/get-category/{id}", status_code=status.HTTP_200_OK)
@@ -69,7 +66,6 @@ async def get_category(
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @router.put("/update-category/{id}", status_code=status.HTTP_200_OK)
@@ -103,7 +99,6 @@ async def update_category(
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -128,5 +123,4 @@ async def delete_category(
 	except HTTPException as http_ex:
 		return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
 	except Exception as ex:
-		print(ex)
 		return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)

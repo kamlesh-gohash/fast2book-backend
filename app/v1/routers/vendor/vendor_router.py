@@ -70,10 +70,10 @@ async def update_vendor(
     validation_result = vendor_request.validate()
     if validation_result:
         return validation_result
-    if not (vendor_request.first_name or vendor_request.last_name or vendor_request.email or vendor_request.phone):
+    if not (vendor_request.first_name or vendor_request.last_name or vendor_request.email or vendor_request.phone or vendor_request.business_address or vendor_request.business_details or vendor_request.business_name or vendor_request.category_id or vendor_request.category_name or vendor_request.services or vendor_request.manage_plan or vendor_request.manage_fee_and_gst or vendor_request.manage_offer):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one field (first name, last name ,email or phone) must be provided"
+            detail="At least one field must be provided"
         )
     try:
         result = await vendor_manager.update_vendor(id, vendor_request)
@@ -104,6 +104,22 @@ async def delete_vendor(
                 detail="Vendor not found"
             )
         return success({"message":"Vendor deleted successfully","data":result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+@router.get("/get-service-by-category/{id}", status_code=status.HTTP_200_OK)
+async def get_service_by_category(
+    id: str = Path(..., title="The ID of the vendor to retrieve"),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.get_service_by_category(id)
+        return success({"message":"Service found successfully","data":result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

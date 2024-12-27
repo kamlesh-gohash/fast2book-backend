@@ -73,10 +73,10 @@ async def update_costumer(
     validation_result = costumer_request.validate()
     if validation_result:
         return validation_result
-    if not (costumer_request.first_name or costumer_request.last_name or costumer_request.email or costumer_request.phone):
+    if not (costumer_request.first_name or costumer_request.last_name or costumer_request.email or costumer_request.phone or costumer_request.status or costumer_request.gender):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one field (first_name ,last_name ,email or phone) must be provided"
+            detail="At least one field (first_name ,last_name ,email, status, gender or phone) must be provided"
         )
     try:
         result = await costumer_manager.update_costumer(id, costumer_request)

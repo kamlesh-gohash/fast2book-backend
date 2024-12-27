@@ -4,6 +4,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from app.v1.models.category import Category
 from app.v1.models.services import Service
 from app.v1.models.subscription import Subscription
+from app.v1.models.blog import Blog
+
 
 def get_model(COLLECTION_NAME):
     client = AsyncIOMotorClient(DATABASE_URL)
@@ -16,6 +18,7 @@ category_collection = get_model("categories")
 services_collection = get_model("services")
 vendor_collection = get_model("vendors")
 subscription_collection = get_model("subscriptions")
+blog_collection = get_model("blogs")
 
 
 __all__ = {
@@ -23,5 +26,6 @@ __all__ = {
     "category_collection":category_collection,
     "services_collection":services_collection,
     "vendor_collection":vendor_collection,
-    "subscription_collection":subscription_collection
+    "subscription_collection":subscription_collection,
+    "blog_collection":blog_collection
 }

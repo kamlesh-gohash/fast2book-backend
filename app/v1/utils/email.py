@@ -84,5 +84,4 @@ async def send_email(to_email: str, otp: str):
         server.quit()
         return True
     except Exception as e:
-        print(f"Failed to send OTP to {to_email}: {e}")
         return False

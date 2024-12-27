@@ -26,15 +26,13 @@ async def create_service(
 
         # Create the service
         result = await service_manager.service_create(service_request)
-        return {"status": "success", "message": "Service created successfully", "data": result}
+        return success({"message": "Service Created successfully", "data": result})
     except HTTPException as http_ex:
-        print(f"HTTP Exception: {http_ex.detail}")
-        return {"status": "error", "message": http_ex.detail, "data": None}, http_ex.status_code
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
-        return {"status": "error", "message": str(ex)}, status.HTTP_400_BAD_REQUEST
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(f"Unexpected Error: {str(ex)}")  # Log the full error
-        return {"status": "error", "message": "An unexpected error occurred", "data": None}, status.HTTP_500_INTERNAL_SERVER_ERROR
+        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @router.get("/service-list", status_code=status.HTTP_200_OK)
 async def service_list(page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
@@ -43,15 +41,14 @@ async def service_list(page: int = Query(1, ge=1, description="Page number (must
     service_manager: "ServicesManager" = Depends(get_services_manager)):
     try:
         result = await service_manager.service_list(page, limit,search)
-        return {"status": "success", "message": "Service List found successfully", "data": result}
+        return success({"message": "Service List found successfully", "data": result})
     except HTTPException as http_ex:
-        return {"status": "error", "message": http_ex.detail, "data": None}, http_ex.status_code
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
-        return {"status": "error", "message": str(ex)}, status.HTTP_400_BAD_REQUEST
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
-        return {"status": "error", "message": "An unexpected error occurred", "data": None}, status.HTTP_500_INTERNAL_SERVER_ERROR
-        
+        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
 @router.get("/get-service/{id}", status_code=status.HTTP_200_OK)
 async def get_service(
     id: str = Path(..., title="The ID of the service to retrieve"),
@@ -67,12 +64,13 @@ async def get_service(
                 detail="Service not found"
             )
 
-        return {"status": "success", "message": "Service found successfully", "data": result}
+        return success({"message": "Service found successfully", "data": result})
     except HTTPException as http_ex:
-        return {"status": "error", "message": http_ex.detail, "data": None}, http_ex.status_code
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
-        return {"status": "error", "message": "An unexpected error occurred", "data": None}, status.HTTP_500_INTERNAL_SERVER_ERROR
+        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @router.put("/update-service/{id}", status_code=status.HTTP_200_OK)
 async def update_service(
@@ -98,13 +96,14 @@ async def update_service(
                 detail="Service not found"
             )
 
-        return {"status": "success", "message": "Service updated successfully", "data": result}
+        return success({"message": "Service updated successfully", "data": result})
     except HTTPException as http_ex:
-        return {"status": "error", "message": http_ex.detail, "data": None}, http_ex.status_code
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
-        return {"status": "error", "message": "An unexpected error occurred", "data": None}, status.HTTP_500_INTERNAL_SERVER_ERROR
-
+        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
 
 @router.delete("/delete-service/{id}", status_code=status.HTTP_200_OK)
 async def delete_service(
@@ -121,11 +120,16 @@ async def delete_service(
                 detail="Service not found"
             )
 
-        return {"status": "success", "message": "Service deleted successfully", "data": result}
+        return success({ "message": "Service deleted successfully", "data": result})
     except HTTPException as http_ex:
-        return {"status": "error", "message": http_ex.detail, "data": None}, http_ex.status_code
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-@router.get("/category-list_for_services",status_code=status.HTTP_200_OK)
+    
+@router.get("/category-list-for-services",status_code=status.HTTP_200_OK)
 async def category_list_for_services(service_manager:ServicesManager = Depends(get_services_manager)):
     # validation_result = category_list_request.validate()
     # if validation_result:
@@ -139,6 +143,5 @@ async def category_list_for_services(service_manager:ServicesManager = Depends(g
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     

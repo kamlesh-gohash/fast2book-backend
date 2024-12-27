@@ -48,7 +48,6 @@ class CreateServiceRequest(BaseModel):
             else:
                 raise ValueError("Invalid Category ID for conversion")
         except Exception as e:
-            print(f"Error converting to ObjectId: {e}")
             raise e
 
     def validate(self):

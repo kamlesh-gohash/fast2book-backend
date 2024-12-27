@@ -35,17 +35,17 @@ class CostumerManager:
             otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
             # create_costumer_request.otp = otp
             # create_costumer_request.otp_expiration_time = otp_expiration_time
-            create_costumer_request.password = hashpw(create_costumer_request.password.encode('utf-8'), gensalt()).decode('utf-8') 
+            # create_costumer_request.password = hashpw(create_costumer_request.password.encode('utf-8'), gensalt()).decode('utf-8') 
             create_costumer_request_dict = create_costumer_request.dict()
             result = await user_collection.insert_one(create_costumer_request_dict)
-            create_costumer_request_dict["_id"] = str(result.inserted_id) 
-            del create_costumer_request_dict["password"]
+            create_costumer_request_dict["id"] = str(result.inserted_id)  # Add `id`
+            del create_costumer_request_dict["_id"]
             return create_costumer_request_dict
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-    async def costumer_list(self, page: int, limit: int,search: str = None, role: str = "user"):
+    async def costumer_list(self, page: int, limit: int, search: str = None, role: str = "user"):
         try:
             valid_roles = ["admin", "user", "vendor"]
             if role not in valid_roles:
@@ -56,7 +56,7 @@ class CostumerManager:
 
             skip = max((page - 1) * limit, 0)
             query = {"roles": {"$regex": "^user$", "$options": "i"}}
-            print(query)
+
             if search:
                 search = search.strip()
                 if not search:
@@ -71,21 +71,32 @@ class CostumerManager:
                     {"email": search_regex},
                     {"phone": search_regex}
                 ]
+
+            # Fields to include in the result
+            projection = {
+                "id": 1,
+                "first_name": 1,
+                "last_name": 1,
+                "email": 1,
+                "phone": 1,
+                "roles": 1,
+                "gender": 1,
+                "status": 1,
+                "created_at": 1,
+                "costumer_address": 1,
+                "costumer_details": 1
+            }
+
             # Fetch paginated results
-            result = await user_collection.find(query).skip(skip).limit(limit).to_list(length=limit)
-            print(result)
+            result = await user_collection.find(query, projection).skip(skip).limit(limit).to_list(length=limit)
+
             # Format costumer data
             costumer_data = []
             for costumer in result:
-                costumer["_id"] = str(costumer["_id"])
+                costumer["id"] = str(costumer.pop("_id"))  # Convert ObjectId to string
                 costumer["first_name"] = costumer["first_name"].capitalize()
                 costumer["last_name"] = costumer["last_name"].capitalize()
                 costumer["email"] = costumer["email"].lower()
-                costumer["phone"] = costumer["phone"]
-                costumer["roles"] = costumer["roles"]
-                costumer.pop("password", None)
-                costumer.pop("otp", None)
-                costumer.pop("otp_expiration_time", None)
                 costumer_data.append(costumer)
 
             # Fetch total count for the query
@@ -95,8 +106,8 @@ class CostumerManager:
             total_pages = (total_costumers + limit - 1) // limit
 
             return {
-                "costumers": costumer_data,
-                "total_costumers": total_costumers,
+                "data": costumer_data,
+                "total_items": total_costumers,
                 "total_pages": total_pages
             }
         except Exception as e:
@@ -109,16 +120,16 @@ class CostumerManager:
 
             # Find the costumer by id and role
             result = await user_collection.find_one(query)
-            print(result)
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Costumer not found")
             
             # Convert _id to string and format other fields
-            result["_id"] = str(result["_id"])
+            result["id"] = str(result.pop("_id"))
             result["first_name"] = result["first_name"].capitalize()
             result["last_name"] = result["last_name"].capitalize()
             result["email"] = result["email"].lower()
             result["phone"] = result["phone"].lower()
+            result["gender"] = result["gender"]
             result.pop("password", None)
             
             return result
@@ -146,6 +157,14 @@ class CostumerManager:
                 update_data["email"] = update_costumer_request.email
             if update_costumer_request.phone is not None:
                 update_data["phone"] = update_costumer_request.phone
+            if update_costumer_request.status is not None:
+                update_data["status"] = update_costumer_request.status
+            if update_costumer_request.gender is not None:
+                update_data["gender"] = update_costumer_request.gender
+            if update_costumer_request.costumer_address is not None:
+                update_data["costumer_address"] = update_costumer_request.costumer_address
+            if update_costumer_request.costumer_details is not None:
+                update_data["costumer_details"] = update_costumer_request.costumer_details
             if not update_data:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -162,11 +181,15 @@ class CostumerManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Costumer not found")
 
             # Convert _id to string and format other fields
-            updated_costumer["_id"] = str(updated_costumer["_id"])
+            updated_costumer["id"] = str(updated_costumer.pop("_id"))
             updated_costumer["first_name"] = updated_costumer["first_name"].capitalize()
             updated_costumer["last_name"] = updated_costumer["last_name"].capitalize()
             updated_costumer["email"] = updated_costumer["email"].lower()
             updated_costumer["phone"] = updated_costumer["phone"].lower()
+            updated_costumer["gender"] = updated_costumer["gender"].capitalize()
+            updated_costumer["status"] = updated_costumer["status"]
+            updated_costumer["costumer_address"] = updated_costumer["costumer_address"]
+            updated_costumer["costumer_details"] = updated_costumer["costumer_details"]
             updated_costumer.pop("password", None)
 
             return updated_costumer

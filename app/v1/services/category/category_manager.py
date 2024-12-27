@@ -1,6 +1,7 @@
 import random
 from app.v1.models.category import Category
 from app.v1.models import category_collection
+from app.v1.models import services_collection
 from app.v1.utils.email import send_email, generate_otp
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 import bcrypt
@@ -45,10 +46,8 @@ class CategoryManager:
             return response_data
 
         except HTTPException as e:
-            print(e)
             raise e 
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred"
@@ -84,13 +83,11 @@ class CategoryManager:
             ]
             total_categories = await category_collection.count_documents({})
             total_pages = (total_categories + limit - 1) // limit
-            return {"data": category_data, "total_categories": total_categories, "total_pages": total_pages}
+            return {"data": category_data, "total_items": total_categories, "total_pages": total_pages}
 
         except HTTPException as e:
-            print(e)
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred"
@@ -117,7 +114,6 @@ class CategoryManager:
                 "created_at": category["created_at"]
             }
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred"
@@ -177,10 +173,8 @@ class CategoryManager:
             }
 
         except HTTPException as e:
-            print(e)
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred"
@@ -203,7 +197,17 @@ class CategoryManager:
                     detail=f"Category with ID '{id}' not found"
                 )
 
-            # Perform the deletion
+            # Update all services that are using this category to set their status to 'inactive'
+            result_services = await services_collection.update_many(
+                {"category_id": ObjectId(id)},
+                {"$set": {"status": "inactive"}}
+            )
+
+            # Check if any services were updated
+            if result_services.modified_count == 0:
+                print(f"No services found for category ID: {id} to update status")
+
+            # Perform the deletion of the category
             result = await category_collection.delete_one({"_id": ObjectId(id)})
 
             if result.deleted_count == 0:
@@ -214,15 +218,13 @@ class CategoryManager:
 
             # Format and return the response
             return {
-            
-            "data": None
-        }      
+                "data": None
+            }
+
         except HTTPException as e:
-            print(e)
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred"
-            )    
+            )

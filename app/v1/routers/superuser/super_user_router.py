@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status,Query, Path
 from app.v1.dependencies import get_super_user_manager
 from app.v1.services import SuperUserManager
 from app.v1.models import User
 from app.v1.utils.response.response_format import success, failure, internal_server_error, validation_error
-from app.v1.schemas.superuser.superuser_auth import SuperUserSignInRequest, SuperUserForgotPasswordRequest,SuperUserOtpRequest,SuperUserResetPasswordRequest,SuperUserResendOtpRequest,SuperUserProfileRequest,SuperUserChangePassword,SuperUserCreateRequest
+from app.v1.schemas.superuser.superuser_auth import *
 
 router = APIRouter()
 
@@ -26,7 +26,6 @@ async def sign_in(super_user_sign_in_request: SuperUserSignInRequest, user_manag
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @router.post("/forget-password", status_code=status.HTTP_200_OK)
@@ -39,14 +38,10 @@ async def forget_password(super_user_forgot_password_request: SuperUserForgotPas
         await user_manager.super_user_forget_password(super_user_forgot_password_request.email)
         return success({"message": "OTP sent successfully", "data": None})
     except HTTPException as http_ex:
-        # Explicitly handle HTTPException and return its response
-        print(http_ex,'aaaaaaaaaaaaaaa')
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
-        print(ex)
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)    
     
 @router.post("/otp-verify", status_code=status.HTTP_200_OK)
@@ -67,7 +62,6 @@ async def otp_verify(super_user_otp_request: SuperUserOtpRequest, user_manager: 
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @router.post("/reset-password", status_code=status.HTTP_200_OK)
@@ -88,7 +82,6 @@ async def reset_password(super_user_reset_password_request: SuperUserResetPasswo
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)}, 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -111,7 +104,6 @@ async def resend_otp(super_user_resend_otp_request: SuperUserResendOtpRequest, u
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)  
     
 @router.get("/super_user_profile", status_code=status.HTTP_200_OK)    
@@ -130,7 +122,6 @@ async def get_profile(super_user_profile_request: SuperUserProfileRequest,user_m
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @router.put("/update_super_user_profile", status_code=status.HTTP_200_OK)    
@@ -143,7 +134,6 @@ async def update_profile(super_user_profile_update_request: User,user_manager: S
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @router.post("/change_super_user_password",status_code=status.HTTP_200_OK)    
@@ -163,10 +153,9 @@ async def change_password(super_user_change_password_request:SuperUserChangePass
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-@router.post("/create_super_user", status_code=status.HTTP_200_OK)    
+@router.post("/create-super-user", status_code=status.HTTP_200_OK)    
 async def create_super_user(super_user_create_request:SuperUserCreateRequest,user_manager: SuperUserManager = Depends(get_super_user_manager)):
     validation_result = super_user_create_request.validate()
     if validation_result:
@@ -180,5 +169,92 @@ async def create_super_user(super_user_create_request:SuperUserCreateRequest,use
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
+        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+@router.get("/super-user-list", status_code=status.HTTP_200_OK)
+async def super_user_list(page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    search: str = Query(None, description="Search term to filter costumers by name, email, or phone"),
+    user_manager: SuperUserManager = Depends(get_super_user_manager)):
+    try:
+        result = await user_manager.super_user_list(page, limit, search)
+        
+        return success({"message":"Super user list","data":result})
+    except HTTPException as http_ex:
+        print(http_ex)
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
         print(ex)
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        print(ex)
+        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+@router.get("/super-user/{id}", status_code=status.HTTP_200_OK)
+async def get_super_user(
+    id: str = Path(..., title="The ID of the costumer to retrieve"),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        result = await user_manager.get_super_user(id)
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Costumer not found"
+            )
+        return success({"message":"User details","data":result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@router.put("/update-super-user/{id}", status_code=status.HTTP_200_OK)
+async def update_super_user(
+    super_user_update_request:SuperUserUpdateRequest,
+    id: str = Path(..., title="The ID of the costumer to update"),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    validation_result = super_user_update_request.validate()
+    if validation_result:
+        return validation_result
+    if not (super_user_update_request.first_name or super_user_update_request.last_name or super_user_update_request.email or super_user_update_request.phone or super_user_update_request.status ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one field (first_name ,last_name ,email or phone) must be provided"
+        )
+    try:
+        result = await user_manager.update_super_user(id,super_user_update_request)
+        return success({"message":"User updated successfully","data":result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@router.delete("/delete-super-user/{id}", status_code=status.HTTP_200_OK)
+async def delete_super_user(
+    id: str = Path(..., title="The ID of the costumer to delete"),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        result = await user_manager.delete_super_user(id)
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Costumer not found"
+            )
+        return success({"message":"User deleted successfully","data":result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)

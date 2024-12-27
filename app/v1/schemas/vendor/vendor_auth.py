@@ -1,22 +1,34 @@
 import zon
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr, validator, Field
 from app.v1.utils.response.response_format import validation_error
-from typing import Optional
+from typing import Optional, List
 import bcrypt
 from datetime import datetime
 from enum import Enum
+from app.v1.models.user import StatusEnum
 
+class Gender(str, Enum):
+    male = "male"
+    female = "female"
+    other = "other"
 class Role(str, Enum):
     admin = "admin"
     user = "user"
     vendor = "vendor"
 
+class BusinessType(str, Enum):
+    individual = "individual"
+    business = "business"
+
+class Service(BaseModel):
+    id: str
+    name: Optional[str] = None 
 # Validator for vendor creation
 vendor_create_validator = zon.record({
     "name": zon.string().min(1).max(50),
     "email": zon.string().email(),
     "phone": zon.string().min(10).max(10),
-    "password": zon.string().min(6).max(20),
+    # "password": zon.string().min(6).max(20),
 })
 
 # Request model for vendor creation
@@ -24,7 +36,26 @@ class VendorCreateRequest(BaseModel):
     name: str
     email: EmailStr
     phone: str
+    gender: Gender = Field(default=Gender.male)
     roles: list[Role] = [Role.vendor]  # Default role is 'vendor'
+    business_type: BusinessType=Field(default=BusinessType.individual)
+    business_name: Optional[str] = Field(None, max_length=100)
+    business_address: Optional[str] = Field(None, max_length=255)
+    business_details: Optional[str] = None
+    category_id: Optional[str] = Field(None, description="ID of the selected category")
+    category_name: Optional[str] = Field(None, description="Name of the selected category")
+    services: Optional[List[Service]] = Field(
+        None,
+        description="List of selected services with their IDs and names"
+    )
+    service_details: Optional[str] = None
+    
+    # Additional Fields
+    manage_plan: Optional[str] = None
+    manage_fee_and_gst: Optional[str] = None
+    manage_offer: Optional[str] = None
+    is_payment_verified: bool = Field(default=False)
+    status: StatusEnum = Field(default=StatusEnum.Active)
     password: str
 
     @validator("roles", pre=True, always=True)
@@ -81,6 +112,8 @@ update_vendor_validator = zon.record({
     "last_name": zon.string().min(1).max(50).optional(),
     "email": zon.string().email().optional(),
     "phone": zon.string().min(10).max(10).optional(),
+    "vendor_address": zon.string().optional(),
+    "vendor_details": zon.string().optional(),
 })    
 
 class UpdateVendorRequest(BaseModel):
@@ -88,6 +121,23 @@ class UpdateVendorRequest(BaseModel):
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    gender: Gender = Field(default=Gender.male)
+    business_type: BusinessType=Field(default=BusinessType.individual)
+    business_name: Optional[str] = Field(None, max_length=100)
+    business_address: Optional[str] = Field(None, max_length=255)
+    business_details: Optional[str] = None
+    category_id: Optional[str] = Field(None, description="ID of the selected category")
+    category_name: Optional[str] = Field(None, description="Name of the selected category")
+    services: Optional[List[Service]] = Field(
+        None,
+        description="List of selected services with their IDs and names"
+    )
+    service_details: Optional[str] = None
+    
+    # Additional Fields
+    manage_plan: Optional[str] = None
+    manage_fee_and_gst: Optional[str] = None
+    manage_offer: Optional[str] = None
     
     def validate(self):
         try:

@@ -103,7 +103,6 @@ async def reset_password(reset_password_request: ResetPasswordRequest, user_mana
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # # Update password (POST request) - update password after login
@@ -148,7 +147,6 @@ async def get_profile(user_id: str,user_manager: UserManager = Depends(get_user_
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @router.put("/update-profile/{user_id}")
@@ -163,5 +161,4 @@ async def update_profile(user_id: str, update_profile_request: User, user_manage
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)    

@@ -12,6 +12,7 @@ from beanie import PydanticObjectId  # Import PydanticObjectId
 class Gender(str, Enum):
     male = "male"
     female = "female"
+    other = "other"
 
 # Enum for role
 class Role(str, Enum):
@@ -31,6 +32,10 @@ class BloodGroup(str, Enum):
     AB_plus = "AB+"  # "AB+" blood group
     AB_minus = "AB-" 
 
+class StatusEnum(str, Enum):
+    Active = "active"
+    Inactive = "inactive"
+    Draft = "draft"
 
 class User(Document, BaseModel):
     id: Optional[PydanticObjectId] = Field(default=None, alias="_id")  # Explicitly include id
@@ -55,7 +60,7 @@ class User(Document, BaseModel):
     gender: Gender = Field(default=Gender.male)
     blood_group: Optional[BloodGroup] = None
     dob: Optional[str] = None
-
+    status: StatusEnum = StatusEnum.Active
     roles: List[Role] = Field(default=["user"])
 
     class Settings:

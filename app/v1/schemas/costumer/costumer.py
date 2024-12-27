@@ -1,12 +1,20 @@
 import zon
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr, validator, Field
 from app.v1.utils.response.response_format import validation_error
 from typing import Optional
 import bcrypt
 from datetime import datetime
 from app.v1.models.category import StatusEnum
 from enum import Enum
-
+from app.v1.models.user import StatusEnum
+class StatusEnum(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    DRAFT = "draft"
+class Gender(str, Enum):
+    male = "male"
+    female = "female"
+    other = "other"
 class Role(str, Enum):
     admin = "admin"
     user = "user"
@@ -16,7 +24,7 @@ costumer_create_validator = zon.record({
     "last_name": zon.string().min(1).max(50),
     "email": zon.string().email(),
     "phone": zon.string().min(10).max(10),
-    "password": zon.string().min(6).max(20),
+    # "password": zon.string().min(6).max(20),
 })
 
 class CostumerCreateRequest(BaseModel):
@@ -24,8 +32,12 @@ class CostumerCreateRequest(BaseModel):
     last_name: str
     email: EmailStr
     phone: str
+    gender: Gender = Field(default=Gender.male)
     roles: list[Role] = [Role.user]
-    password: str
+    status: StatusEnum = StatusEnum.ACTIVE
+    costumer_address: Optional[str] = None
+    costumer_details: Optional[str] = None
+    # password: str
 
     @validator("roles", pre=True, always=True)
     def ensure_user_role(cls, roles):
@@ -78,6 +90,8 @@ update_costumer_validator = zon.record({
     "last_name": zon.string().min(1).max(50).optional(),
     "email": zon.string().email().optional(),
     "phone": zon.string().min(10).max(10).optional(),
+    "costumer_address": zon.string().optional(),
+    "costumer_details": zon.string().optional(),
 })
 
 class UpdateCostumerRequest(BaseModel):
@@ -85,6 +99,10 @@ class UpdateCostumerRequest(BaseModel):
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    status: StatusEnum = StatusEnum.ACTIVE
+    gender: Gender = Gender.male
+    costumer_address: Optional[str] = None
+    costumer_details: Optional[str] = None
     
     def validate(self):
         try:
