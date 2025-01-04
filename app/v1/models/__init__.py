@@ -1,6 +1,13 @@
-from app.v1.models.user import User
-from app.v1.config import DATABASE_NAME, DATABASE_URL
 from motor.motor_asyncio import AsyncIOMotorClient
+
+from app.v1.config import DATABASE_NAME, DATABASE_URL
+from app.v1.models.blog import Blog
+from app.v1.models.booking import SuperAdminBooking
+from app.v1.models.category import Category
+from app.v1.models.services import Service
+from app.v1.models.subscription import Subscription
+from app.v1.models.user import User
+from app.v1.models.user_token import UserToken
 
 
 def get_model(COLLECTION_NAME):
@@ -10,7 +17,22 @@ def get_model(COLLECTION_NAME):
 
 
 user_collection = get_model("users")
+category_collection = get_model("categories")
+services_collection = get_model("services")
+vendor_collection = get_model("vendors")
+subscription_collection = get_model("subscriptions")
+blog_collection = get_model("blogs")
+user_token_collection = get_model("user_tokens")
+super_admin_booking_collection = get_model("super_admin_bookings")
+
 
 __all__ = {
-    "user_collection": user_collection
+    "user_collection": user_collection,
+    "category_collection": category_collection,
+    "services_collection": services_collection,
+    "vendor_collection": vendor_collection,
+    "subscription_collection": subscription_collection,
+    "blog_collection": blog_collection,
+    "user_token_collection": user_token_collection,
+    "super_admin_booking_collection": super_admin_booking_collection,
 }

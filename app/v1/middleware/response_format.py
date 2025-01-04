@@ -1,7 +1,8 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from app.v1.utils.response.response_format import success
+
 from app.v1.utils.response.response_code import ResponseCode
+from app.v1.utils.response.response_format import success
 
 
 async def add_response_format(request: Request, call_next):
@@ -15,7 +16,7 @@ async def add_response_format(request: Request, call_next):
     if isinstance(response, JSONResponse):
         return JSONResponse(
             status_code=response.status_code if response.status_code else ResponseCode.success,
-            content=success({"data": response.json()})
+            content=success({"data": response.json()}),
         )
 
     # Default successful response formatting

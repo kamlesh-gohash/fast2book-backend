@@ -1,7 +1,8 @@
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from app.v1.utils.response.response_format import record_not_found
+
 from app.v1.utils.response.response_code import ResponseCode
+from app.v1.utils.response.response_format import record_not_found
 
 
 # Custom 404 handler
@@ -11,6 +12,7 @@ async def not_found(request, exc: HTTPException):
         status_code=ResponseCode.recordNotFound,
     )
 
+
 # Global Exception Handler for uncaught exceptions
 
 
@@ -19,6 +21,7 @@ async def custom_exception_handler(request, exc: Exception):
         status_code=ResponseCode.internalServerError,
         content={"message": str(exc)},
     )
+
 
 # Define exception handlers
 exception_handlers = {

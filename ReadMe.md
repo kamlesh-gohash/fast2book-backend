@@ -13,3 +13,21 @@ poetry install
 ```
 poetry run uvicorn app.main:app --port 8000 --reload
 ```
+
+3. To check formatting 
+
+```
+poetry run black --check .
+```
+
+4. To format code 
+
+```
+poetry run black .
+```
+
+5. To run test
+
+```
+poetry run pytest
+```
