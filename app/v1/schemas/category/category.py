@@ -1,10 +1,14 @@
-import zon
-from pydantic import BaseModel, EmailStr
-from app.v1.utils.response.response_format import validation_error
-from typing import Optional
-import bcrypt
 from datetime import datetime
+from typing import Optional
+
+import bcrypt
+import zon
+
+from pydantic import BaseModel, EmailStr
+
 from app.v1.models.category import StatusEnum
+from app.v1.utils.response.response_format import validation_error
+
 
 create_category_validator = zon.record(
     {

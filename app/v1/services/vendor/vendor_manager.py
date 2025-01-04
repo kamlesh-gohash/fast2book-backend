@@ -1,22 +1,21 @@
 import random
-from app.v1.models import User
-from app.v1.models import vendor_collection
-from app.v1.models import user_collection
-from app.v1.models import category_collection
-from app.v1.models import services_collection
-from app.v1.utils.email import send_email, generate_otp
-from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
+
+from datetime import datetime, timedelta
+from typing import Optional
+
 import bcrypt
 
+from bcrypt import gensalt, hashpw
+from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
+
 # from app.v1.utils.token import generate_jwt_token
-from fastapi import HTTPException, status, Body, Query, Request
-from typing import Optional
-from datetime import datetime, timedelta
-from app.v1.utils.token import get_oauth_tokens, create_access_token, create_refresh_token
-from bcrypt import hashpw, gensalt
-from app.v1.schemas.vendor.vendor_auth import *
+from fastapi import Body, HTTPException, Query, Request, status
+
 from app.v1.middleware.auth import get_current_user
-from app.v1.utils.email import send_vendor_email
+from app.v1.models import User, category_collection, services_collection, user_collection, vendor_collection
+from app.v1.schemas.vendor.vendor_auth import *
+from app.v1.utils.email import generate_otp, send_email, send_vendor_email
+from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
 class VendorManager:

@@ -1,12 +1,13 @@
-from app.v1.models.user import User
-from app.v1.config import DATABASE_NAME, DATABASE_URL
 from motor.motor_asyncio import AsyncIOMotorClient
+
+from app.v1.config import DATABASE_NAME, DATABASE_URL
+from app.v1.models.blog import Blog
+from app.v1.models.booking import SuperAdminBooking
 from app.v1.models.category import Category
 from app.v1.models.services import Service
 from app.v1.models.subscription import Subscription
-from app.v1.models.blog import Blog
+from app.v1.models.user import User
 from app.v1.models.user_token import UserToken
-from app.v1.models.booking import SuperAdminBooking
 
 
 def get_model(COLLECTION_NAME):

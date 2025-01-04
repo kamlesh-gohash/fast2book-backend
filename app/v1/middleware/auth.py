@@ -1,13 +1,15 @@
 # app/v1/middleware/auth.py
 
-from fastapi import Request, HTTPException, Header, status
-from fastapi.security import OAuth2PasswordBearer
-from app.v1.config.auth import oauth
-from fastapi import Depends
-from app.v1.models import User
-from app.v1.config.auth import oauth
 import os
+
 from typing import Optional
+
+from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordBearer
+
+from app.v1.config.auth import oauth
+from app.v1.models import User
+
 
 # OAuth2PasswordBearer handles the token extraction from Authorization header
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -26,6 +28,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 #         raise HTTPException(status_code=401, detail="Unauthorized")
 
 import jwt  # PyJWT library
+
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 

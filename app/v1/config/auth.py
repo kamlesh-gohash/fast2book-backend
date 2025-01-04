@@ -1,8 +1,10 @@
 # app/v1/config/auth.py
 
 import os
+
 from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
+
 
 # Load environment variables
 load_dotenv()

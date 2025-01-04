@@ -1,6 +1,8 @@
-from app.v1.models import User
 from datetime import datetime
-from bcrypt import hashpw, gensalt
+
+from bcrypt import gensalt, hashpw
+
+from app.v1.models import User
 
 
 def hash_password(password: str) -> str:

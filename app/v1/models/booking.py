@@ -1,16 +1,18 @@
 import os
-from beanie import Document, Indexed, before_event, Link
-from pydantic import BaseModel, EmailStr, Field, field_validator
+
 from datetime import datetime
-from bcrypt import hashpw, gensalt
-from typing import Optional, List
 from enum import Enum
-from app.v1.config.constants import SECRET_KEY
+from typing import List, Optional
+
+from bcrypt import gensalt, hashpw
 from beanie import PydanticObjectId  # Import PydanticObjectId
+from beanie import Document, Indexed, Link, before_event
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.v1.config.constants import SECRET_KEY
 from app.v1.models.category import Category
 from app.v1.models.services import Service
-from app.v1.models.user import User
-from app.v1.models.user import StatusEnum
+from app.v1.models.user import StatusEnum, User
 
 
 class SuperAdminBooking(BaseModel):

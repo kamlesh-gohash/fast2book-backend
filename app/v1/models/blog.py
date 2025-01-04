@@ -1,13 +1,15 @@
 import os
-from beanie import Document, Indexed, before_event
-from pydantic import BaseModel, EmailStr, Field, field_validator, HttpUrl
+
 from datetime import datetime
-from bcrypt import hashpw, gensalt
-from typing import Optional, List
 from enum import Enum
-from app.v1.config.constants import SECRET_KEY
-from beanie import PydanticObjectId
+from typing import List, Optional
+
+from bcrypt import gensalt, hashpw
+from beanie import Document, Indexed, PydanticObjectId, before_event
+from pydantic import BaseModel, EmailStr, Field, HttpUrl, field_validator
 from slugify import slugify
+
+from app.v1.config.constants import SECRET_KEY
 
 
 class StatusEnum(str, Enum):

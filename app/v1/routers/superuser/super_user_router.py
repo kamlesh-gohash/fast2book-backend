@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+
 from app.v1.dependencies import get_super_user_manager
-from app.v1.services import SuperUserManager
-from app.v1.models import User
-from app.v1.utils.response.response_format import success, failure, internal_server_error, validation_error
-from app.v1.schemas.superuser.superuser_auth import *
 from app.v1.middleware.auth import get_token_from_header
+from app.v1.models import User
+from app.v1.schemas.superuser.superuser_auth import *
+from app.v1.services import SuperUserManager
+from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
+
 
 router = APIRouter()
 

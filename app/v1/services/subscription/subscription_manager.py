@@ -1,18 +1,21 @@
 import random
-from app.v1.models.services import Service
-from app.v1.models.category import Category
-from app.v1.models import subscription_collection
-from app.v1.models import category_collection
-from app.v1.utils.email import send_email, generate_otp
-from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
+
+from datetime import datetime, timedelta
+from typing import Optional
+
 import bcrypt
 
+from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
+
 # from app.v1.utils.token import generate_jwt_token
-from fastapi import HTTPException, status, Body, Path
-from typing import Optional
-from datetime import datetime, timedelta
-from app.v1.utils.token import get_oauth_tokens, create_access_token, create_refresh_token
+from fastapi import Body, HTTPException, Path, status
+
+from app.v1.models import category_collection, subscription_collection
+from app.v1.models.category import Category
+from app.v1.models.services import Service
 from app.v1.schemas.subscription.subscription_auth import CreateSubscriptionRequest, UpdateSubscriptionRequest
+from app.v1.utils.email import generate_otp, send_email
+from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
 class SubscriptionManager:

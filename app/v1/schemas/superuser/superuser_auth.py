@@ -1,10 +1,13 @@
-import zon
-from pydantic import BaseModel, EmailStr, validator, Field
-from app.v1.utils.response.response_format import validation_error
-from typing import Optional, List
-import bcrypt
 from datetime import datetime
+from typing import List, Optional
+
+import bcrypt
+import zon
+
+from pydantic import BaseModel, EmailStr, Field, validator
+
 from app.v1.models.user import *
+from app.v1.utils.response.response_format import validation_error
 
 
 super_user_sign_in_validator = zon.record(

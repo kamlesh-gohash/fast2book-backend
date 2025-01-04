@@ -1,9 +1,13 @@
-import jwt
+import os
 
 from datetime import datetime, timedelta
-import os
+
+import jwt
+
 from fastapi import HTTPException, status
+
 from app.v1.config.auth import oauth
+
 
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 ALGORITHM = "HS256"  # You can use other algorithms like RS256 if you want

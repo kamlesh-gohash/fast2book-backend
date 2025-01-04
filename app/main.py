@@ -1,13 +1,15 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles  # Import StaticFiles
+from scripts.seed import seed_data
+
+from app.v1.config.constants import FRONT_URL
 from app.v1.config.db import initiate_database
-from app.v1.routers.base_router import router
 from app.v1.middleware.exception_handlers.custom_handlers import exception_handlers
 from app.v1.middleware.response_format import add_response_format
-from contextlib import asynccontextmanager
-from app.v1.config.constants import FRONT_URL
-from scripts.seed import seed_data
-from fastapi.staticfiles import StaticFiles  # Import StaticFiles
+from app.v1.routers.base_router import router
 
 
 @asynccontextmanager

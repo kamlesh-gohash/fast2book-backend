@@ -1,21 +1,25 @@
+import base64
 import random
-from app.v1.models.blog import Blog
-from app.v1.models import blog_collection
-from app.v1.utils.email import send_email, generate_otp
-from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
+
+from datetime import datetime, timedelta
+from io import BytesIO
+from pathlib import Path
+from typing import Optional
+
 import bcrypt
 
+from bcrypt import gensalt, hashpw
+from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
+
 # from app.v1.utils.token import generate_jwt_token
-from fastapi import HTTPException, status, Body, Path, UploadFile, File
-from typing import Optional
-from datetime import datetime, timedelta
-from bcrypt import hashpw, gensalt
-from app.v1.schemas.costumer.costumer import UpdateCostumerRequest
-from app.v1.utils.token import get_oauth_tokens, create_access_token, create_refresh_token
-import base64
-from io import BytesIO
+from fastapi import Body, File, HTTPException, Path, UploadFile, status
 from PIL import Image
-from pathlib import Path
+
+from app.v1.models import blog_collection
+from app.v1.models.blog import Blog
+from app.v1.schemas.costumer.costumer import UpdateCostumerRequest
+from app.v1.utils.email import generate_otp, send_email
+from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
 class BlogManager:

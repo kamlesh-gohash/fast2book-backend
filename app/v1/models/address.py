@@ -1,7 +1,9 @@
-from pydantic import BaseModel, Field
-from typing import Optional
-from beanie import Document, Link
 from datetime import datetime
+from typing import Optional
+
+from beanie import Document, Link
+from pydantic import BaseModel, Field
+
 from app.v1.models.user import User
 
 
