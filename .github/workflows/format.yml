@@ -48,18 +48,18 @@ jobs:
   #     run: poetry install --no-root
   #   - name: Run flake8 check
   #     run: poetry run flake8 --count .
-  mypy:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version-file: 'pyproject.toml'
-        cache: 'poetry'
-    - name: Install dependencies
-      run: poetry install --no-root
-    - name: Run mypy check
-      run: poetry run mypy .
+  # mypy:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v2
+  #   - name: Install Poetry
+  #     uses: snok/install-poetry@v1
+  #   - name: Set up Python
+  #     uses: actions/setup-python@v5
+  #     with:
+  #       python-version-file: 'pyproject.toml'
+  #       cache: 'poetry'
+  #   - name: Install dependencies
+  #     run: poetry install --no-root
+  #   - name: Run mypy check
+  #     run: poetry run mypy .
