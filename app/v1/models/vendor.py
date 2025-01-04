@@ -15,6 +15,7 @@ class StatusEnum(str, Enum):
     INACTIVE = "inactive"
     DRAFT = "draft"
 
+
 class Vendor(Document):
     name: str = Field(..., min_length=1, max_length=50)
     email: EmailStr = Field(..., min_length=1, max_length=50)

@@ -6,13 +6,15 @@ from bcrypt import hashpw, gensalt
 from typing import Optional, List
 from enum import Enum
 from app.v1.config.constants import SECRET_KEY
-from beanie import PydanticObjectId 
+from beanie import PydanticObjectId
 from slugify import slugify
+
 
 class StatusEnum(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     DRAFT = "draft"
+
 
 class Blog(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
@@ -25,9 +27,10 @@ class Blog(BaseModel):
     status: StatusEnum = Field(default=StatusEnum.ACTIVE)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     class Settings:
         name = "blogs"
+
     @before_event("insert")
     def generate_blog_url(self):
         """Generate the blog URL as a slug based on the title before insertion."""

@@ -1,5 +1,5 @@
 import zon
-from pydantic import BaseModel, EmailStr,validator
+from pydantic import BaseModel, EmailStr, validator
 from app.v1.utils.response.response_format import validation_error
 from typing import Optional
 import bcrypt
@@ -16,10 +16,14 @@ class StatusEnum(str, Enum):
     INACTIVE = "inactive"
     DRAFT = "draft"
 
-create_subscription_request = zon.record({
-    "title": zon.string(),
-    "status": zon.string(),
-})
+
+create_subscription_request = zon.record(
+    {
+        "title": zon.string(),
+        "status": zon.string(),
+    }
+)
+
 
 class CreateSubscriptionRequest(BaseModel):
     title: str
@@ -35,23 +39,24 @@ class CreateSubscriptionRequest(BaseModel):
     def validate(self):
         """Validates the service request using the zon validator."""
         try:
-            create_subscription_request.validate({
-                "title": self.title,
-                "price": self.price,
-                "status": self.status.value,     # Enum to string
-            })
+            create_subscription_request.validate(
+                {
+                    "title": self.title,
+                    "price": self.price,
+                    "status": self.status.value,  # Enum to string
+                }
+            )
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-list_subscription_validator = zon.record({
-    
-})
+
+
+list_subscription_validator = zon.record({})
 
 
 class ListSubscriptionRequest(BaseModel):
-    
+
     def validate(self):
         try:
             list_subscription_validator.validate(self.dict())
@@ -59,30 +64,34 @@ class ListSubscriptionRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-get_subscription_validator = zon.record({
-    "id": zon.string()
-})    
+
+
+get_subscription_validator = zon.record({"id": zon.string()})
+
 
 class GetSubscriptionRequest(BaseModel):
     id: str
 
-    def validate(self):    
+    def validate(self):
         try:
             get_subscription_validator.validate(self.dict())
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-update_subscription_validator = zon.record({
-    "title": zon.string().optional(),
-    "price": zon.number().optional(),
-    "status": zon.string().optional(),
-})
+
+
+update_subscription_validator = zon.record(
+    {
+        "title": zon.string().optional(),
+        "price": zon.number().optional(),
+        "status": zon.string().optional(),
+    }
+)
+
 
 class UpdateSubscriptionRequest(BaseModel):
-    title: Optional[str] = None 
+    title: Optional[str] = None
     price: Optional[float] = None
     status: Optional[StatusEnum] = None
 
@@ -93,10 +102,10 @@ class UpdateSubscriptionRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-delete_subscription_validator = zon.record({
-    "id": zon.string()
-})    
+
+
+delete_subscription_validator = zon.record({"id": zon.string()})
+
 
 class DeleteSubscriptionRequest(BaseModel):
     id: str

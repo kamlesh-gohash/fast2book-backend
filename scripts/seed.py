@@ -2,9 +2,12 @@ from app.v1.models import User
 from datetime import datetime
 from bcrypt import hashpw, gensalt
 
+
 def hash_password(password: str) -> str:
     """Hash the password using bcrypt."""
     return hashpw(password.encode("utf-8"), gensalt()).decode("utf-8")
+
+
 async def seed_data():
     existing_count = await User.find({"user_role": 2}).count()
     if existing_count == 0:

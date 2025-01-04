@@ -7,13 +7,16 @@ from datetime import datetime
 from app.v1.models.user import *
 
 
-super_user_sign_in_validator = zon.record({
-    "email": zon.string().email(),  
-    "password": zon.string().min(6).max(20),
-})
+super_user_sign_in_validator = zon.record(
+    {
+        "email": zon.string().email(),
+        "password": zon.string().min(6).max(20),
+    }
+)
+
 
 class SuperUserSignInRequest(BaseModel):
-    email: str 
+    email: str
     password: str
 
     def validate(self):
@@ -23,11 +26,14 @@ class SuperUserSignInRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-super_user_forgot_password_validator = zon.record({
-    "email": zon.string().email(),
 
-})    
+
+super_user_forgot_password_validator = zon.record(
+    {
+        "email": zon.string().email(),
+    }
+)
+
 
 class SuperUserForgotPasswordRequest(BaseModel):
     email: str
@@ -40,10 +46,14 @@ class SuperUserForgotPasswordRequest(BaseModel):
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
 
-super_user_otp_validator = zon.record({
-    "email": zon.string().email(),
-    "otp": zon.string().min(6).max(6),
-})    
+
+super_user_otp_validator = zon.record(
+    {
+        "email": zon.string().email(),
+        "otp": zon.string().min(6).max(6),
+    }
+)
+
 
 class SuperUserOtpRequest(BaseModel):
     email: str
@@ -57,10 +67,14 @@ class SuperUserOtpRequest(BaseModel):
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
 
-super_user_reset_password_validator = zon.record({
-    "email": zon.string().email(),
-    "password": zon.string().min(6).max(20),
-})    
+
+super_user_reset_password_validator = zon.record(
+    {
+        "email": zon.string().email(),
+        "password": zon.string().min(6).max(20),
+    }
+)
+
 
 class SuperUserResetPasswordRequest(BaseModel):
     email: str
@@ -73,10 +87,14 @@ class SuperUserResetPasswordRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-super_user_resend_otp_validator = zon.record({
-    "email": zon.string().email(),
-})    
+
+
+super_user_resend_otp_validator = zon.record(
+    {
+        "email": zon.string().email(),
+    }
+)
+
 
 class SuperUserResendOtpRequest(BaseModel):
     email: str
@@ -88,10 +106,14 @@ class SuperUserResendOtpRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-super_user_profile_validator = zon.record({
-    "email": zon.string().email(),
-})    
+
+
+super_user_profile_validator = zon.record(
+    {
+        "email": zon.string().email(),
+    }
+)
+
 
 class SuperUserProfileRequest(BaseModel):
     email: str
@@ -104,12 +126,11 @@ class SuperUserProfileRequest(BaseModel):
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
 
-super_user_change_password_validator = zon.record({
-    "email": zon.string().email(),
-    "old_password": zon.string(),
-    "new_password": zon.string()
 
-})    
+super_user_change_password_validator = zon.record(
+    {"email": zon.string().email(), "old_password": zon.string(), "new_password": zon.string()}
+)
+
 
 class SuperUserChangePassword(BaseModel):
     email: str
@@ -123,20 +144,24 @@ class SuperUserChangePassword(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
+
 
 class StatusEnum(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
-    DRAFT = "draft"    
+    DRAFT = "draft"
 
-create_super_user_validator = zon.record({
-    "first_name": zon.string().min(1).max(50),
-    "last_name": zon.string().min(1).max(50),
-    "email": zon.string().email(),
-    "phone": zon.string().min(10).max(10),
-    "password": zon.string().min(6).max(20),
-})    
+
+create_super_user_validator = zon.record(
+    {
+        "first_name": zon.string().min(1).max(50),
+        "last_name": zon.string().min(1).max(50),
+        "email": zon.string().email(),
+        "phone": zon.string().min(10).max(10),
+        "password": zon.string().min(6).max(20),
+    }
+)
+
 
 class SuperUserCreateRequest(BaseModel):
     first_name: str
@@ -154,10 +179,10 @@ class SuperUserCreateRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-get_super_user_list_validator = zon.record({
-    
-})
+
+
+get_super_user_list_validator = zon.record({})
+
 
 class SuperUserListRequest(BaseModel):
 
@@ -168,21 +193,24 @@ class SuperUserListRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-update_super_user_validator = zon.record({
-    "first_name": zon.string().min(1).max(50).optional(),
-    "last_name": zon.string().min(1).max(50).optional(),
-    "email": zon.string().email().optional(),
-    "phone": zon.string().min(10).max(10).optional(),
 
-})    
+
+update_super_user_validator = zon.record(
+    {
+        "first_name": zon.string().min(1).max(50).optional(),
+        "last_name": zon.string().min(1).max(50).optional(),
+        "email": zon.string().email().optional(),
+        "phone": zon.string().min(10).max(10).optional(),
+    }
+)
+
 
 class SuperUserUpdateRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
-    status: StatusEnum = StatusEnum.ACTIVE
+    status: Optional[StatusEnum] = None
 
     def validate(self):
         try:
@@ -192,9 +220,9 @@ class SuperUserUpdateRequest(BaseModel):
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
 
-delete_super_user_validator = zon.record({
-    "id": zon.string()
-})    
+
+delete_super_user_validator = zon.record({"id": zon.string()})
+
 
 class SuperUserDeleteRequest(BaseModel):
     id: str
@@ -206,4 +234,3 @@ class SuperUserDeleteRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    

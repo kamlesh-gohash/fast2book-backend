@@ -13,7 +13,7 @@ router = APIRouter()
 @router.post("/create-subscription", status_code=status.HTTP_200_OK)
 async def create_subscription(
     subscription_request: CreateSubscriptionRequest,
-    subscription_manager: "SubscriptionManager" = Depends(lambda: SubscriptionManager())
+    subscription_manager: "SubscriptionManager" = Depends(lambda: SubscriptionManager()),
 ):
     # Validate the service request
     validation_result = subscription_request.validate()
@@ -23,28 +23,38 @@ async def create_subscription(
     try:
         # Create the service
         result = await subscription_manager.subscription_create(subscription_request)
-        return success({ "message": "Subscription created successfully", "data": result})
+        return success({"message": "Subscription created successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)  
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
 
 @router.get("/subscription-list", status_code=status.HTTP_200_OK)
-async def subscription_list(page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+async def subscription_list(
+    page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search term to filter subscriptions by title"),
-    subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager)):
+    subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
+):
     try:
-        result = await subscription_manager.subscription_list(page, limit,search)
-        return success({ "message": "Subscription List found successfully", "data": result})
+        result = await subscription_manager.subscription_list(page, limit, search)
+        return success({"message": "Subscription List found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)  
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
 
 @router.get("/get-subscription/{id}", status_code=status.HTTP_200_OK)
 async def get_subscription(
@@ -56,10 +66,7 @@ async def get_subscription(
         result = await subscription_manager.subscription_get(id)
 
         if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="subscription not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="subscription not found")
 
         return success({"message": "subscription found successfully", "data": result})
     except HTTPException as http_ex:
@@ -67,7 +74,11 @@ async def get_subscription(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)  
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
 
 @router.put("/update-subscription/{id}", status_code=status.HTTP_200_OK)
 async def update_service(
@@ -80,18 +91,14 @@ async def update_service(
         return validation_result
     if not (subscription_request.title or subscription_request.price or subscription_request.status):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one field (title, price, status) must be provided"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="At least one field (title, price, status) must be provided"
         )
     try:
         # Call the ServiceManager to update the service by id
         result = await subscription_manager.subscription_update(id, subscription_request)
 
         if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="subscription not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="subscription not found")
 
         return success({"message": "subscription updated successfully", "data": result})
     except HTTPException as http_ex:
@@ -99,7 +106,10 @@ async def update_service(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)  
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @router.delete("/delete-subscription/{id}", status_code=status.HTTP_200_OK)
@@ -112,10 +122,7 @@ async def delete_service(
         result = await subscription_manager.subscription_delete(id)
 
         if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="subscription not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="subscription not found")
 
         return success({"message": "subscription deleted successfully", "data": result})
     except HTTPException as http_ex:
@@ -123,6 +130,7 @@ async def delete_service(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)  
-
-    
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

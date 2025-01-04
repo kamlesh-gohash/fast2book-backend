@@ -9,12 +9,13 @@ from app.v1.config.constants import SECRET_KEY
 from beanie import PydanticObjectId  # Import PydanticObjectId
 
 
-
 class StatusEnum(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     DRAFT = "draft"
-class Category(Document,BaseModel):
+
+
+class Category(Document, BaseModel):
     id: Optional[PydanticObjectId] = Field(default=None, alias="_id")
     name: str = Field(..., min_length=1, max_length=50)
     status: StatusEnum = Field(default=StatusEnum.ACTIVE)

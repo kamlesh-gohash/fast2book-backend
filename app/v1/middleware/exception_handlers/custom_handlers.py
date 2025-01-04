@@ -11,6 +11,7 @@ async def not_found(request, exc: HTTPException):
         status_code=ResponseCode.recordNotFound,
     )
 
+
 # Global Exception Handler for uncaught exceptions
 
 
@@ -19,6 +20,7 @@ async def custom_exception_handler(request, exc: Exception):
         status_code=ResponseCode.internalServerError,
         content={"message": str(exc)},
     )
+
 
 # Define exception handlers
 exception_handlers = {

@@ -9,12 +9,13 @@ from app.v1.config.constants import FRONT_URL
 from scripts.seed import seed_data
 from fastapi.staticfiles import StaticFiles  # Import StaticFiles
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
     await initiate_database()
     await seed_data()
-    
+
     yield
 
 

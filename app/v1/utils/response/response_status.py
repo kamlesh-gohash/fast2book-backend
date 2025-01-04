@@ -1,5 +1,6 @@
 # app/v1/utils/response/response_status.py
 
+
 class ResponseStatus:
     SUCCESS = "SUCCESS"
     FAILURE = "FAILURE"

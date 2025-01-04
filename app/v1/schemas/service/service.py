@@ -1,5 +1,5 @@
 import zon
-from pydantic import BaseModel, EmailStr,validator
+from pydantic import BaseModel, EmailStr, validator
 from app.v1.utils.response.response_format import validation_error
 from typing import Optional
 import bcrypt
@@ -16,12 +16,16 @@ class StatusEnum(str, Enum):
     INACTIVE = "inactive"
     DRAFT = "draft"
 
+
 # Validators
-create_service_validator = zon.record({
-    "name": zon.string(),
-    "category_id": zon.string(),
-    "status": zon.string(),
-})
+create_service_validator = zon.record(
+    {
+        "name": zon.string(),
+        "category_id": zon.string(),
+        "status": zon.string(),
+    }
+)
+
 
 # Pydantic Model for Service Request
 class CreateServiceRequest(BaseModel):
@@ -53,22 +57,24 @@ class CreateServiceRequest(BaseModel):
     def validate(self):
         """Validates the service request using the zon validator."""
         try:
-            create_service_validator.validate({
-                "name": self.name,
-                "category_id": self.category_id,  # Already validated as a string
-                "status": self.status.value,     # Enum to string
-            })
+            create_service_validator.validate(
+                {
+                    "name": self.name,
+                    "category_id": self.category_id,  # Already validated as a string
+                    "status": self.status.value,  # Enum to string
+                }
+            )
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return {"status": "VALIDATION_ERROR", "message": f"Validation Error: {error_message}", "data": None}
         return None
 
-list_service_validator = zon.record({
-    
-})
+
+list_service_validator = zon.record({})
+
 
 class ListServiceRequest(BaseModel):
-    
+
     def validate(self):
         try:
             list_service_validator.validate(self.dict())
@@ -76,30 +82,34 @@ class ListServiceRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-get_service_validator = zon.record({
-    "id": zon.string()
-})    
+
+
+get_service_validator = zon.record({"id": zon.string()})
+
 
 class GetServiceRequest(BaseModel):
     id: str
 
-    def validate(self):    
+    def validate(self):
         try:
             get_service_validator.validate(self.dict())
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-update_service_validator = zon.record({
-    "name": zon.string().optional(),
-    "category_id": zon.string().optional(),
-    "status": zon.string().optional(),
-})
+
+
+update_service_validator = zon.record(
+    {
+        "name": zon.string().optional(),
+        "category_id": zon.string().optional(),
+        "status": zon.string().optional(),
+    }
+)
+
 
 class UpdateServiceRequest(BaseModel):
-    name: Optional[str] = None 
+    name: Optional[str] = None
     category_id: Optional[str] = None
     status: Optional[StatusEnum] = None
 
@@ -110,10 +120,10 @@ class UpdateServiceRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
-    
-delete_service_validator = zon.record({
-    "id": zon.string()
-})    
+
+
+delete_service_validator = zon.record({"id": zon.string()})
+
 
 class DeleteServiceRequest(BaseModel):
     id: str
@@ -126,9 +136,9 @@ class DeleteServiceRequest(BaseModel):
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
 
-category_list_validator_for_service = zon.record({
-    
-})    
+
+category_list_validator_for_service = zon.record({})
+
 
 class CategoryListForServiceRequest(BaseModel):
     def validate(self):

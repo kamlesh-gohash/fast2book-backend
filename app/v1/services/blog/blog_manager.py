@@ -4,8 +4,9 @@ from app.v1.models import blog_collection
 from app.v1.utils.email import send_email, generate_otp
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 import bcrypt
+
 # from app.v1.utils.token import generate_jwt_token
-from fastapi import HTTPException, status, Body,Path, UploadFile, File
+from fastapi import HTTPException, status, Body, Path, UploadFile, File
 from typing import Optional
 from datetime import datetime, timedelta
 from bcrypt import hashpw, gensalt
@@ -16,25 +17,24 @@ from io import BytesIO
 from PIL import Image
 from pathlib import Path
 
+
 class BlogManager:
     async def create_blog(self, create_blog_request: Blog) -> dict:
         try:
             blog_data = create_blog_request.dict()
-            
+
             # Insert the blog data into the database
             result = await blog_collection.insert_one(blog_data)
             blog_data["_id"] = str(result.inserted_id)
-            
+
             # Return the inserted blog data
             return blog_data
         except Exception as e:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to create blog: {str(e)}"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to create blog: {str(e)}"
             )
 
-        
-    async def blog_list(self, page: int = 1, limit: int = 10, search: str = None)  -> dict:
+    async def blog_list(self, page: int = 1, limit: int = 10, search: str = None) -> dict:
         """
         Get list of all active categories.
         """
@@ -74,27 +74,19 @@ class BlogManager:
             return {"data": blog_data, "total_pages": total_pages, "total_items": total_blogs}
         except Exception as e:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to fetch categories: {str(e)}"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch categories: {str(e)}"
             )
-
 
     async def get_blog_by_id(self, id: str) -> dict:
         try:
             # Convert the string ID to ObjectId and validate it
             if not ObjectId.is_valid(id):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid blog ID: '{id}'"
-                )
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid blog ID: '{id}'")
 
             # Check if the blog exists
             existing_blog = await blog_collection.find_one({"_id": ObjectId(id)})
             if not existing_blog:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Blog with ID '{id}' not found"
-                )
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Blog with ID '{id}' not found")
 
             # Format the result
             blog_data = {
@@ -113,69 +105,55 @@ class BlogManager:
             return blog_data
         except Exception as ex:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An unexpected error occurred"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
-            
+
     async def update_blog_by_id(self, id: str, blog_request: Blog) -> dict:
         try:
-            # Convert the string ID to ObjectId and validate it
             if not ObjectId.is_valid(id):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid blog ID: '{id}'"
-                )
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid blog ID: '{id}'")
 
-            # Check if the blog exists
             existing_blog = await blog_collection.find_one({"_id": ObjectId(id)})
             if not existing_blog:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Blog with ID '{id}' not found"
-                )
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Blog with ID '{id}' not found")
 
-            # Prepare the update data
             update_data = {}
-            if blog_request.title:
-                update_data["title"] = blog_request.title
-            if blog_request.content:
-                update_data["content"] = blog_request.content
-            if blog_request.image:
-                update_data["image"] = blog_request.image    
-            if blog_request.blog_url:
-                update_data["blog_url"] = blog_request.blog_url
-            if blog_request.author_name:
-                update_data["author_name"] = blog_request.author_name
+
+            # Debugging fields
+
             if blog_request.category:
+                if not isinstance(blog_request.category, str):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid category format: {blog_request.category}",
+                    )
                 update_data["category"] = blog_request.category
+
             if blog_request.tags:
+                # Ensure that tags are a list of strings
+                if not isinstance(blog_request.tags, list) or not all(
+                    isinstance(tag, str) for tag in blog_request.tags
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid tags format: {blog_request.tags}. Tags should be a list of strings.",
+                    )
                 update_data["tags"] = blog_request.tags
-            if blog_request.status:
-                update_data["status"] = blog_request.status.value
-            update_data["updated_at"] = datetime.utcnow()  # Update the timestamp
-
-            if not update_data:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="No valid fields provided for update"
-                )
-
-            # Perform the update and fetch the updated document
+            update_data["title"] = blog_request.title
+            update_data["content"] = blog_request.content
+            update_data["author_name"] = blog_request.author_name
+            update_data["updated_at"] = datetime.utcnow()
+            update_data["status"] = blog_request.status
             updated_blog = await blog_collection.find_one_and_update(
                 {"_id": ObjectId(id)},
                 {"$set": update_data},
-                return_document=True  # Fetch the updated document directly
+                return_document=True,
             )
 
-            # If no updated document is found, return 404
             if not updated_blog:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Blog with ID '{id}' not found"
-                )
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Blog with ID '{id}' not found")
 
-            # Return the updated blog data
-            blog_data = {
+            return {
                 "id": str(updated_blog["_id"]),
                 "title": updated_blog["title"],
                 "content": updated_blog["content"],
@@ -188,43 +166,27 @@ class BlogManager:
                 "created_at": updated_blog["created_at"],
                 "updated_at": updated_blog["updated_at"],
             }
-            return blog_data
-
         except Exception as e:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to update blog: {str(e)}"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update blog: {str(e)}"
             )
 
     async def delete_blog_by_id(self, id: str) -> dict:
         try:
             # Convert the string ID to ObjectId and validate it
             if not ObjectId.is_valid(id):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid blog ID: '{id}'"
-                )
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid blog ID: '{id}'")
 
             # Check if the category exists
             existing_blog = await blog_collection.find_one({"_id": ObjectId(id)})
             if not existing_blog:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Blog with ID '{id}' not found"
-                )
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Blog with ID '{id}' not found")
 
             # Perform the deletion of the category
             result = await blog_collection.delete_one({"_id": ObjectId(id)})
             if result.deleted_count == 0:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Blog with ID '{id}' not found"
-                )
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Blog with ID '{id}' not found")
 
             return {"data": None}
         except Exception as ex:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=str(ex)
-            )
-        
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))

@@ -1,5 +1,6 @@
 # app/v1/utils/response/response_code.py
 
+
 class ResponseCode:
     success = 200
     failure = 200

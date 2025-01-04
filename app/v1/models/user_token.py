@@ -9,13 +9,10 @@ from app.v1.config.constants import SECRET_KEY
 from beanie import PydanticObjectId  # Import PydanticObjectId
 
 
-class StatusEnum(str, Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    DRAFT = "draft"
+class UserToken(BaseModel):
+    user_id: str = Field(..., description="User ID as a string (email or ObjectId)")
+    access_token: str = Field(..., description="Token value")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
-
-class Subscription(Document):
-    title: str = Field(..., min_length=1, max_length=50)
-    price: float
-    status: StatusEnum = Field(default=StatusEnum.ACTIVE)
+    class Settings:
+        name = "user_tokens"

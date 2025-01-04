@@ -15,6 +15,7 @@ class StatusEnum(str, Enum):
     INACTIVE = "inactive"
     DRAFT = "draft"
 
+
 class Service(Document):
     name: str = Field(..., min_length=1, max_length=50)
     status: StatusEnum = Field(default=StatusEnum.ACTIVE)
@@ -22,4 +23,4 @@ class Service(Document):
     category_name: str = Field(..., description="Name of the category")
 
     class Settings:
-        name = "services"  
+        name = "services"

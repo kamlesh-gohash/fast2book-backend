@@ -1,4 +1,13 @@
-__all__ = ["get_user_manager","get_super_user_manager","get_category_manager","get_services_manager","get_vendor_manager","get_costumer_manager","get_subscription_manager","get_blog_manager"]
+__all__ = [
+    "get_user_manager",
+    "get_super_user_manager",
+    "get_category_manager",
+    "get_services_manager",
+    "get_vendor_manager",
+    "get_costumer_manager",
+    "get_subscription_manager",
+    "get_blog_manager",
+]
 
 from app.v1.dependencies.user_manager import get_user_manager
 from app.v1.dependencies.super_user_manager import get_super_user_manager
