@@ -64,6 +64,7 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
     except InvalidTokenError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

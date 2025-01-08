@@ -30,6 +30,7 @@ create_subscription_request = zon.record(
 class CreateSubscriptionRequest(BaseModel):
     title: str
     price: float
+    features: list[str]
     status: StatusEnum = StatusEnum.ACTIVE
 
     @validator("status")
@@ -95,6 +96,7 @@ update_subscription_validator = zon.record(
 class UpdateSubscriptionRequest(BaseModel):
     title: Optional[str] = None
     price: Optional[float] = None
+    features: Optional[list[str]] = None
     status: Optional[StatusEnum] = None
 
     def validate(self):

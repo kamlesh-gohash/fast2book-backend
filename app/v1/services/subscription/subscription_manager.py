@@ -32,6 +32,7 @@ class SubscriptionManager:
             subscription_data = {
                 "title": subscription_request.title,
                 "price": subscription_request.price,
+                "features": subscription_request.features,
                 "status": subscription_request.status,
                 "created_at": datetime.utcnow(),
             }
@@ -44,6 +45,7 @@ class SubscriptionManager:
                 "id": str(created_subscription["_id"]),
                 "title": created_subscription["title"],
                 "price": created_subscription["price"],
+                "features": created_subscription["features"],
                 "status": created_subscription["status"],
                 "created_at": created_subscription["created_at"],
             }
@@ -76,6 +78,7 @@ class SubscriptionManager:
                         "id": str(subscription["_id"]),
                         "title": subscription["title"],
                         "price": subscription["price"],
+                        "features": subscription["features"],
                         "status": subscription["status"],
                         "created_at": subscription["created_at"],
                     }
@@ -99,6 +102,7 @@ class SubscriptionManager:
                 "id": str(subscription["_id"]),
                 "title": subscription["title"],
                 "price": subscription["price"],
+                "features": subscription["features"],
                 "status": subscription["status"],
                 "created_at": subscription["created_at"],
             }
@@ -124,6 +128,8 @@ class SubscriptionManager:
                 update_data["title"] = subscription_request.title
             if subscription_request.price is not None:
                 update_data["price"] = subscription_request.price
+            if subscription_request.features is not None:
+                update_data["features"] = subscription_request.features
             if subscription_request.status is not None:
                 update_data["status"] = subscription_request.status
 
@@ -141,6 +147,7 @@ class SubscriptionManager:
                 "id": str(updated_subscription["_id"]),
                 "title": updated_subscription.get("title"),
                 "price": updated_subscription.get("price"),
+                "features": updated_subscription.get("features"),
                 "status": updated_subscription.get("status"),
                 "updated_at": updated_subscription.get("updated_at"),
             }

@@ -8,6 +8,8 @@ __all__ = [
     "SubscriptionManager",
     "BlogManager",
     "BookingManager",
+    "PaymentManager",
+    "SupportManager",
 ]
 
 from app.v1.services.blog.blog_manager import BlogManager
@@ -19,3 +21,5 @@ from app.v1.services.subscription.subscription_manager import SubscriptionManage
 from app.v1.services.superuser.super_user_manager import SuperUserManager
 from app.v1.services.user.user_manager import UserManager
 from app.v1.services.vendor.vendor_manager import VendorManager
+from app.v1.services.payment.payment_manager import PaymentManager
+from app.v1.services.support.support_manager import SupportManager

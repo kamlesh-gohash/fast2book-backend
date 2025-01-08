@@ -7,6 +7,9 @@ __all__ = [
     "get_costumer_manager",
     "get_subscription_manager",
     "get_blog_manager",
+    "get_booking_manager",
+    "get_payment_manager",
+    "get_support_manager",
 ]
 
 from app.v1.dependencies.blog_manange import get_blog_manager
@@ -17,3 +20,6 @@ from app.v1.dependencies.subscription_manager import get_subscription_manager
 from app.v1.dependencies.super_user_manager import get_super_user_manager
 from app.v1.dependencies.user_manager import get_user_manager
 from app.v1.dependencies.vendor_manager import get_vendor_manager
+from app.v1.dependencies.booking_manager import get_booking_manager
+from app.v1.dependencies.payment_manager import get_payment_manager
+from app.v1.dependencies.support_manager import get_support_manager

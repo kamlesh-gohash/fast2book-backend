@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 
 from app.v1.dependencies import get_user_manager
 from app.v1.models import User, UserToken
@@ -6,6 +6,7 @@ from app.v1.schemas.user.auth import *
 from app.v1.services import UserManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
 from app.v1.utils.token import *
+from app.v1.middleware.auth import get_token_from_header
 
 
 router = APIRouter()
@@ -53,19 +54,6 @@ async def sign_in_user(sign_in_request: SignInRequest, user_manager: UserManager
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    # Send OTP for registration or login (POST request)
-
-
-# @router.post("/send-otp")
-# async def send_otp(send_otp_request: SendOtpRequest, user_manager: UserManager = Depends(get_user_manager)):
-#     try:
-#         # Send OTP logic (e.g., via email or SMS)
-#         otp = await user_manager.send_otp(send_otp_request.email)
-#         return success({"message": "OTP sent", "otp": otp})
-#     except ValueError as ex:
-#         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
-#     except Exception as ex:
-#         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # Resend OTP if expired (POST request)
@@ -136,19 +124,6 @@ async def reset_password(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-
-
-# # Update password (POST request) - update password after login
-# @router.post("/update-password")
-# async def update_password(update_password_request: UpdatePasswordRequest, user_manager: UserManager = Depends(get_user_manager)):
-#     try:
-#         # Update password logic (verify old password and change to new one)
-#         await user_manager.update_password(update_password_request.email, update_password_request.old_password, update_password_request.new_password)
-#         return success({"message": "Password updated successfully"})
-#     except ValueError as ex:
-#         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
-#     except Exception as ex:
-#         return internal_server_error({"message": "An unexpected error occurred", "error": str(ex)}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # validate otp
@@ -244,3 +219,65 @@ async def refresh_token(request: RefreshTokenRequest):
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred")
+
+
+@router.get("/category-list-for-users", status_code=status.HTTP_200_OK)
+async def get_category_list_for_users(user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.get_category_list_for_users()
+        return success({"message": "Category list fetched successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        print(ex)
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/service-list-for-category/{category_id}", status_code=status.HTTP_200_OK)
+async def get_service_list_for_category(category_id: str, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.get_service_list_for_category(category_id)
+        return success({"message": "Service list fetched successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+        )
+
+
+@router.get("/vendor-list-for-category/{category_id}", status_code=status.HTTP_200_OK)
+async def get_vendor_list_for_category(category_id: str, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.get_vendor_list_for_category(category_id)
+        return success({"message": "Vendor list fetched successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+        )
+
+
+@router.get("/vendor-list-for-services/{services_id}", status_code=status.HTTP_200_OK)
+async def get_vendor_list_for_services(services_id: str, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.get_vendor_list_for_services(services_id)
+        return success({"message": "Vendor list fetched successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+        )

@@ -89,9 +89,15 @@ async def update_service(
     validation_result = subscription_request.validate()
     if validation_result:
         return validation_result
-    if not (subscription_request.title or subscription_request.price or subscription_request.status):
+    if not (
+        subscription_request.title
+        or subscription_request.price
+        or subscription_request.features
+        or subscription_request.status
+    ):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="At least one field (title, price, status) must be provided"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one field (title, price, features, status) must be provided",
         )
     try:
         # Call the ServiceManager to update the service by id

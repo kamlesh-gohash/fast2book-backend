@@ -21,4 +21,5 @@ class StatusEnum(str, Enum):
 class Subscription(Document):
     title: str = Field(..., min_length=1, max_length=50)
     price: float
+    features: List[str]
     status: StatusEnum = Field(default=StatusEnum.ACTIVE)

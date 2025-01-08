@@ -7,6 +7,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
+from string import Template
 
 
 def generate_otp() -> str:
@@ -90,29 +91,34 @@ async def send_email(to_email: str, otp: str):
         return False
 
 
-async def send_vendor_email(to_email, password, reset_link):
+async def send_vendor_email(to_email, password, login_link):
     from_email = os.getenv("EMAIL_USER")
     from_password = os.getenv("EMAIL_PASSWORD")
 
+    # Path to the email template
     project_root = Path(__file__).resolve().parent.parent.parent
-    template_path = project_root / "templates" / "email" / "forgot_password.html"
-    # Verify if template exists
+    template_path = project_root / "templates" / "email" / "vendor_create_email.html"
+
+    # Verify if the template exists
     if not template_path.exists():
         raise FileNotFoundError(f"Template not found at: {template_path}")
+
+    # Read the HTML template
     with open(template_path, "r", encoding="utf-8") as file:
         html_template = file.read()
+    # Replace placeholders with actual values
+    template = Template(html_template)
+    html_content = template.substitute(password=password, login_link=login_link)
 
-    # Replace placeholder with actual OTP
-    html_content = html_template.format(otp=reset_link)
     # Set up the email
     msg = MIMEMultipart("alternative")
     msg["From"] = from_email
     msg["To"] = to_email
-    msg["Subject"] = "reset password"
+    msg["Subject"] = "Vendor Account Activation"
 
     # Attach both plain text and HTML versions
     text_part = MIMEText(
-        f"Your reset link is {reset_link}. Please use it to reset your password using your old password {password}.",
+        f"Your login link is {login_link}. Please use this password to login: {password}.",
         "plain",
     )
     html_part = MIMEText(html_content, "html")
@@ -130,6 +136,7 @@ async def send_vendor_email(to_email, password, reset_link):
         server.sendmail(from_email, to_email, text)
 
         server.quit()
-        return True
+        return {"status": "SUCCESS", "message": "Email sent successfully."}
     except Exception as e:
-        return False
+        print(f"Failed to send email to {to_email}: {e}")
+        return {"status": "FAILURE", "message": str(e)}

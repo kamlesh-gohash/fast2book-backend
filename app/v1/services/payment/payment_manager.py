@@ -1,0 +1,78 @@
+# from app.v1.utils.token import generate_jwt_token
+from fastapi import Request, HTTPException, status
+from app.v1.middleware.auth import get_current_user
+from app.v1.models import payment_collection
+from bson import ObjectId
+from app.v1.models.payment import PaymentType
+
+
+class PaymentManager:
+    async def payment_type_list(self, request: Request, token: str):
+        try:
+            # Get the current user
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            # Check if the current user has the "vendor" role
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            payment_types = await payment_collection.find().to_list(None)
+            if not payment_types:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No payment types found")
+            payment_data = []
+            for payment in payment_types:
+                payment_data.append(
+                    {
+                        "id": str(payment["_id"]),
+                        "name": payment["name"],
+                        "status": payment["status"],
+                    }
+                )
+            return payment_data
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
+
+    async def update_payment(self, request: Request, token: str, id: str, update_payment_request: PaymentType):
+        try:
+            # Get the current user
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            # Check if the current user has the "vendor" role
+            if "admin" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            payment = await payment_collection.find_one({"_id": ObjectId(id)})
+            if not payment:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+            update_data = {}
+            if update_payment_request.status is not None:
+                update_data["status"] = update_payment_request.status
+            if not update_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields provided for update"
+                )
+            # Update the payment
+            await payment_collection.update_one({"_id": ObjectId(id)}, {"$set": update_data})
+
+            update_payment = await payment_collection.find_one({"_id": ObjectId(id)})
+
+            return {
+                "id": str(update_payment["_id"]),
+                "name": update_payment.get("name"),
+                "status": update_payment.get("status"),
+            }
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )

@@ -232,7 +232,10 @@ class ServicesManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+            allowed_roles = ["admin", "vendor"]
+            user_roles = [role.value for role in current_user.roles]
+
+            if not any(role in allowed_roles for role in user_roles):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             active_categories = await category_collection.find({"status": "active"}).to_list(length=100)
 

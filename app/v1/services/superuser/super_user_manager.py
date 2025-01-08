@@ -12,10 +12,29 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import Body, HTTPException, Path, Request, status
 
 from app.v1.middleware.auth import get_current_user
-from app.v1.models import User, user_collection
+from app.v1.models import User, user_collection, vendor_collection
 from app.v1.schemas.superuser.superuser_auth import *
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
+from app.v1.models.slots import *
+
+
+def serialize_mongo_document(document):
+    """Helper function to serialize MongoDB documents."""
+    if "_id" in document:
+        document["_id"] = str(document["_id"])
+    return document
+
+
+VALID_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def validate_time_format(time_str: str):
+    try:
+        datetime.strptime(time_str, "%H:%M")
+    except ValueError:
+        return False
+    return True
 
 
 class SuperUserManager:
@@ -416,3 +435,66 @@ class SuperUserManager:
             return {"data": None}
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+
+#     async def create_vendor_slots(
+#     self,
+#     request: Request,
+#     token: str,
+#     vendor_id: str,
+#     slots: List[DaySlot]
+# ):
+#         try:
+#             # Authenticate the current user
+#             current_user = await get_current_user(request=request, token=token)
+#             if not current_user:
+#                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+#             # Ensure the user is a super admin
+#             if current_user.user_role != 2:  # Assuming role `2` is for super admin
+#                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+#             # Fetch the vendor's data
+#             vendor = await vendor_collection.find_one({"_id": vendor_id})
+#             if not vendor:
+#                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+#             # Prepare new slots
+#             new_availability_slots = []
+#             for day_slot in slots:
+#                 day_slot_data = day_slot.dict()
+#                 for time_slot in day_slot_data.get("time_slots", []):
+#                     # Format start_time and end_time
+#                     time_slot["start_time"] = (
+#                         time_slot["start_time"].strftime("%H:%M")
+#                         if isinstance(time_slot["start_time"], time)
+#                         else time_slot["start_time"]
+#                     )
+#                     time_slot["end_time"] = (
+#                         time_slot["end_time"].strftime("%H:%M")
+#                         if isinstance(time_slot["end_time"], time)
+#                         else time_slot["end_time"]
+#                     )
+
+#                     # Calculate duration
+#                     ts = TimeSlot(**time_slot)
+#                     ts.calculate_duration()
+#                     time_slot["duration"] = ts.duration
+
+#                 new_availability_slots.append(day_slot_data)
+
+#             # Update vendor slots in the database
+#             await vendor_collection.update_one(
+#                 {"_id": vendor_id},
+#                 {"$set": {"availability_slots": new_availability_slots}}
+#             )
+
+#             # Fetch and return updated vendor data
+#             updated_vendor = await vendor_collection.find_one({"_id": vendor_id})
+#             return serialize_mongo_document(updated_vendor)
+
+#         except HTTPException:
+#             # Propagate HTTP exceptions
+#             raise
+#         except Exception as ex:
+#             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))

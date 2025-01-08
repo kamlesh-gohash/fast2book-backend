@@ -15,17 +15,11 @@ from app.v1.models.vendor import Vendor
 from typing import Dict
 
 
-class Bookings(BaseModel):
-    user_id: Link[User]
-    vendor_id: Link[Vendor]
-    slots_id: Link[Slots]
-    # transaction_id: Link[Transaction]
-    slot_data: Dict[str, SlotRequest]
-    category: Link[Category]
-    service: Link[Service]
-    booking_date: datetime
+class Support(BaseModel):
+    user_id: Link[User]  # Link to the user who made the request
+    title: str
     description: str
-    status: StatusEnum = StatusEnum.Active
+    is_open: bool = True
 
     class Settings:
-        name = "bookings"
+        name = "support"
