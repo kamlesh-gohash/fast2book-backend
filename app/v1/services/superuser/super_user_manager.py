@@ -13,10 +13,10 @@ from fastapi import Body, HTTPException, Path, Request, status
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import User, user_collection, vendor_collection
+from app.v1.models.slots import *
 from app.v1.schemas.superuser.superuser_auth import *
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
-from app.v1.models.slots import *
 
 
 def serialize_mongo_document(document):

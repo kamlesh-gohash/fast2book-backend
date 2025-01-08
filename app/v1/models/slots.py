@@ -1,10 +1,12 @@
-from datetime import datetime, timedelta, time
+from datetime import datetime, time, timedelta
 from enum import Enum
+from typing import List
+
 from beanie import Link
 from pydantic import BaseModel
+
 from app.v1.models.user import StatusEnum, User
 from app.v1.models.vendor import Vendor
-from typing import List
 
 
 class DayEnum(str, Enum):

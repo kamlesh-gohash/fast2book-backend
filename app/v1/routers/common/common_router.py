@@ -1,10 +1,13 @@
 # routes.py
-import time
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
-from typing import List
-from app.v1.utils.s3 import upload_to_s3
 import os
+import time
+
+from typing import List
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
+from app.v1.utils.s3 import upload_to_s3
 
 
 router = APIRouter()

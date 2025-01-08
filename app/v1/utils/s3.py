@@ -1,12 +1,15 @@
 # utils.py
-import time
+import os
 import random
 import string
+import time
+
+from typing import List
+
 import boto3
+
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 from fastapi import HTTPException
-from typing import List
-import os
 
 
 def generate_random_string(length: int = 5) -> str:

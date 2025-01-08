@@ -1,13 +1,17 @@
-from typing import Optional, List
-import zon
-from pydantic import BaseModel, EmailStr, Field, validator
-from app.v1.utils.response.response_format import validation_error
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import List, Optional
+
+import zon
+
 from beanie import Link
+from pydantic import BaseModel, EmailStr, Field, validator
+
+from app.v1.models.slots import *
 from app.v1.models.user import StatusEnum, User
 from app.v1.models.vendor import Vendor
-from app.v1.models.slots import *
+from app.v1.utils.response.response_format import validation_error
+
 
 # slots_create_validator = zon.record(
 #     {

@@ -13,11 +13,11 @@ from fastapi import Body, HTTPException, Query, Request, status
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import User, category_collection, services_collection, user_collection, vendor_collection
+from app.v1.models.slots import *
+from app.v1.models.vendor import Vendor
 from app.v1.schemas.vendor.vendor_auth import *
 from app.v1.utils.email import generate_otp, send_email, send_vendor_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
-from app.v1.models.vendor import Vendor
-from app.v1.models.slots import *
 
 
 def convert_objectid(obj):

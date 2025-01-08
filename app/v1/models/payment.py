@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field, validator
-from app.v1.models.user import StatusEnum
 from typing import ClassVar
+
+from pydantic import BaseModel, Field, validator
+
+from app.v1.models.user import StatusEnum
 
 
 class PaymentType(BaseModel):

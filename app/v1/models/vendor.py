@@ -1,10 +1,11 @@
 from datetime import datetime
-from beanie import Document
-from pydantic import Field, BaseModel
-from beanie import Link
-from app.v1.models.user import StatusEnum, User
 from enum import Enum
 from typing import List, Optional
+
+from beanie import Document, Link
+from pydantic import BaseModel, Field
+
+from app.v1.models.user import StatusEnum, User
 
 
 class BusinessType(str, Enum):

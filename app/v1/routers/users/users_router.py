@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.v1.dependencies import get_user_manager
+from app.v1.middleware.auth import get_token_from_header
 from app.v1.models import User, UserToken
 from app.v1.schemas.user.auth import *
 from app.v1.services import UserManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
 from app.v1.utils.token import *
-from app.v1.middleware.auth import get_token_from_header
 
 
 router = APIRouter()

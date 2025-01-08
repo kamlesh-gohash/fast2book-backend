@@ -2,9 +2,9 @@ from datetime import datetime
 
 from bcrypt import gensalt, hashpw
 
-from app.v1.models import User, payment_collection, category_collection
-from app.v1.models.payment import PaymentType
+from app.v1.models import User, category_collection, payment_collection
 from app.v1.models.category import Category
+from app.v1.models.payment import PaymentType
 
 
 def hash_password(password: str) -> str:

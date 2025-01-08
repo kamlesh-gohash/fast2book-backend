@@ -3,7 +3,7 @@
 import random
 
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import List, Optional
 
 import bcrypt
 
@@ -11,16 +11,16 @@ from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
-from fastapi import Body, HTTPException, status, Request
+from fastapi import Body, HTTPException, Request, status
+from motor.motor_asyncio import AsyncIOMotorCollection  # Ensure this import for Motor
 
-from app.v1.models import User, user_collection, category_collection, services_collection, vendor_collection
-from app.v1.utils.email import generate_otp, send_email
-from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 from app.v1.middleware.auth import get_current_user
+from app.v1.models import User, category_collection, services_collection, user_collection, vendor_collection
 from app.v1.models.category import Category
 from app.v1.models.services import Service
 from app.v1.models.vendor import Vendor
-from motor.motor_asyncio import AsyncIOMotorCollection  # Ensure this import for Motor
+from app.v1.utils.email import generate_otp, send_email
+from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
 class UserManager:
