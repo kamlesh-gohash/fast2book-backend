@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  fast2book-app:
+    build:
+      context: . # Path to your application (Dockerfile should be here)
+    container_name: fast2book-app
+    ports:
+      - "5000:5000" # Map port 5000 on the host to port 5000 in the container
+    environment:
+      - POETRY_VIRTUALENVS_CREATE=false
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - .:/app # Mount current directory to the container for live updates
+    command: >
+      poetry run uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
