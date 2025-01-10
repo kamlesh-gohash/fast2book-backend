@@ -1,57 +1,33 @@
-# Stage 1: Build Stage
-FROM python:3.12-slim AS build
+# Use the official Python image with slim variant
+FROM python:3.12-slim AS base
 
-# Set working directory
+# Set the working directory
 WORKDIR /app
 
-# Install system dependencies required for Poetry and other Python packages
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry (latest stable version)
+# Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python3 -
 
 # Add Poetry to PATH
 ENV PATH="/root/.local/bin:$PATH"
 
-# Copy Poetry configuration files to the container
+# Copy only Poetry config files to leverage Docker layer caching
 COPY pyproject.toml poetry.lock /app/
 
-# Install dependencies using Poetry
-RUN poetry install --no-dev --no-interaction --no-root
+# Install dependencies (without dev dependencies)
+RUN poetry install --only main --no-interaction --no-root
 
-# Formatting the code (this is optional, but can be done as part of the Docker build process)
-RUN poetry run black .
+# Copy the entire application to the working directory
+COPY . /app
 
-# Running tests (also optional and would normally be done in CI)
-RUN poetry run pytest --maxfail=1 --disable-warnings -q
-
-# Stage 2: Runtime Stage
-FROM python:3.12-slim
-
-# Set working directory
-WORKDIR /app
-
-# Install runtime dependencies (just the necessary ones)
-RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy the virtual environment from the build stage to this runtime stage
-COPY --from=build /app /app
-
-# Expose port 5000 (for FastAPI app with Uvicorn)
+# Expose port 5000 for the FastAPI app
 EXPOSE 5000
 
-# Use a non-root user for security (create and switch to the non-root user)
-RUN groupadd -r nonroot && useradd -r -g nonroot nonroot
-USER nonroot
-
-# Copy application files to the container
-COPY ./app /app/
-
-# Command to run the FastAPI app using Uvicorn
+# Define the command to run the application
 CMD ["poetry", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5000"]
