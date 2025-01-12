@@ -8,8 +8,10 @@ import zon
 from beanie import PydanticObjectId
 from bson import ObjectId
 from pydantic import BaseModel, EmailStr, validator
+from zon import ZonList, record, string
 
 from app.v1.models.category import Category, StatusEnum
+from app.v1.models.subscription import *
 from app.v1.utils.response.response_format import validation_error
 
 
@@ -30,7 +32,7 @@ create_subscription_request = zon.record(
 class CreateSubscriptionRequest(BaseModel):
     title: str
     price: float
-    features: list[str]
+    features: List[FeatureItem]
     status: StatusEnum = StatusEnum.ACTIVE
 
     @validator("status")
@@ -96,7 +98,7 @@ update_subscription_validator = zon.record(
 class UpdateSubscriptionRequest(BaseModel):
     title: Optional[str] = None
     price: Optional[float] = None
-    features: Optional[list[str]] = None
+    features: Optional[List[FeatureItem]] = None
     status: Optional[StatusEnum] = None
 
     def validate(self):

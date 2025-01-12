@@ -8,7 +8,7 @@ from app.v1.models.payment import PaymentType
 
 
 class PaymentManager:
-    async def payment_type_list(self, request: Request, token: str):
+    async def payment_type_list(self, request: Request, token: str, page: int, limit: int):
         try:
             # Get the current user
             current_user = await get_current_user(request=request, token=token)
@@ -18,8 +18,9 @@ class PaymentManager:
             # Check if the current user has the "vendor" role
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-
-            payment_types = await payment_collection.find().to_list(None)
+            skip = max((page - 1) * limit, 0)
+            query = {}
+            payment_types = await payment_collection.find(query).skip(skip).limit(limit).to_list(None)
             if not payment_types:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No payment types found")
             payment_data = []
@@ -29,9 +30,12 @@ class PaymentManager:
                         "id": str(payment["_id"]),
                         "name": payment["name"],
                         "status": payment["status"],
+                        "created_at": payment["created_at"],
                     }
                 )
-            return payment_data
+            total_count = await payment_collection.count_documents(query)
+            total_pages = (total_count + limit - 1) // limit
+            return {"data": payment_data, "total_items": total_count, "total_pages": total_pages}
         except HTTPException as e:
             raise e
         except Exception as ex:
@@ -47,7 +51,7 @@ class PaymentManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             # Check if the current user has the "vendor" role
-            if "admin" not in [role.value for role in current_user.roles]:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
             payment = await payment_collection.find_one({"_id": ObjectId(id)})

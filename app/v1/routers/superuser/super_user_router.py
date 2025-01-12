@@ -343,28 +343,3 @@ async def delete_super_user(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-
-
-# @router.post("/vendor-slots/{vendor_id}", status_code=status.HTTP_200_OK)
-# async def create_vendor_slots(
-#     request: Request,
-#     slot_request: SlotRequest,
-#     token: str = Depends(get_token_from_header),
-#     vendor_id: str = Path(..., title="The ID of the vendor to create slots for"),
-#     user_manager: SuperUserManager = Depends(get_super_user_manager),
-# ):
-#     try:
-#         # Pass data to user manager for processing
-#         result = await user_manager.create_vendor_slots(request=request, token=token, vendor_id=vendor_id, slots=slot_request.slots)
-#         return {
-#             "message": "Slots created successfully",
-#             "data": result
-#         }
-#     except HTTPException as http_ex:
-#         # Handle known HTTP exceptions
-#         raise http_ex
-#     except Exception as ex:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail=f"An unexpected error occurred: {str(ex)}"
-#         )

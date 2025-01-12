@@ -1,9 +1,8 @@
+import os
 import random
 
 from datetime import datetime, timedelta
 from typing import Optional
-
-import bcrypt
 
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
@@ -42,11 +41,15 @@ class ServicesManager:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Service with name '{service_request.name}' already exists.",
                 )
-
+            image_name = service_request.service_image
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
             # Prepare service data
             service_data = {
                 "name": service_request.name,
                 "status": service_request.status,
+                "service_image": service_request.service_image,
+                "service_image_url": file_url,
                 "category_id": ObjectId(service_request.category_id),
                 "category_name": category["name"],
                 "created_at": datetime.utcnow(),
@@ -59,6 +62,9 @@ class ServicesManager:
             response_data = {
                 "id": str(created_service["_id"]),
                 "name": created_service["name"],
+                "service_image": created_service["service_image"],
+                "service_image_url": file_url,
+                "image_url": file_url,
                 "status": created_service["status"],
                 "category_id": str(created_service["category_id"]),
                 "category_name": created_service["category_name"],
@@ -104,6 +110,8 @@ class ServicesManager:
                     {
                         "id": str(service["_id"]),
                         "name": service["name"],
+                        "service_image": service["service_image"],
+                        "service_image_url": service["service_image_url"],
                         "status": service["status"],
                         "category_id": str(service["category_id"]),
                         "category_name": category_name,
@@ -137,6 +145,8 @@ class ServicesManager:
             return {
                 "id": str(service["_id"]),
                 "name": service["name"],
+                "service_image": service["service_image"],
+                "service_image_url": service["service_image_url"],
                 "status": service["status"],
                 "category_id": str(service["category_id"]),
                 "category_name": category["name"],
@@ -172,11 +182,24 @@ class ServicesManager:
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Category with ID '{service_request.category_id}' does not exist.",
                     )
-
             # Prepare update data
             update_data = {}
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+
+            # Update image if provided
+            if service_request.service_image:
+                image_name = service_request.service_image
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
+                update_data["service_image"] = image_name
+                update_data["service_image_url"] = file_url
+            else:
+                file_url = (
+                    f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{service.get('service_image')}"
+                )
+
             if service_request.name is not None:
                 update_data["name"] = service_request.name
+
             if service_request.status is not None:
                 update_data["status"] = service_request.status
             if service_request.category_id is not None:
@@ -199,6 +222,8 @@ class ServicesManager:
             return {
                 "id": str(updated_service["_id"]),
                 "name": updated_service.get("name"),
+                "service_image": updated_service.get("service_image"),
+                "service_image_url": file_url,
                 "status": updated_service.get("status"),
                 "category_id": str(updated_service.get("category_id")),
                 "category_name": category_name,
@@ -235,7 +260,7 @@ class ServicesManager:
             allowed_roles = ["admin", "vendor"]
             user_roles = [role.value for role in current_user.roles]
 
-            if not any(role in allowed_roles for role in user_roles):
+            if not any(role in allowed_roles for role in user_roles) and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             active_categories = await category_collection.find({"status": "active"}).to_list(length=100)
 

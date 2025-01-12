@@ -12,7 +12,7 @@ from app.v1.config.auth import oauth
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 ALGORITHM = "HS256"  # You can use other algorithms like RS256 if you want
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
-REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24
+REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
 
 async def get_oauth_tokens(user) -> dict:

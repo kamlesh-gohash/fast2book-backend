@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 
 from app.v1.dependencies import get_category_manager, get_subscription_manager
+from app.v1.middleware.auth import get_token_from_header
 from app.v1.models import services
 from app.v1.schemas.subscription.subscription_auth import CreateSubscriptionRequest, UpdateSubscriptionRequest
 from app.v1.services import CategoryManager, SubscriptionManager
@@ -12,7 +13,9 @@ router = APIRouter()
 
 @router.post("/create-subscription", status_code=status.HTTP_200_OK)
 async def create_subscription(
+    request: Request,
     subscription_request: CreateSubscriptionRequest,
+    token: str = Depends(get_token_from_header),
     subscription_manager: "SubscriptionManager" = Depends(lambda: SubscriptionManager()),
 ):
     # Validate the service request
@@ -22,7 +25,9 @@ async def create_subscription(
 
     try:
         # Create the service
-        result = await subscription_manager.subscription_create(subscription_request)
+        result = await subscription_manager.subscription_create(
+            request=request, token=token, subscription_request=subscription_request
+        )
         return success({"message": "Subscription created successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -37,13 +42,17 @@ async def create_subscription(
 
 @router.get("/subscription-list", status_code=status.HTTP_200_OK)
 async def subscription_list(
+    request: Request,
+    token: str = Depends(get_token_from_header),
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search term to filter subscriptions by title"),
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
     try:
-        result = await subscription_manager.subscription_list(page, limit, search)
+        result = await subscription_manager.subscription_list(
+            request=request, token=token, page=page, limit=limit, search=search
+        )
         return success({"message": "Subscription List found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -58,12 +67,14 @@ async def subscription_list(
 
 @router.get("/get-subscription/{id}", status_code=status.HTTP_200_OK)
 async def get_subscription(
+    request: Request,
+    token: str = Depends(get_token_from_header),
     id: str = Path(..., title="The ID of the subscription to retrieve"),
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
     try:
         # Call the ServiceManager to retrieve the service by id
-        result = await subscription_manager.subscription_get(id)
+        result = await subscription_manager.subscription_get(request=request, token=token, id=id)
 
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="subscription not found")
@@ -82,7 +93,9 @@ async def get_subscription(
 
 @router.put("/update-subscription/{id}", status_code=status.HTTP_200_OK)
 async def update_service(
+    request: Request,
     subscription_request: UpdateSubscriptionRequest,
+    token: str = Depends(get_token_from_header),
     id: str = Path(..., title="The ID of the service to update"),
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
@@ -101,7 +114,9 @@ async def update_service(
         )
     try:
         # Call the ServiceManager to update the service by id
-        result = await subscription_manager.subscription_update(id, subscription_request)
+        result = await subscription_manager.subscription_update(
+            request=request, token=token, id=id, subscription_request=subscription_request
+        )
 
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="subscription not found")

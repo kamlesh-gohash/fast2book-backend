@@ -138,5 +138,4 @@ async def send_vendor_email(to_email, password, login_link):
         server.quit()
         return {"status": "SUCCESS", "message": "Email sent successfully."}
     except Exception as e:
-        print(f"Failed to send email to {to_email}: {e}")
         return {"status": "FAILURE", "message": str(e)}

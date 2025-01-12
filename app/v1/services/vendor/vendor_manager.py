@@ -12,7 +12,14 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import Body, HTTPException, Query, Request, status
 
 from app.v1.middleware.auth import get_current_user
-from app.v1.models import User, category_collection, services_collection, user_collection, vendor_collection
+from app.v1.models import (
+    User,
+    category_collection,
+    services_collection,
+    slots_collection,
+    user_collection,
+    vendor_collection,
+)
 from app.v1.models.slots import *
 from app.v1.models.vendor import Vendor
 from app.v1.schemas.vendor.vendor_auth import *
@@ -249,15 +256,15 @@ class VendorManager:
             }
 
             user_result = await user_collection.insert_one(user_data)
-            image_name = create_vendor_request.vendor_image
-            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-            print(bucket_name, "bucket_name")
-            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
+            # image_name = create_vendor_request.vendor_image
+            # bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+            # print(bucket_name, "bucket_name")
+            # file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
             # Prepare Vendor data
             vendor_data = {
                 "user_id": str(user_result.inserted_id),
-                "vendor_image": create_vendor_request.vendor_image,
-                "vendor_image_url": file_url,
+                # "vendor_image": create_vendor_request.vendor_image,
+                # "vendor_image_url": file_url,
                 "business_name": create_vendor_request.business_name,
                 "business_type": create_vendor_request.business_type,
                 "business_address": create_vendor_request.business_address,
@@ -289,7 +296,7 @@ class VendorManager:
                 "id": str(user_result.inserted_id),
                 "vendor_data": {
                     "user_id": str(user_result.inserted_id),
-                    "vendor_image_url": file_url,
+                    # "vendor_image_url": file_url,
                     "business_name": create_vendor_request.business_name,
                     "business_type": create_vendor_request.business_type,
                     "business_address": create_vendor_request.business_address,
@@ -356,13 +363,10 @@ class VendorManager:
 
             # Fetch vendor data
             vendors = await user_collection.find(query).skip(skip).limit(limit).to_list(length=limit)
-            print(vendors, "vendors")
             vendor_data = []
             for vendor in vendors:
-                print(vendor, "vendor")
                 # Fetch associated vendor details
                 vendor_id = str(vendor.pop("_id"))
-                print(vendor_id, "vendor_id")
                 vendor["id"] = vendor_id
 
                 # Capitalize names and format email
@@ -372,7 +376,6 @@ class VendorManager:
 
                 # Fetch vendor-specific data
                 vendor_details = await vendor_collection.find_one({"user_id": vendor_id})
-                print(vendor_details, "vendor_details")
                 if vendor_details:
                     vendor["business_name"] = vendor_details.get("business_name")
                     vendor["business_type"] = vendor_details.get("business_type")
@@ -593,7 +596,7 @@ class VendorManager:
             allowed_roles = ["admin", "vendor"]
             user_roles = [role.value for role in current_user.roles]
 
-            if not any(role in allowed_roles for role in user_roles):
+            if not any(role in allowed_roles for role in user_roles) and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
             # Query to get all active services for the given category_id
@@ -859,14 +862,11 @@ class VendorManager:
 
             # If there are updates to vendor data, update vendor_collection
             if vendor_data:
-                print(vendor_data, "vendor_data")
                 await vendor_collection.update_one(vendor_query, {"$set": vendor_data})
 
             # Check if the vendor exists in the vendor collection
             updated_vendor = await vendor_collection.find_one(vendor_query)
-            print(updated_vendor, "updated_vendor")
             if not updated_vendor:
-                print(f"Vendor not found for query: {vendor_query}")
 
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
@@ -894,7 +894,6 @@ class VendorManager:
                 },
             }
 
-            print(response_data, "response_data")
             return response_data
 
         except Exception as ex:
@@ -1227,12 +1226,31 @@ class VendorManager:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Forbidden: The provided user ID is not associated with this business user",
                 )
-            availability_slots = user.get("availability_slots", [])
+            new_availability_slots = user.get("availability_slots", [])
+            new_availability_slots = []
             for day_slot in slots:
                 day_slot_data = day_slot.dict()
-                availability_slots.append(day_slot_data)
+                for time_slot in day_slot_data.get("time_slots", []):
+                    # Format start_time and end_time
+                    time_slot["start_time"] = (
+                        time_slot["start_time"].strftime("%H:%M")
+                        if isinstance(time_slot["start_time"], time)
+                        else time_slot["start_time"]
+                    )
+                    time_slot["end_time"] = (
+                        time_slot["end_time"].strftime("%H:%M")
+                        if isinstance(time_slot["end_time"], time)
+                        else time_slot["end_time"]
+                    )
+
+                    # Calculate duration
+                    ts = TimeSlot(**time_slot)
+                    ts.calculate_duration()
+                    time_slot["duration"] = ts.duration
+
+                new_availability_slots.append(day_slot_data)
             await user_collection.update_one(
-                {"_id": ObjectId(id)}, {"$set": {"availability_slots": availability_slots}}
+                {"_id": ObjectId(id)}, {"$set": {"availability_slots": new_availability_slots}}
             )
             updated_user = await user_collection.find_one({"_id": ObjectId(id)})
             if updated_user:
@@ -1283,6 +1301,18 @@ class VendorManager:
             )
 
     async def create_vendor_slots(self, request: Request, token: str, vendor_id: str, slots: List[DaySlot]):
+        """
+        Set availability slots for a specific user created by the current business user.
+
+        Args:
+            request (Request): The HTTP request object.
+            token (str): Authentication token for the current user.
+            user_id (str): ID of the user for whom slots are being set.
+            slots (List[DaySlot]): List of slots to be added.
+
+        Returns:
+            dict: Updated user availability slots.
+        """
         try:
             # Authenticate the current user
             current_user = await get_current_user(request=request, token=token)
@@ -1293,18 +1323,25 @@ class VendorManager:
             if current_user.user_role != 2:  # Assuming role `2` is for super admin
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-            # Debugging output
-
-            # Find vendor based on the user_id, assuming "user_id" is the field in the vendor document
+            # Fetch the vendor by vendor_id
             vendor = await vendor_collection.find_one({"user_id": vendor_id})
-
             if not vendor:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+                # If no vendor found, check if the vendor is a business vendor
+                user = await user_collection.find_one({"_id": ObjectId(vendor_id), "roles": "vendor_user"})
+                if not user:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Prepare new slots
+                # Use the user_id from the user table to fetch the vendor
+                vendor = await vendor_collection.find_one({"user_id": user["created_by"]})
+                if not vendor:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+
+            # Initialize the list of new availability slots
             new_availability_slots = []
+            print(new_availability_slots, "new_availability_slotsaaaaaaaaaaaaaaa")
             for day_slot in slots:
                 day_slot_data = day_slot.dict()
+
                 for time_slot in day_slot_data.get("time_slots", []):
                     # Format start_time and end_time
                     time_slot["start_time"] = (
@@ -1318,30 +1355,46 @@ class VendorManager:
                         else time_slot["end_time"]
                     )
 
-                    # Calculate duration
+                    # Calculate the duration of the slot
                     ts = TimeSlot(**time_slot)
                     ts.calculate_duration()
                     time_slot["duration"] = ts.duration
 
+                # Add the day slot data to the new availability slots
                 new_availability_slots.append(day_slot_data)
 
-            # Update vendor slots in the database
-            await vendor_collection.update_one(
-                {"user_id": vendor_id},  # Use `user_id` for the query
-                {"$set": {"availability_slots": new_availability_slots}},
+            # Update the user's availability slots in the database
+            await user_collection.update_one(
+                {"_id": ObjectId(vendor_id)}, {"$set": {"availability_slots": new_availability_slots}}
             )
+            # Fetch the updated user document
+            updated_user = await user_collection.find_one({"_id": ObjectId(vendor_id)})
+            print(updated_user, "updated usermmmmmmmmmmmmmmmmmmmmm")
+            if updated_user:
+                updated_user = serialize_mongo_document(updated_user)
 
-            # Fetch and return updated vendor data
-            updated_vendor = await vendor_collection.find_one({"user_id": vendor_id})
-            return serialize_mongo_document(updated_vendor)
+            # Convert Mongo _id to a string for consistency in the response
+            updated_user["id"] = str(updated_user.pop("_id"))
+            return updated_user
 
-        except HTTPException:
-            # Propagate HTTP exceptions
-            raise
+        except HTTPException as ex:
+            raise ex
         except Exception as ex:
+            print(ex)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def get_vendor_slots(self, request: Request, token: str, vendor_id: str):
+        """
+        Fetch availability slots for a vendor or vendor_user.
+
+        Args:
+            request (Request): The HTTP request object.
+            token (str): Authentication token for the current user.
+            vendor_id (str): ID of the vendor or vendor_user.
+
+        Returns:
+            dict: Vendor data along with availability slots.
+        """
         try:
             # Authenticate the current user
             current_user = await get_current_user(request=request, token=token)
@@ -1352,19 +1405,174 @@ class VendorManager:
             if current_user.user_role != 2:  # Assuming role `2` is for super admin
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-            # Find vendor based on the user_id, assuming "user_id" is the field in the vendor document
+            # Fetch the vendor by vendor_id
             vendor = await vendor_collection.find_one({"user_id": vendor_id})
-
             if not vendor:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+                # If no vendor found, check if the vendor is a business vendor
+                user = await user_collection.find_one({"_id": ObjectId(vendor_id), "roles": "vendor_user"})
+                if not user:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Fetch and return updated vendor data
-            updated_vendor = await vendor_collection.find_one({"user_id": vendor_id})
-            updated_vendor["id"] = str(updated_vendor.pop("_id"))
-            return serialize_mongo_document(updated_vendor)
+                # Use the user_id from the user table to fetch the vendor
+                vendor = await vendor_collection.find_one({"user_id": user["created_by"]})
+                if not vendor:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            # Check the business type
+            business_type = vendor.get("business_type", "individual")
+            if business_type == "individual":
+                # Fetch availability slots for individual vendors directly
+                availability_slots = vendor.get("availability_slots", [])
+                print(availability_slots, "availability slots,hhhhhhhoooooooooooooooo")
+                return {
+                    "vendor_id": vendor["user_id"],
+                    "vendor_name": vendor.get("business_name", "N/A"),
+                    "business_type": business_type,
+                    "availability_slots": availability_slots,
+                }
+
+            # For business vendors, check for vendor_user slots
+            user = await user_collection.find_one({"_id": ObjectId(vendor_id), "roles": "vendor_user"})
+            if not user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+
+            # Use the `created_by` field to locate the vendor associated with the vendor_user
+            parent_vendor = await vendor_collection.find_one({"user_id": user["created_by"]})
+            if not parent_vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent vendor not found")
+
+            # Retrieve availability slots for the vendor_user
+            user_slots = user.get("availability_slots", [])
+
+            # Prepare response
+            response = {
+                "vendor_id": parent_vendor["user_id"],
+                "vendor_name": parent_vendor.get("business_name", "N/A"),
+                "vendor_user_id": str(user["_id"]),
+                "vendor_user_name": f"{user.get('first_name', '')} {user.get('last_name', '')}".strip(),
+                "business_type": business_type,
+                "availability_slots": user_slots,
+            }
+            print(response, "responses hhhhhhhhhhhhhhhhhhhhhhhhhhhhhh")
+            return response
 
         except HTTPException:
-            # Propagate HTTP exceptions
-            raise
+            raise  # Propagate HTTP exceptions
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def vendor_list_for_slot(self, request: Request, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            # Ensure the user is a super admin
+            if current_user.user_role != 2:  # Assuming role `2` is for super admin
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            query = {"roles": {"$regex": "^vendor$", "$options": "i"}}
+            # Fetch all vendors from the user collection (consider filtering for vendor-specific users)
+            vendors = await user_collection.find(query).to_list(None)  # Assuming role 'vendor' is used for vendor users
+            vendor_data = []
+
+            for vendor in vendors:
+                vendor_id = str(vendor.pop("_id"))  # Extract vendor ID and remove it from the document
+                vendor["id"] = vendor_id
+
+                # Capitalize names and format email
+                vendor["first_name"] = vendor.get("first_name", "").capitalize()
+                vendor["last_name"] = vendor.get("last_name", "").capitalize()
+                vendor["email"] = vendor.get("email", "").lower()
+
+                # Fetch vendor-specific data in parallel using asyncio.gather
+                vendor_details = await vendor_collection.find_one({"user_id": vendor_id})
+                if vendor_details:
+                    vendor["business_name"] = vendor_details.get("business_name", "Unknown")
+                    vendor["business_type"] = vendor_details.get("business_type", "Unknown")
+                    vendor["business_address"] = vendor_details.get("business_address", "Unknown")
+                    vendor["business_details"] = vendor_details.get("business_details", "No Details")
+                    vendor["services"] = vendor_details.get("services", [])
+                    vendor["service_details"] = vendor_details.get("service_details", [])
+                    vendor["manage_plan"] = vendor_details.get("manage_plan", False)
+                    vendor["manage_fee_and_gst"] = vendor_details.get("manage_fee_and_gst", False)
+                    vendor["manage_offer"] = vendor_details.get("manage_offer", False)
+                    vendor["is_payment_verified"] = vendor_details.get("is_payment_verified", False)
+                    vendor["status"] = vendor_details.get("status", "N/A")
+                    vendor["created_at"] = vendor_details.get("created_at")
+
+                    # Fetch category name
+                    category_id = vendor_details.get("category_id")
+                    if category_id:
+                        category = await category_collection.find_one({"_id": ObjectId(category_id)})
+                        vendor["category_name"] = category.get("name", "Unknown") if category else "Unknown"
+                    else:
+                        vendor["category_name"] = "Unknown"
+
+                # Remove sensitive information
+                vendor.pop("password", None)
+                vendor.pop("otp", None)
+
+                vendor_data.append(vendor)
+
+            return {
+                "data": vendor_data,
+            }
+
+        except Exception as ex:
+            # Log the error for debugging and re-raise with a 500 status
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )
+
+    async def vendor_user_list_for_slot(self, request: Request, token: str, vendor_id: str):
+        try:
+            # Get the current user from the request
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            # Ensure the user is a super admin
+            if current_user.user_role != 2:  # Assuming role `2` is for super admin
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Validate the vendor ID
+            if not ObjectId.is_valid(vendor_id):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid vendor ID")
+            # Fetch vendor details by vendor_id
+            vendor_details = await vendor_collection.find_one({"user_id": vendor_id})
+            if not vendor_details:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            # Check if the vendor's business type is "business"
+            if vendor_details.get("business_type") != "business":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Vendor's business type is not 'business'"
+                )
+            # Fetch users created by this vendor
+            users = await user_collection.find({"created_by": vendor_id}).to_list(None)
+            vendor_user_data = []
+
+            for user in users:
+                # Process each user (e.g., capitalize names, format email, etc.)
+                user_data = {
+                    "id": str(user["_id"]),
+                    "first_name": user.get("first_name", "").capitalize(),
+                    "last_name": user.get("last_name", "").capitalize(),
+                    "email": user.get("email", ""),
+                    "created_at": user.get("created_at"),
+                }
+                vendor_user_data.append(user_data)
+
+            return {
+                "data": vendor_user_data,
+            }
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            print(ex)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )

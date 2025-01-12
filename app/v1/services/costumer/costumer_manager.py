@@ -265,7 +265,6 @@ class CostumerManager:
 
             return response_data
         except Exception as e:
-            print(e)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     async def delete_costumer(self, request: Request, token: str, id: str):

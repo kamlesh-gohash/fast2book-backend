@@ -18,8 +18,12 @@ class StatusEnum(str, Enum):
     DRAFT = "draft"
 
 
+class FeatureItem(BaseModel):
+    item: str
+
+
 class Subscription(Document):
     title: str = Field(..., min_length=1, max_length=50)
     price: float
-    features: List[str]
+    features: List[FeatureItem]
     status: StatusEnum = Field(default=StatusEnum.ACTIVE)

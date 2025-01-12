@@ -264,7 +264,6 @@ async def vendor_profile(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -509,12 +508,13 @@ async def create_vendor_slots(
         result = await vendor_manager.create_vendor_slots(
             request=request, token=token, vendor_id=vendor_id, slots=slot_request.slots
         )
-        return {"message": "Slots created successfully", "data": result}
+        return success({"message": "Slots created successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -531,7 +531,50 @@ async def get_vendor_slots(
     try:
         # Pass data to user manager for processing
         result = await vendor_manager.get_vendor_slots(request=request, token=token, vendor_id=vendor_id)
-        return {"message": "Slots retrieved successfully", "data": result}
+        return success({"message": "Slots retrieved successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vendor-list-for-slot", status_code=status.HTTP_200_OK)
+async def vendor_list_for_slot(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        # Pass data to user manager for processing
+        result = await vendor_manager.vendor_list_for_slot(request=request, token=token)
+        return success({"message": "Vendor list retrieved successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vendor-user-list-for-slot/{vendor_id}", status_code=status.HTTP_200_OK)
+async def vendor_user_list_for_slot(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    vendor_id=str,
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        # Pass data to user manager for processing
+        result = await vendor_manager.vendor_user_list_for_slot(request=request, token=token, vendor_id=vendor_id)
+        return success({"message": "Vendor list retrieved successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:

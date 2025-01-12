@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.v1.dependencies import get_user_manager
+from app.v1.dependencies import get_support_manager, get_user_manager
 from app.v1.middleware.auth import get_token_from_header
 from app.v1.models import User, UserToken
+from app.v1.models.support import Support
 from app.v1.schemas.user.auth import *
 from app.v1.services import UserManager
+from app.v1.services.support.support_manager import SupportManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
 from app.v1.utils.token import *
 
@@ -231,7 +233,6 @@ async def get_category_list_for_users(user_manager: UserManager = Depends(get_us
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -280,4 +281,20 @@ async def get_vendor_list_for_services(services_id: str, user_manager: UserManag
     except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
+        )
+
+
+@router.post("/support", status_code=status.HTTP_200_OK)
+async def support_request(support_request: Support, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.create_support_request(support_request=support_request)
+        return success({"message": "Support request submitted successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )

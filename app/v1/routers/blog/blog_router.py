@@ -96,7 +96,8 @@ class BlogRequest(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
     blog_url: Optional[str] = None
-    image: Optional[str] = None
+    blog_image: Optional[str] = None
+    blog_image_url: Optional[str] = None
     author_name: Optional[str] = None
     category: Optional[str] = None
     tags: Optional[List[str]] = None

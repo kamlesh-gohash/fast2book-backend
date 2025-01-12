@@ -21,7 +21,7 @@ async def upload_file(
     try:
         """Handles file uploads to S3 based on type."""
         folder_mapping = {
-            "1": "categories",
+            "1": "services",
             "2": "vendors",
         }
 

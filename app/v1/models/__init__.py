@@ -27,6 +27,8 @@ booking_collection = get_model("bookings")
 slots_collection = get_model("slots")
 payment_collection = get_model("payments")
 support_collection = get_model("supports")
+permission_collection = get_model("permissions")
+permission_assign_request = get_model("permission_assign_request")
 
 
 __all__ = {
@@ -41,4 +43,6 @@ __all__ = {
     "slots_collection": slots_collection,
     "payment_collection": payment_collection,
     "support_collection": support_collection,
+    "permission_collection": permission_collection,
+    "permission_assign_request": permission_assign_request,
 }

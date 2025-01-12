@@ -8,6 +8,7 @@ from typing import List, Optional
 import bcrypt
 
 from bcrypt import gensalt, hashpw
+from beanie import Link
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
@@ -15,9 +16,18 @@ from fastapi import Body, HTTPException, Request, status
 from motor.motor_asyncio import AsyncIOMotorCollection  # Ensure this import for Motor
 
 from app.v1.middleware.auth import get_current_user
-from app.v1.models import User, category_collection, services_collection, user_collection, vendor_collection
+from app.v1.models import (
+    User,
+    category_collection,
+    services_collection,
+    support_collection,
+    user_collection,
+    vendor_collection,
+)
 from app.v1.models.category import Category
 from app.v1.models.services import Service
+from app.v1.models.support import Support
+from app.v1.models.user import Role
 from app.v1.models.vendor import Vendor
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
@@ -51,6 +61,8 @@ class UserManager:
         user.otp = otp
         user.otp_expires = otp_expiration_time
         user.password = hashpw(user.password.encode("utf-8"), gensalt()).decode("utf-8")
+        if not user.roles:
+            user.roles = [Role.user]
         # user.otp_expires = otp_expiration_time
         user_dict = user.dict()
         result = await user_collection.insert_one(user_dict)
@@ -99,7 +111,7 @@ class UserManager:
         result = await user_collection.find_one_and_delete({"email": email})
         if not result:
             raise ValueError(f"User with email '{email}' does not exist")
-        result["_id"] = str(result["_id"])  # Convert ObjectId to string
+        result["id"] = str(result["_id"])  # Convert ObjectId to string
         return result
 
     async def sign_in(self, email: str, password: str) -> dict:
@@ -129,6 +141,8 @@ class UserManager:
                     detail="Please verify your email or phone to activate your account",
                 )
             user_data = user.dict()
+            user_data["id"] = str(user.id)  # Add the id explicitly
+
             user_data.pop("password", None)
             user_data.pop("otp", None)
 
@@ -246,7 +260,7 @@ class UserManager:
             user.is_active = True
             await user.save()
             user_data = user.dict(by_alias=True)
-            user_data["_id"] = str(user.id)
+            user_data["id"] = str(user_data.pop("_id"))  # Rename `_id` to `id`
             user_data.pop("password", None)
             user_data.pop("otp", None)
             access_token = create_access_token(data={"sub": user.email})
@@ -264,7 +278,7 @@ class UserManager:
             user.is_active = True
             await user.save()
             user_data = user.dict(by_alias=True)  # Include `id` field
-            user_data["_id"] = str(user.id)
+            user_data["id"] = str(user_data.pop("_id"))  # Rename `_id` to `id`
             user_data.pop("password", None)
             user_data.pop("otp", None)
             access_token = create_access_token(data={"sub": user.email})
@@ -435,7 +449,6 @@ class UserManager:
                         }
                         for u in created_users
                     ]
-                    print(user_details, "user_details")
                 else:
                     # For "individual", just show the vendor's details
                     user_details = {
@@ -470,7 +483,6 @@ class UserManager:
             # Propagate known HTTP errors to the caller
             raise
         except Exception as ex:
-            print(f"Error: {ex}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -483,7 +495,6 @@ class UserManager:
 
             # Fetch the services to validate
             services = await services_collection.find_one({"_id": ObjectId(services_id)})
-            print(services, "services")
             if not services:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Services not found")
 
@@ -522,7 +533,6 @@ class UserManager:
                         }
                         for u in created_users
                     ]
-                    print(user_details, "user_details")
                 else:
                     # For "individual", just show the vendor's details
                     user_details = {
@@ -557,7 +567,37 @@ class UserManager:
             # Propagate known HTTP errors to the caller
             raise
         except Exception as ex:
-            print(f"Error: {ex}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
+
+    async def create_support_request(self, support_request: Support):
+        try:
+            # Get the current user based on the provided token
+            # current_user = await get_current_user(request=request, token=token)
+            # if not current_user:
+            #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            # The title and description will already be set from the request data
+
+            # Insert the support request into the collection
+            result = await support_collection.insert_one(support_request.dict())
+            if not result:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support request not found")
+            result_data = {
+                "id": str(result.inserted_id),
+                "name": support_request.name,
+                "email": support_request.email,
+                "phone": support_request.phone,
+                "message": support_request.message,
+                "created_at": support_request.created_at,
+            }
+
+            return result_data
+
+        except HTTPException:
+            raise
+        except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )

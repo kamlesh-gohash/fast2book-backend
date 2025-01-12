@@ -22,6 +22,7 @@ class Category(Document, BaseModel):
     id: Optional[PydanticObjectId] = Field(default=None, alias="_id")
     name: str = Field(..., min_length=1, max_length=50)
     status: StatusEnum = Field(default=StatusEnum.ACTIVE)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
         name = "categories"

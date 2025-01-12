@@ -1,4 +1,5 @@
 import base64
+import os
 import random
 
 from datetime import datetime, timedelta
@@ -26,6 +27,9 @@ class BlogManager:
     async def create_blog(self, create_blog_request: Blog) -> dict:
         try:
             blog_data = create_blog_request.dict()
+            image_name = create_blog_request.blog_image
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
 
             # Insert the blog data into the database
             result = await blog_collection.insert_one(blog_data)

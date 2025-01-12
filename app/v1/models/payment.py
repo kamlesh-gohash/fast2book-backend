@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import ClassVar
 
 from pydantic import BaseModel, Field, validator
@@ -10,6 +11,7 @@ class PaymentType(BaseModel):
     description: str
     status: StatusEnum = StatusEnum.Active
     existing_names: ClassVar[set] = set()  # Keep track of existing names
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     @validator("name")
     def check_unique_name(cls, value):
