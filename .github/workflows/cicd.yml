@@ -48,7 +48,7 @@ jobs:
             --build-arg SECRET_KEY=${{ secrets.SECRET_KEY }} \
             --build-arg AWS_S3_BUCKET_NAME=${{ vars.AWS_S3_BUCKET_NAME }} \
             --build-arg EMAIL_HOST=${{ vars.EMAIL_HOST }} \
-            --build-arg EMAIL_PASSWORD=${{ vars.EMAIL_PASSWORD }} \
+            --build-arg EMAIL_PASSWORD="${{ vars.EMAIL_PASSWORD }}" \
             --build-arg EMAIL_PORT=${{ vars.EMAIL_PORT }} \
             --build-arg EMAIL_USER=${{ vars.EMAIL_USER }} \
             --build-arg FRONT_URL=${{ vars.FRONT_URL }} \
