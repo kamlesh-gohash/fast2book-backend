@@ -1,4 +1,3 @@
-# Use the official Python image with slim variant
 FROM python:3.12-slim AS base
 
 # Set the working directory
@@ -16,6 +15,38 @@ RUN curl -sSL https://install.python-poetry.org | python3 -
 
 # Add Poetry to PATH
 ENV PATH="/root/.local/bin:$PATH"
+
+# Build arguments
+ARG DATABASE_NAME
+ARG DATABASE_URL
+ARG DEBUG
+ARG GOOGLE_CLIENT_ID
+ARG GOOGLE_CLIENT_SECRET
+ARG SECRET_KEY
+ARG AWS_S3_BUCKET_NAME
+ARG EMAIL_HOST
+ARG EMAIL_PASSWORD
+ARG EMAIL_PORT
+ARG EMAIL_USER
+ARG FRONT_URL
+ARG GOOGLE_REDIRECT_URI
+ARG PORT
+
+# Pass build arguments to environment variables
+ENV DATABASE_NAME=$DATABASE_NAME \
+    DATABASE_URL=$DATABASE_URL \
+    DEBUG=$DEBUG \
+    GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID \
+    GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET \
+    SECRET_KEY=$SECRET_KEY \
+    AWS_S3_BUCKET_NAME=$AWS_S3_BUCKET_NAME \
+    EMAIL_HOST=$EMAIL_HOST \
+    EMAIL_PASSWORD=$EMAIL_PASSWORD \
+    EMAIL_PORT=$EMAIL_PORT \
+    EMAIL_USER=$EMAIL_USER \
+    FRONT_URL=$FRONT_URL \
+    GOOGLE_REDIRECT_URI=$GOOGLE_REDIRECT_URI \
+    PORT=$PORT
 
 # Copy only Poetry config files to leverage Docker layer caching
 COPY pyproject.toml poetry.lock /app/
