@@ -80,18 +80,18 @@ jobs:
             --name fast2book-backend-container \
             --network fast2book-network \
             -p 5000:5000 \
-            -e DATABASE_NAME=${{ secrets.DATABASE_NAME }} \
-            -e DATABASE_URL=${{ secrets.DATABASE_URL }} \
-            -e DEBUG=${{ secrets.DEBUG }} \
-            -e GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }} \
-            -e GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }} \
-            -e SECRET_KEY=${{ secrets.SECRET_KEY }} \
-            -e AWS_S3_BUCKET_NAME=${{ vars.AWS_S3_BUCKET_NAME }} \
-            -e EMAIL_HOST=${{ vars.EMAIL_HOST }} \
-            -e EMAIL_PASSWORD=${{ vars.EMAIL_PASSWORD }} \
-            -e EMAIL_PORT=${{ vars.EMAIL_PORT }} \
-            -e EMAIL_USER=${{ vars.EMAIL_USER }} \
-            -e FRONT_URL=${{ vars.FRONT_URL }} \
-            -e GOOGLE_REDIRECT_URI=${{ vars.GOOGLE_REDIRECT_URI }} \
-            -e PORT=${{ vars.PORT }} \
+            -e DATABASE_NAME="${{ secrets.DATABASE_NAME }}" \
+            -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            -e DEBUG="${{ secrets.DEBUG }}" \
+            -e GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+            -e GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            -e SECRET_KEY="${{ secrets.SECRET_KEY }}" \
+            -e AWS_S3_BUCKET_NAME="${{ secrets.AWS_S3_BUCKET_NAME }}" \
+            -e EMAIL_HOST="${{ secrets.EMAIL_HOST }}" \
+            -e EMAIL_PASSWORD="${{ secrets.EMAIL_PASSWORD }}" \
+            -e EMAIL_PORT="${{ secrets.EMAIL_PORT }}" \
+            -e EMAIL_USER="${{ secrets.EMAIL_USER }}" \
+            -e FRONT_URL="${{ secrets.FRONT_URL }}" \
+            -e GOOGLE_REDIRECT_URI="${{ secrets.GOOGLE_REDIRECT_URI }}" \
+            -e PORT="${{ secrets.PORT }}" \
             $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest
