@@ -39,25 +39,30 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker buildx build --build-arg DATABASE_NAME=${{ secrets.DATABASE_NAME }} \
-                    --build-arg DATABASE_URL=${{ secrets.DATABASE_URL }} \
-                    --build-arg DEBUG=${{ secrets.DEBUG }} \
-                    --build-arg GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }} \
-                    --build-arg GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }} \
-                    --build-arg SECRET_KEY=${{ secrets.SECRET_KEY }} \
-                    --build-arg AWS_S3_BUCKET_NAME=fast2book \
-                    --build-arg EMAIL_HOST=smtp.gmail.com \
-                    --build-arg EMAIL_PASSWORD='bjke xibv fzeg jboc' \
-                    --build-arg EMAIL_PORT=587 \
-                    --build-arg EMAIL_USER=gujjarvikram1187@gmail.com \
-                    --build-arg FRONT_URL=https://fast2book.com \
-                    --build-arg GOOGLE_REDIRECT_URI=https://fast2book.com \
-                    --build-arg PORT=5000 \
-                    --tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest .
+          docker build --no-cache \
+            --build-arg DATABASE_NAME=${{ secrets.DATABASE_NAME }} \
+            --build-arg DATABASE_URL=${{ secrets.DATABASE_URL }} \
+            --build-arg DEBUG=${{ secrets.DEBUG }} \
+            --build-arg GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }} \
+            --build-arg GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }} \
+            --build-arg SECRET_KEY=${{ secrets.SECRET_KEY }} \
+            --build-arg AWS_S3_BUCKET_NAME=${{ vars.AWS_S3_BUCKET_NAME }} \
+            --build-arg EMAIL_HOST=${{ vars.EMAIL_HOST }} \
+            --build-arg EMAIL_PASSWORD=${{ vars.EMAIL_PASSWORD }} \
+            --build-arg EMAIL_PORT=${{ vars.EMAIL_PORT }} \
+            --build-arg EMAIL_USER=${{ vars.EMAIL_USER }} \
+            --build-arg FRONT_URL=${{ vars.FRONT_URL }} \
+            --build-arg GOOGLE_REDIRECT_URI=${{ vars.GOOGLE_REDIRECT_URI }} \
+            --build-arg PORT=${{ vars.PORT }} \
+            -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest .
 
       - name: Push Docker image to AWS ECR
         run: |
           docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest
+
+      - name: Create Docker Network
+        run: |
+          docker network create fast2book-network || true
 
       - name: Deploy Container Locally
         run: |
@@ -71,4 +76,22 @@ jobs:
           docker pull $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest
 
           # Run the new container
-          docker run -d --name fast2book-backend -p 5000:80 $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest
+          docker run -d \
+            --name fast2book-backend-container \
+            --network fast2book-network \
+            -p 5000:5000 \
+            -e DATABASE_NAME=${{ secrets.DATABASE_NAME }} \
+            -e DATABASE_URL=${{ secrets.DATABASE_URL }} \
+            -e DEBUG=${{ secrets.DEBUG }} \
+            -e GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }} \
+            -e GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }} \
+            -e SECRET_KEY=${{ secrets.SECRET_KEY }} \
+            -e AWS_S3_BUCKET_NAME=${{ vars.AWS_S3_BUCKET_NAME }} \
+            -e EMAIL_HOST=${{ vars.EMAIL_HOST }} \
+            -e EMAIL_PASSWORD=${{ vars.EMAIL_PASSWORD }} \
+            -e EMAIL_PORT=${{ vars.EMAIL_PORT }} \
+            -e EMAIL_USER=${{ vars.EMAIL_USER }} \
+            -e FRONT_URL=${{ vars.FRONT_URL }} \
+            -e GOOGLE_REDIRECT_URI=${{ vars.GOOGLE_REDIRECT_URI }} \
+            -e PORT=${{ vars.PORT }} \
+            $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest
