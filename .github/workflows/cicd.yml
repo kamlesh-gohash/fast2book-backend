@@ -39,7 +39,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build --no-cache \
+          docker buildx build --no-cache \
             --build-arg DATABASE_NAME=${{ secrets.DATABASE_NAME }} \
             --build-arg DATABASE_URL=${{ secrets.DATABASE_URL }} \
             --build-arg DEBUG=${{ secrets.DEBUG }} \
@@ -67,9 +67,9 @@ jobs:
       - name: Deploy Container Locally
         run: |
           # Stop and remove existing container if it exists
-          if [ $(docker ps -aq -f name=fast2book-backend) ]; then
-            docker stop fast2book-backend
-            docker rm fast2book-backend
+          if [ $(docker ps -aq -f name=fast2book-backend-container) ]; then
+            docker stop fast2book-backend-container
+            docker rm fast2book-backend-container
           fi
 
           # Pull the latest image from ECR
