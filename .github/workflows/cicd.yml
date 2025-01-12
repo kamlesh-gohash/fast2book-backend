@@ -38,24 +38,24 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION_ECR }}
 
       - name: Build Docker image
-      run: |
-        docker buildx build --no-cache \
-          --build-arg DATABASE_NAME="${{ secrets.DATABASE_NAME }}" \
-          --build-arg DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-          --build-arg DEBUG="${{ secrets.DEBUG }}" \
-          --build-arg GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
-          --build-arg GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
-          --build-arg SECRET_KEY="${{ secrets.SECRET_KEY }}" \
-          --build-arg AWS_S3_BUCKET_NAME="${{ secrets.AWS_S3_BUCKET_NAME }}" \
-          --build-arg EMAIL_HOST="${{ secrets.EMAIL_HOST }}" \
-          --build-arg EMAIL_PASSWORD="${{ secrets.EMAIL_PASSWORD }}" \
-          --build-arg EMAIL_PORT="${{ secrets.EMAIL_PORT }}" \
-          --build-arg EMAIL_USER="${{ secrets.EMAIL_USER }}" \
-          --build-arg FRONT_URL="${{ secrets.FRONT_URL }}" \
-          --build-arg GOOGLE_REDIRECT_URI="${{ secrets.GOOGLE_REDIRECT_URI }}" \
-          --build-arg PORT="${{ secrets.PORT }}" \
-          -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest .
-        
+        run: |
+          docker buildx build --no-cache \
+            --build-arg DATABASE_NAME="${{ secrets.DATABASE_NAME }}" \
+            --build-arg DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --build-arg DEBUG="${{ secrets.DEBUG }}" \
+            --build-arg GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --build-arg GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            --build-arg SECRET_KEY="${{ secrets.SECRET_KEY }}" \
+            --build-arg AWS_S3_BUCKET_NAME="${{ secrets.AWS_S3_BUCKET_NAME }}" \
+            --build-arg EMAIL_HOST="${{ secrets.EMAIL_HOST }}" \
+            --build-arg EMAIL_PASSWORD="${{ secrets.EMAIL_PASSWORD }}" \
+            --build-arg EMAIL_PORT="${{ secrets.EMAIL_PORT }}" \
+            --build-arg EMAIL_USER="${{ secrets.EMAIL_USER }}" \
+            --build-arg FRONT_URL="${{ secrets.FRONT_URL }}" \
+            --build-arg GOOGLE_REDIRECT_URI="${{ secrets.GOOGLE_REDIRECT_URI }}" \
+            --build-arg PORT="${{ secrets.PORT }}" \
+            -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest .
+
       - name: Push Docker image to AWS ECR
         run: |
           docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest
