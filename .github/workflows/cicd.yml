@@ -39,13 +39,13 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker buildx build --no-cache \
-            --build-arg DATABASE_NAME=${{ secrets.DATABASE_NAME }} \
-            --build-arg DATABASE_URL=${{ secrets.DATABASE_URL }} \
-            --build-arg DEBUG=${{ secrets.DEBUG }} \
-            --build-arg GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }} \
-            --build-arg GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }} \
-            --build-arg SECRET_KEY=${{ secrets.SECRET_KEY }} \
+          docker build build --no-cache \
+            --build-arg DATABASE_NAME="${{ secrets.DATABASE_NAME }}" \
+            --build-arg DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --build-arg DEBUG="${{ secrets.DEBUG }}" \
+            --build-arg GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --build-arg GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            --build-arg SECRET_KEY="${{ secrets.SECRET_KEY }}" \
             --build-arg AWS_S3_BUCKET_NAME=${{ vars.AWS_S3_BUCKET_NAME }} \
             --build-arg EMAIL_HOST=${{ vars.EMAIL_HOST }} \
             --build-arg EMAIL_PASSWORD="${{ vars.EMAIL_PASSWORD }}" \
