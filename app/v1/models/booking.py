@@ -1,29 +1,31 @@
 import os
 
 from datetime import datetime
-from enum import Enum
-from typing import List, Optional
 
-from bcrypt import gensalt, hashpw
-from beanie import PydanticObjectId  # Import PydanticObjectId
-from beanie import Document, Indexed, Link, before_event
-from pydantic import BaseModel, EmailStr, Field, field_validator
+# from app.v1.models.transactions import Transaction
+from typing import Dict
 
-from app.v1.config.constants import SECRET_KEY
+from beanie import Link
+from pydantic import BaseModel
+
 from app.v1.models.category import Category
 from app.v1.models.services import Service
+from app.v1.models.slots import *
 from app.v1.models.user import StatusEnum, User
+from app.v1.models.vendor import Vendor
 
 
-class SuperAdminBooking(BaseModel):
-    user: Link[User]
+class Bookings(BaseModel):
+    user_id: Link[User]
+    vendor_id: Link[Vendor]
+    slots_id: Link[Slots]
+    # transaction_id: Link[Transaction]
+    slot_data: Dict[str, SlotRequest]
     category: Link[Category]
     service: Link[Service]
     booking_date: datetime
-    vendor: Link[User]
-    price: float
     description: str
     status: StatusEnum = StatusEnum.Active
 
     class Settings:
-        name = "super_admin_bookings"
+        name = "bookings"

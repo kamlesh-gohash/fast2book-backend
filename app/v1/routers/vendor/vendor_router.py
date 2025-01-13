@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from app.v1.dependencies import get_vendor_manager
 from app.v1.middleware.auth import get_token_from_header
 from app.v1.models import User
+from app.v1.schemas.slots.slots import *
 from app.v1.schemas.vendor.vendor_auth import *
 from app.v1.services import VendorManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
@@ -39,7 +40,7 @@ def validate_request_data(schema: Type[BaseModel]) -> Callable:
 @router.post("/create-vendor", status_code=status.HTTP_201_CREATED)
 async def create_vendor(
     request: Request,
-    create_vendor_request: dict = Depends(validate_request_data(VendorCreateRequest)),
+    create_vendor_request: dict = Depends(validate_request_data(SignUpVendorRequest)),
     token: str = Depends(get_token_from_header),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
@@ -334,6 +335,247 @@ async def vendor_users_list(
         return success({"message": "Vendor users list found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/add-slot-time", status_code=status.HTTP_201_CREATED)
+async def add_slot_time(
+    request: Request,
+    slot_request: SlotRequest,  # Updated to use the new model
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.set_individual_vendor_availability(
+            request=request, token=token, slots=slot_request.slots  # Pass the list of slots
+        )
+        return success({"message": "Slot time added successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-vendor-availability", status_code=status.HTTP_200_OK)
+async def get_vendor_availability(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.get_vendor_availability(request=request, token=token)
+        return success({"message": "Vendor availability found successfully", "data": result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.put("/update-vendor-availability", status_code=status.HTTP_201_CREATED)
+async def update_vendor_availability(
+    request: Request,
+    slot_request: SlotRequest,  # Updated to use the new model
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.update_vendor_availability(
+            request=request, token=token, slots=slot_request.slots  # Pass the list of slots
+        )
+        return success({"message": "Vendor availability updated successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.delete("/delete-vendor-availability", status_code=status.HTTP_200_OK)
+async def delete_vendor_availability(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    day: str = Query(..., description="Day to delete slots for, e.g., 'Monday'"),
+    start_time: Optional[str] = Query(None, description="Start time of the specific slot to delete (ISO 8601 format)"),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    """
+    Delete vendor availability for a specific day or time slot.
+
+    Args:
+        day (str): The day for which availability should be deleted.
+        start_time (Optional[str]): The specific start time of the slot to delete.
+
+    Returns:
+        dict: Response indicating success or failure.
+    """
+    try:
+        result = await vendor_manager.delete_vendor_availability(
+            request=request, token=token, day=day, start_time=start_time
+        )
+        return success({"message": "Vendor availability deleted successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/add-slot-time-vendor/{id}", status_code=status.HTTP_201_CREATED)
+async def add_slot_time_vendor(
+    request: Request,
+    slot_request: SlotRequest,  # Updated to use the new model
+    token: str = Depends(get_token_from_header),
+    id: str = Path(..., title="The ID of the vendor user to add slots for"),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.add_slot_time_vendor(
+            request=request, token=token, id=id, slots=slot_request.slots  # Pass the list of slots
+        )
+        return success({"message": "Slot time added successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+        )
+
+
+@router.post("/change-passowrd-vendor", status_code=status.HTTP_200_OK)
+async def change_password_vendor(
+    change_password_request: ChangePasswordRequest,
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    validation_result = change_password_request.validate()
+    if validation_result:
+        return validation_result
+    try:
+        result = await vendor_manager.change_password_vendor(
+            email=change_password_request.email,
+            old_password=change_password_request.old_password,
+            new_password=change_password_request.new_password,
+        )
+        return success({"message": "Password changed successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/vendor-slots/{vendor_id}", status_code=status.HTTP_200_OK)
+async def create_vendor_slots(
+    request: Request,
+    slot_request: SlotRequest,
+    token: str = Depends(get_token_from_header),
+    vendor_id: str = Path(..., title="The ID of the vendor to create slots for"),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        # Pass data to user manager for processing
+        result = await vendor_manager.create_vendor_slots(
+            request=request, token=token, vendor_id=vendor_id, slots=slot_request.slots
+        )
+        return success({"message": "Slots created successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        print(ex)
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vendor-slots-list/{vendor_id}", status_code=status.HTTP_200_OK)
+async def get_vendor_slots(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    vendor_id: str = Path(..., title="The ID of the vendor to get slots for"),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        # Pass data to user manager for processing
+        result = await vendor_manager.get_vendor_slots(request=request, token=token, vendor_id=vendor_id)
+        return success({"message": "Slots retrieved successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vendor-list-for-slot", status_code=status.HTTP_200_OK)
+async def vendor_list_for_slot(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        # Pass data to user manager for processing
+        result = await vendor_manager.vendor_list_for_slot(request=request, token=token)
+        return success({"message": "Vendor list retrieved successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vendor-user-list-for-slot/{vendor_id}", status_code=status.HTTP_200_OK)
+async def vendor_user_list_for_slot(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    vendor_id=str,
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        # Pass data to user manager for processing
+        result = await vendor_manager.vendor_user_list_for_slot(request=request, token=token, vendor_id=vendor_id)
+        return success({"message": "Vendor list retrieved successfully", "data": result})
+    except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)

@@ -131,6 +131,7 @@ class UpdateVendorRequest(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     gender: Gender = Field(default=Gender.male)
+    roles: list[Role] = [Role.vendor]
     business_type: BusinessType = Field(default=BusinessType.individual)
     business_name: Optional[str] = Field(None, max_length=100)
     business_address: Optional[str] = Field(None, max_length=255)
@@ -209,13 +210,46 @@ sign_up_vendor_validator = zon.record(
 class SignUpVendorRequest(BaseModel):
     first_name: str
     last_name: str
-    email: str
-    business_name: str
+    email: EmailStr
+    # vendor_images: Optional[List[str]] = Field(None, description="Array of vendor image URLs")
+    vendor_image: Optional[str] = None
+    image_url: Optional[str] = None
+    phone: Optional[str] = Field(None, min_length=10, max_length=10)
+    gender: Gender = Field(default=Gender.male)
+    roles: list[Role] = [Role.vendor]  # Default role is 'vendor'
     business_type: BusinessType = Field(default=BusinessType.individual)
+    business_name: Optional[str] = Field(None, max_length=100)
+    business_address: Optional[str] = Field(None, max_length=255)
+    business_details: Optional[str] = None
+    category_id: Optional[str] = Field(None, description="ID of the selected category")
+    category_name: Optional[str] = Field(None, description="Name of the selected category")
+    services: Optional[List[Service]] = Field(None, description="List of selected services with their IDs and names")
+    service_details: Optional[str] = None
+    manage_plan: Optional[str] = None
+    manage_fee_and_gst: Optional[str] = None
+    manage_offer: Optional[str] = None
+    is_payment_verified: bool = Field(default=False)
+    is_dashboard_created: bool = Field(default=False)
     status: StatusEnum = Field(default=StatusEnum.Active)
-    is_dashboard_created: bool = Field(default=True)
-    roles: list[Role] = [Role.vendor]
     password: str
+
+    # first_name: str
+    # last_name: str
+    # email: str
+    # business_name: str
+    # business_type: BusinessType = Field(default=BusinessType.individual)
+    # status: StatusEnum = Field(default=StatusEnum.Active)
+    # is_dashboard_created: bool = Field(default=True)
+    # roles: list[Role] = [Role.vendor]
+    # password: str
+    @validator("roles", pre=True, always=True)
+    def ensure_vendor_role(cls, roles):
+        """
+        Ensure that the 'vendor' role is always present in the roles list.
+        """
+        if Role.vendor not in roles:
+            roles.append(Role.vendor)
+        return roles
 
     def validate(self):
         try:
@@ -240,7 +274,10 @@ class VendorUserCreateRequest(BaseModel):
     first_name: str
     last_name: str
     email: EmailStr
+    category: Optional[str] = None
+    services: List[Service]
     phone: Optional[str] = None
+    fees: Optional[str] = None
     gander: Gender = Field(default=Gender.male)
     status: StatusEnum = Field(default=StatusEnum.Active)
     roles: list[Role] = [Role.vendor_user]
@@ -249,6 +286,25 @@ class VendorUserCreateRequest(BaseModel):
     def validate(self):
         try:
             create_vendor_user_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
+
+
+vendor_change_password_validator = zon.record(
+    {"email": zon.string().email(), "old_password": zon.string(), "new_password": zon.string()}
+)
+
+
+class ChangePasswordRequest(BaseModel):
+    email: str
+    old_password: str
+    new_password: str
+
+    def validate(self):
+        try:
+            vendor_change_password_validator.validate(self.dict())
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})

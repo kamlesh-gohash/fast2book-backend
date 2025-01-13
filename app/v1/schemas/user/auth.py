@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 import bcrypt
 import zon
@@ -35,6 +35,7 @@ class SignUpRequest(BaseModel):
     last_name: str
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    roles: Optional[List[str]] = None  # Optional roles, can be a list of strings like ['user', 'vendor']
     gender: str
     password: str
     otp: Optional[str] = None  # Make OTP optional

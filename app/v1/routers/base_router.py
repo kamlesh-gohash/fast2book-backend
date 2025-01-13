@@ -3,10 +3,14 @@ from fastapi import APIRouter
 from app.v1.routers.blog import blog_router
 from app.v1.routers.booking import booking_router
 from app.v1.routers.category import category_router
+from app.v1.routers.common import common_router
 from app.v1.routers.costumer import costumer_router
+from app.v1.routers.payment import payment_router
+from app.v1.routers.permission import permission_router
 from app.v1.routers.service import service_router
 from app.v1.routers.subscription import subscription_router
 from app.v1.routers.superuser import super_user_router
+from app.v1.routers.support import support_router
 from app.v1.routers.users import users_router
 from app.v1.routers.vendor import vendor_router
 
@@ -21,3 +25,7 @@ router.include_router(costumer_router.router, prefix="/costumer", tags=["Costume
 router.include_router(subscription_router.router, prefix="/subscription", tags=["Subscription"])
 router.include_router(blog_router.router, prefix="/blog", tags=["Blog"])
 router.include_router(booking_router.router, prefix="/booking", tags=["Booking"])
+router.include_router(common_router.router, prefix="/common", tags=["Common"])
+router.include_router(payment_router.router, prefix="/payment", tags=["Payment"])
+router.include_router(support_router.router, prefix="/support", tags=["Support"])
+router.include_router(permission_router.router, prefix="/permission", tags=["Permission"])

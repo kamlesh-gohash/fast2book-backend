@@ -21,6 +21,8 @@ class StatusEnum(str, Enum):
 
 class Service(Document):
     name: str = Field(..., min_length=1, max_length=50)
+    service_image: Optional[str] = None
+    service_image_url: Optional[str] = None
     status: StatusEnum = Field(default=StatusEnum.ACTIVE)
     category_id: PydanticObjectId = Field(..., description="Reference to the Category document")
     category_name: str = Field(..., description="Name of the category")
