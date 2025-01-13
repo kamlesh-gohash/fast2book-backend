@@ -178,3 +178,4 @@ pyrightconfig.json
 .vscode
 .DS_Store
 .poetry.lock
+poetry.lock
