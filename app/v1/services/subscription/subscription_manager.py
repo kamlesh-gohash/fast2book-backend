@@ -8,8 +8,9 @@ import bcrypt
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
-from fastapi import Body, HTTPException, Path, status
+from fastapi import Body, HTTPException, Path, Request, status
 
+from app.v1.middleware.auth import get_current_user
 from app.v1.models import category_collection, subscription_collection
 from app.v1.models.category import Category
 from app.v1.models.services import Service
@@ -19,8 +20,16 @@ from app.v1.utils.token import create_access_token, create_refresh_token, get_oa
 
 
 class SubscriptionManager:
-    async def subscription_create(self, subscription_request: CreateSubscriptionRequest) -> dict:
+    async def subscription_create(
+        self, request: Request, token: str, subscription_request: CreateSubscriptionRequest
+    ) -> dict:
         try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             existing_subscription = await subscription_collection.find_one({"title": subscription_request.title})
             if existing_subscription:
                 raise HTTPException(
@@ -32,6 +41,9 @@ class SubscriptionManager:
             subscription_data = {
                 "title": subscription_request.title,
                 "price": subscription_request.price,
+                "features": [
+                    {"item": feature.item} for feature in subscription_request.features
+                ],  # Handle features list
                 "status": subscription_request.status,
                 "created_at": datetime.utcnow(),
             }
@@ -44,6 +56,7 @@ class SubscriptionManager:
                 "id": str(created_subscription["_id"]),
                 "title": created_subscription["title"],
                 "price": created_subscription["price"],
+                "features": created_subscription["features"],
                 "status": created_subscription["status"],
                 "created_at": created_subscription["created_at"],
             }
@@ -57,8 +70,14 @@ class SubscriptionManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def subscription_list(self, page: int, limit: int, search: str = None):
+    async def subscription_list(self, request: Request, token: str, page: int, limit: int, search: str = None):
         try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             skip = (page - 1) * limit
             query = {}  # Start with an empty query
 
@@ -76,6 +95,7 @@ class SubscriptionManager:
                         "id": str(subscription["_id"]),
                         "title": subscription["title"],
                         "price": subscription["price"],
+                        "features": subscription["features"],
                         "status": subscription["status"],
                         "created_at": subscription["created_at"],
                     }
@@ -90,8 +110,20 @@ class SubscriptionManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def subscription_get(self, id: str):
+    async def subscription_get(self, request: Request, token: str, id: str):
         try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Validate service ID
+            if not ObjectId.is_valid(id):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid subscription ID: '{id}'")
+
+            # Check if the service exists
             subscription = await subscription_collection.find_one({"_id": ObjectId(id)})
             if not subscription:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="subscription not found")
@@ -99,6 +131,7 @@ class SubscriptionManager:
                 "id": str(subscription["_id"]),
                 "title": subscription["title"],
                 "price": subscription["price"],
+                "features": subscription["features"],
                 "status": subscription["status"],
                 "created_at": subscription["created_at"],
             }
@@ -107,8 +140,16 @@ class SubscriptionManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def subscription_update(self, id: str, subscription_request: UpdateSubscriptionRequest):
+    async def subscription_update(
+        self, request: Request, token: str, id: str, subscription_request: UpdateSubscriptionRequest
+    ):
         try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             # Validate service ID
             if not ObjectId.is_valid(id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid subscription ID: '{id}'")
@@ -124,6 +165,10 @@ class SubscriptionManager:
                 update_data["title"] = subscription_request.title
             if subscription_request.price is not None:
                 update_data["price"] = subscription_request.price
+            if subscription_request.features is not None:
+                update_data["features"] = [
+                    {"item": feature.item} for feature in subscription_request.features
+                ]  # Ensure features are correctly updated
             if subscription_request.status is not None:
                 update_data["status"] = subscription_request.status
 
@@ -141,6 +186,7 @@ class SubscriptionManager:
                 "id": str(updated_subscription["_id"]),
                 "title": updated_subscription.get("title"),
                 "price": updated_subscription.get("price"),
+                "features": updated_subscription.get("features"),
                 "status": updated_subscription.get("status"),
                 "updated_at": updated_subscription.get("updated_at"),
             }

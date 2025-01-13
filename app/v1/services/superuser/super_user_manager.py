@@ -12,10 +12,29 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import Body, HTTPException, Path, Request, status
 
 from app.v1.middleware.auth import get_current_user
-from app.v1.models import User, user_collection
+from app.v1.models import User, user_collection, vendor_collection
+from app.v1.models.slots import *
 from app.v1.schemas.superuser.superuser_auth import *
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
+
+
+def serialize_mongo_document(document):
+    """Helper function to serialize MongoDB documents."""
+    if "_id" in document:
+        document["_id"] = str(document["_id"])
+    return document
+
+
+VALID_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def validate_time_format(time_str: str):
+    try:
+        datetime.strptime(time_str, "%H:%M")
+    except ValueError:
+        return False
+    return True
 
 
 class SuperUserManager:
@@ -377,7 +396,6 @@ class SuperUserManager:
             if update_super_user_request.phone is not None:
                 update_data["phone"] = update_super_user_request.phone
             if update_super_user_request.status is not None:
-                print(update_super_user_request.status)
                 update_data["status"] = update_super_user_request.status
             if not update_data:
                 raise HTTPException(

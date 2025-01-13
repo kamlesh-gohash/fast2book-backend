@@ -1,32 +1,39 @@
-import os
-
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
-from bcrypt import gensalt, hashpw
-from beanie import PydanticObjectId  # Import PydanticObjectId
-from beanie import Document, Indexed, before_event
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from beanie import Document, Link
+from pydantic import BaseModel, Field
 
-from app.v1.config.constants import SECRET_KEY
-from app.v1.models.category import Category
+from app.v1.models.user import StatusEnum, User
 
 
-class StatusEnum(str, Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    DRAFT = "draft"
+class BusinessType(str, Enum):
+    individual = "individual"
+    business = "business"
+
+
+class Service(BaseModel):
+    id: str
+    name: Optional[str] = None
 
 
 class Vendor(Document):
-    name: str = Field(..., min_length=1, max_length=50)
-    email: EmailStr = Field(..., min_length=1, max_length=50)
-    phone: Optional[str] = Field(pattern=r"^\+?[0-9\-]{7,20}$")
-    otp: Optional[str] = None
-    otp_expires: Optional[datetime] = None
-    password: str = Field(..., min_length=6, max_length=20)
-    status: StatusEnum = Field(default=StatusEnum.ACTIVE)
+    # vendor_images: Optional[List[str]] = Field(None, description="Array of vendor image URLs")
+    vendor_image: Optional[str] = None
+    image_url: Optional[str] = None
+    business_name: str = Field(..., min_length=1, max_length=50)
+    user_id: Link[User]
+    business_type: BusinessType = Field(default=BusinessType.individual)
+    business_name: Optional[str] = Field(None, max_length=100)
+    business_address: Optional[str] = Field(None, max_length=255)
+    business_details: Optional[str] = None
+    category_id: Optional[str] = Field(None, description="ID of the selected category")
+    category_name: Optional[str] = Field(None, description="Name of the selected category")
+    services: Optional[List[Service]] = Field(None, description="List of selected services with their IDs and names")
+    service_details: Optional[str] = None
+    status: StatusEnum = Field(default=StatusEnum.Active)
+    availability_slots: Optional[Link["SlotRequest"]] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:

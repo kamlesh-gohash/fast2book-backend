@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles  # Import StaticFiles
-from scripts.seed import seed_data
+from scripts.seed import seed_categorys, seed_data, seed_payment_types
 
 from app.v1.config.constants import FRONT_URL
 from app.v1.config.db import initiate_database
@@ -17,6 +17,8 @@ async def lifespan(app: FastAPI):
 
     await initiate_database()
     await seed_data()
+    await seed_payment_types()
+    await seed_categorys()
 
     yield
 

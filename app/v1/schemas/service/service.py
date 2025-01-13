@@ -23,6 +23,8 @@ class StatusEnum(str, Enum):
 create_service_validator = zon.record(
     {
         "name": zon.string(),
+        "service_image": zon.string().optional(),
+        "image_url": zon.string().optional(),
         "category_id": zon.string(),
         "status": zon.string(),
     }
@@ -32,6 +34,8 @@ create_service_validator = zon.record(
 # Pydantic Model for Service Request
 class CreateServiceRequest(BaseModel):
     name: str
+    service_image: Optional[str] = None
+    service_image_url: Optional[str] = None
     category_id: str
     status: StatusEnum = StatusEnum.ACTIVE
 
@@ -105,6 +109,7 @@ update_service_validator = zon.record(
     {
         "name": zon.string().optional(),
         "category_id": zon.string().optional(),
+        "service_image": zon.string().optional(),
         "status": zon.string().optional(),
     }
 )
@@ -112,6 +117,8 @@ update_service_validator = zon.record(
 
 class UpdateServiceRequest(BaseModel):
     name: Optional[str] = None
+    service_image: Optional[str] = None
+    service_image_url: Optional[str] = None
     category_id: Optional[str] = None
     status: Optional[StatusEnum] = None
 

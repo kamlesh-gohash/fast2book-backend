@@ -1,5 +1,5 @@
-from app.v1.services.booking.booking_manager import SuperUserBookingManager
+from app.v1.services.booking.booking_manager import BookingManager
 
 
-def get_super_user_booking_manager() -> SuperUserBookingManager:
-    return SuperUserBookingManager()
+def get_booking_manager() -> BookingManager:
+    return BookingManager()

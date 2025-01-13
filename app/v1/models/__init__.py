@@ -2,7 +2,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.v1.config import DATABASE_NAME, DATABASE_URL
 from app.v1.models.blog import Blog
-from app.v1.models.booking import SuperAdminBooking
+from app.v1.models.booking import Bookings
 from app.v1.models.category import Category
 from app.v1.models.services import Service
 from app.v1.models.subscription import Subscription
@@ -23,7 +23,12 @@ vendor_collection = get_model("vendors")
 subscription_collection = get_model("subscriptions")
 blog_collection = get_model("blogs")
 user_token_collection = get_model("user_tokens")
-super_admin_booking_collection = get_model("super_admin_bookings")
+booking_collection = get_model("bookings")
+slots_collection = get_model("slots")
+payment_collection = get_model("payments")
+support_collection = get_model("supports")
+permission_collection = get_model("permissions")
+permission_assign_request = get_model("permission_assign_request")
 
 
 __all__ = {
@@ -34,5 +39,10 @@ __all__ = {
     "subscription_collection": subscription_collection,
     "blog_collection": blog_collection,
     "user_token_collection": user_token_collection,
-    "super_admin_booking_collection": super_admin_booking_collection,
+    "booking_collection": booking_collection,
+    "slots_collection": slots_collection,
+    "payment_collection": payment_collection,
+    "support_collection": support_collection,
+    "permission_collection": permission_collection,
+    "permission_assign_request": permission_assign_request,
 }

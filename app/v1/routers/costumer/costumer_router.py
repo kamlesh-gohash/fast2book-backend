@@ -127,12 +127,10 @@ async def update_costumer(
         return success({"message": "Costumer updated successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
-        print(http_ex)
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
