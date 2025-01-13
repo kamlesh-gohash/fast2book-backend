@@ -13,7 +13,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 DEBUG = os.getenv("DEBUG", "False").lower() in ["true", "1", "yes"]
 EMAIL_HOST = os.getenv("EMAIL_HOST")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-FRONT_URL = os.getenv("FRONT_URL", "*")
+FRONT_URL = os.getenv("FRONT_URL", "http://*")
 
 
 # Export all constants as a dictionary for other modules if needed
