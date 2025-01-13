@@ -29,7 +29,7 @@ app = FastAPI(lifespan=lifespan, exception_handlers=exception_handlers, openapi=
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONT_URL],
+    allow_origins=[FRONT_URL, "http://*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
