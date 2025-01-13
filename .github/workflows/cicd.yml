@@ -19,11 +19,12 @@ jobs:
           echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
           echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}" >> $GITHUB_ENV
-          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+          echo "AWS_REGION=ap-south-1" >> $GITHUB_ENV
           echo "AWS_ECR=fast2book-backend" >> $GITHUB_ENV
 
       - name: Debug Environment Variables
         run: |
+          echo "AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID"
           echo "AWS_REGION: $AWS_REGION"
           echo "AWS_ECR: $AWS_ECR"
 
@@ -35,34 +36,24 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ap-south-1
 
       - name: Build Docker image
         run: |
           docker buildx build --no-cache \
             --build-arg AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
             --build-arg AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}" \
-            --build-arg AWS_REGION="${{ secrets.AWS_REGION }}" \
+            --build-arg AWS_REGION="ap-south-1" \
             --build-arg AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
-            --build-arg DATABASE_NAME="${{ secrets.DATABASE_NAME }}" \
-            --build-arg DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-            --build-arg DEBUG="${{ secrets.DEBUG }}" \
-            --build-arg GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
-            --build-arg GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
-            --build-arg SECRET_KEY="${{ secrets.SECRET_KEY }}" \
-            --build-arg AWS_S3_BUCKET_NAME="${{ vars.AWS_S3_BUCKET_NAME }}" \
-            --build-arg EMAIL_HOST="${{ vars.EMAIL_HOST }}" \
-            --build-arg EMAIL_PASSWORD="${{ vars.EMAIL_PASSWORD }}" \
-            --build-arg EMAIL_PORT="${{ vars.EMAIL_PORT }}" \
-            --build-arg EMAIL_USER="${{ vars.EMAIL_USER }}" \
-            --build-arg FRONT_URL="${{ vars.FRONT_URL }}" \
-            --build-arg GOOGLE_REDIRECT_URI="${{ vars.GOOGLE_REDIRECT_URI }}" \
-            --build-arg PORT="${{ vars.PORT }}" \
-            -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/fast2book-backend:latest .
+            -t $AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/fast2book-backend:latest \
+            --load .
+
+      - name: List Docker images
+        run: docker images
 
       - name: Push Docker image to AWS ECR
         run: |
-          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/fast2book-backend:latest
+          docker push $AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/fast2book-backend:latest
 
       - name: Create Docker Network
         run: |
