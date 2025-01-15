@@ -31,3 +31,8 @@ poetry run black .
 ```
 poetry run pytest
 ```
+6. To format code 
+
+```
+poetry run isort .
+```
