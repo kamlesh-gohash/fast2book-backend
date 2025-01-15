@@ -13,6 +13,7 @@ from fastapi import Body, HTTPException, Path, Request, status
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import User, user_collection, vendor_collection
+from app.v1.models.permission import *
 from app.v1.models.slots import *
 from app.v1.schemas.superuser.superuser_auth import *
 from app.v1.utils.email import generate_otp, send_email
@@ -264,6 +265,7 @@ class SuperUserManager:
                 phone=super_user_create_request.phone,
                 status=super_user_create_request.status,
                 password=hashed_password,
+                menu=DEFAULT_MENU_STRUCTURE,
             )
             await user.save()
 
@@ -276,6 +278,7 @@ class SuperUserManager:
                 "roles": user.roles,
                 "phone": user.phone,
                 "status": user.status,
+                "menu": user.menu,
             }
 
             return user_data

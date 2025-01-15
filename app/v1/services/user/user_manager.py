@@ -1,5 +1,6 @@
 # app/v1/middleware/user_manager.py
 
+import logging
 import random
 
 from datetime import datetime, timedelta
@@ -31,6 +32,9 @@ from app.v1.models.user import Role
 from app.v1.models.vendor import Vendor
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
+
+
+logger = logging.getLogger(__name__)
 
 
 class UserManager:
@@ -226,21 +230,15 @@ class UserManager:
                 return {"message": "OTP sent to email", "otp": otp}  # Include OTP in response for testing
 
             if phone:
-                # Check if the user exists with the provided phone
                 user = await User.find_one(User.phone == phone)
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found with the provided phone.")
-
-                # Send OTP to the user's phone (SMS logic should be implemented)
-                # await send_sms(phone, otp)  # Uncomment this line when implementing SMS functionality
                 user.otp = otp
 
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
                 user.otp_expires = otp_expiration_time
                 await user.save()
-                return {"message": "OTP sent to phone", "otp": otp}  # Include OTP in response for testing
-
-        # Raise an error if neither email nor phone is provided
+                return {"message": "OTP sent to phone", "otp": otp}
         except HTTPException as e:
             raise e
         except Exception as ex:
@@ -260,7 +258,7 @@ class UserManager:
             user.is_active = True
             await user.save()
             user_data = user.dict(by_alias=True)
-            user_data["id"] = str(user_data.pop("_id"))  # Rename `_id` to `id`
+            user_data["id"] = str(user_data.pop("_id"))
             user_data.pop("password", None)
             user_data.pop("otp", None)
             access_token = create_access_token(data={"sub": user.email})
@@ -277,8 +275,8 @@ class UserManager:
                 raise HTTPException(status_code=400, detail="OTP has expired.")
             user.is_active = True
             await user.save()
-            user_data = user.dict(by_alias=True)  # Include `id` field
-            user_data["id"] = str(user_data.pop("_id"))  # Rename `_id` to `id`
+            user_data = user.dict(by_alias=True)
+            user_data["id"] = str(user_data.pop("_id"))
             user_data.pop("password", None)
             user_data.pop("otp", None)
             access_token = create_access_token(data={"sub": user.email})
@@ -298,7 +296,6 @@ class UserManager:
             if user is None:
                 raise HTTPException(status_code=404, detail="User not found with the provided email.")
 
-            # Ensure password is being hashed correctly
             user.password = hashpw(password.encode("utf-8"), gensalt()).decode("utf-8")
             await user.save()
             return {"message": "Password reset successful."}
@@ -308,7 +305,6 @@ class UserManager:
             if user is None:
                 raise HTTPException(status_code=404, detail="User not found with the provided phone.")
 
-            # Ensure password is being hashed correctly
             user.password = hashpw(password.encode("utf-8"), gensalt()).decode("utf-8")
             await user.save()
             return {"message": "Password reset successful."}
@@ -318,7 +314,6 @@ class UserManager:
     async def update_profile(self, user_id: str, profile_update_request: User):
 
         try:
-            # Update user profile logic
             if not ObjectId.is_valid(user_id):
                 raise HTTPException(status_code=400, detail="Invalid user ID.")
             user = await User.find_one(User.id == ObjectId(user_id))
@@ -370,7 +365,6 @@ class UserManager:
 
             return category_data
         except HTTPException:
-            # Propagate known HTTP errors to the caller
             raise
         except Exception as ex:
             raise HTTPException(
@@ -379,7 +373,6 @@ class UserManager:
 
     async def get_service_list_for_category(self, category_id: str) -> List[Service]:
         try:
-            # Convert the string ID to ObjectId
             if not ObjectId.is_valid(category_id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category ID")
             category = await category_collection.find_one({"_id": ObjectId(category_id)})
@@ -396,191 +389,202 @@ class UserManager:
 
             return service_data
         except HTTPException:
-            # Propagate known HTTP errors to the caller
             raise
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_vendor_list_for_category(self, category_id: str) -> List[Vendor]:
+    async def get_vendor_list_for_category(self, category_id: str) -> List[dict]:
         try:
-            # Convert the string ID to ObjectId
             if not ObjectId.is_valid(category_id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category ID")
 
-            # Fetch the category to validate
             category = await category_collection.find_one({"_id": ObjectId(category_id)})
             if not category:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
 
-            # Fetch all active vendors with the given category ID
             active_vendors = await vendor_collection.find({"category_id": category_id, "status": "active"}).to_list(
                 length=None
             )
-
             if not active_vendors:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="No active vendors found for the given category"
                 )
 
             vendor_data = []
-
             for vendor in active_vendors:
-                # Fetch user details based on user_id
-                user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
-                if not user:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found for vendor")
+                print(vendor, "vendor")
+                try:
+                    user = await user_collection.find_one(
+                        {"$or": [{"_id": vendor["user_id"]}, {"_id": ObjectId(vendor["user_id"])}]}
+                    )
 
-                # Convert ObjectId to string to avoid errors
-                user_id_str = str(user["_id"])
-                if vendor["business_type"] == "business":
-                    # For "business", fetch the created users by this vendor
-                    created_users = await user_collection.find({"created_by": vendor["_id"]}).to_list(length=None)
-                    user_details = [
+                    if user:
+                        print(user, "user")
+                        if vendor["business_type"] == "business":
+                            print(vendor["user_id"], "vendor user id")
+                            # Fetch created users by vendor
+                            created_users = await user_collection.find(
+                                {
+                                    "$or": [
+                                        {"created_by": str(vendor["user_id"])},
+                                        {"created_by": vendor["user_id"]},
+                                    ]
+                                }
+                            ).to_list(length=None)
+
+                            if created_users:
+                                print(created_users, "created users")
+                                user_details = [
+                                    {
+                                        "first_name": u.get("first_name"),
+                                        "last_name": u.get("last_name"),
+                                        "email": u.get("email"),
+                                        "phone": u.get("phone"),
+                                        "status": u.get("status"),
+                                        "roles": u.get("roles"),
+                                        "availability_slots": u.get("availability_slots", []),
+                                    }
+                                    for u in created_users
+                                ]
+                            else:
+                                user_details = []
+
+                        else:
+                            user_details = {
+                                "first_name": user.get("first_name"),
+                                "last_name": user.get("last_name"),
+                                "email": user.get("email"),
+                                "phone": user.get("phone"),
+                                "status": user.get("status"),
+                                "roles": user.get("roles"),
+                                "availability_slots": vendor.get("availability_slots", []),
+                            }
+                    else:
+                        user_details = [] if vendor["business_type"] == "business" else {}
+
+                    vendor_data.append(
                         {
-                            "first_name": u.get("first_name"),
-                            "last_name": u.get("last_name"),
-                            "email": u.get("email"),
-                            "phone": u.get("phone"),
-                            "status": u.get("status"),
-                            "roles": u.get("roles"),
-                            "is_dashboard_created": u.get("is_dashboard_created"),
+                            "vendor_id": str(vendor["_id"]),
+                            "business_name": vendor.get("business_name"),
+                            "business_type": vendor.get("business_type"),
+                            "business_address": vendor.get("business_address"),
+                            "user_details": user_details,
                         }
-                        for u in created_users
-                    ]
-                else:
-                    # For "individual", just show the vendor's details
-                    user_details = {
-                        "first_name": user.get("first_name"),
-                        "last_name": user.get("last_name"),
-                        "email": user.get("email"),
-                        "phone": user.get("phone"),
-                        "status": user.get("status"),
-                        "roles": user.get("roles"),
-                        "is_dashboard_created": user.get("is_dashboard_created"),
-                    }
-                # Append user details along with vendor details
-                vendor_info = {
-                    "id": str(vendor["_id"]),
-                    "status": vendor["status"],
-                    "user_id": user_id_str,
-                    "business_name": vendor["business_name"],
-                    "business_type": vendor["business_type"],
-                    "business_address": vendor["business_address"],
-                    "business_details": vendor["business_details"],
-                    "category_name": vendor["category_name"],
-                    "services": vendor["services"],
-                    "service_details": vendor["service_details"],
-                    "is_payment_verified": vendor["is_payment_verified"],
-                    "created_at": vendor["created_at"],
-                    "user_details": user_details,
-                }
-                vendor_data.append(vendor_info)
+                    )
+
+                except Exception as e:
+                    print(f"Error processing vendor ID {vendor['_id']}: {e}")
+                    vendor_data.append(
+                        {
+                            "vendor_id": str(vendor["_id"]),
+                            "business_name": vendor.get("business_name"),
+                            "business_type": vendor.get("business_type"),
+                            "user_details": [] if vendor["business_type"] == "business" else {},
+                            "availability_slots": vendor.get("availability_slots", []),
+                        }
+                    )
 
             return vendor_data
+
         except HTTPException:
-            # Propagate known HTTP errors to the caller
             raise
-        except Exception as ex:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
-            )
+        except Exception as e:
+            print(f"Unexpected error in get_vendor_list_for_category: {e}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def get_vendor_list_for_services(self, services_id: str) -> List[Vendor]:
+    async def get_vendor_list_for_services(self, service_id: str) -> List[dict]:
         try:
-            # Convert the string ID to ObjectId
-            if not ObjectId.is_valid(services_id):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid services ID")
+            if not ObjectId.is_valid(service_id):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid service ID")
 
-            # Fetch the services to validate
-            services = await services_collection.find_one({"_id": ObjectId(services_id)})
-            if not services:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Services not found")
+            service = await services_collection.find_one({"_id": ObjectId(service_id)})
+            if not service:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
 
-            # Fetch all active vendors with the given services ID
-            active_vendors = await vendor_collection.find({"services_id": services_id, "status": "active"}).to_list(
-                length=None
-            )
+            active_vendors = await vendor_collection.find(
+                {
+                    "services.id": service_id,
+                    "status": "active",
+                }
+            ).to_list(length=None)
 
             if not active_vendors:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="No active vendors found for the given services"
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No active vendors found for the given service",
                 )
 
             vendor_data = []
 
             for vendor in active_vendors:
-                # Fetch user details based on user_id
-                user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
-                if not user:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found for vendor")
+                try:
+                    user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
+                    if not user:
+                        print(f"User with ID {vendor['user_id']} not found.")
+                        continue
 
-                # Convert ObjectId to string to avoid errors
-                user_id_str = str(user["_id"])
-                if vendor["business_type"] == "business":
-                    # For "business", fetch the created users by this vendor
-                    created_users = await user_collection.find({"created_by": vendor["_id"]}).to_list(length=None)
-                    user_details = [
-                        {
-                            "first_name": u.get("first_name"),
-                            "last_name": u.get("last_name"),
-                            "email": u.get("email"),
-                            "phone": u.get("phone"),
-                            "status": u.get("status"),
-                            "roles": u.get("roles"),
-                            "is_dashboard_created": u.get("is_dashboard_created"),
+                    if vendor["business_type"] == "business":
+                        created_users = await user_collection.find({"created_by": str(vendor["user_id"])}).to_list(
+                            length=None
+                        )
+                        user_details = [
+                            {
+                                "first_name": u.get("first_name"),
+                                "last_name": u.get("last_name"),
+                                "email": u.get("email"),
+                                "phone": u.get("phone"),
+                                "status": u.get("status"),
+                                "roles": u.get("roles"),
+                                "availability_slots": u.get("availability_slots", []),
+                            }
+                            for u in created_users
+                        ]
+                    else:
+                        user_details = {
+                            "first_name": user.get("first_name"),
+                            "last_name": user.get("last_name"),
+                            "email": user.get("email"),
+                            "phone": user.get("phone"),
+                            "status": user.get("status"),
+                            "roles": user.get("roles"),
+                            "availability_slots": vendor.get("availability_slots", []),
                         }
-                        for u in created_users
-                    ]
-                else:
-                    # For "individual", just show the vendor's details
-                    user_details = {
-                        "first_name": user.get("first_name"),
-                        "last_name": user.get("last_name"),
-                        "email": user.get("email"),
-                        "phone": user.get("phone"),
-                        "status": user.get("status"),
-                        "roles": user.get("roles"),
-                        "is_dashboard_created": user.get("is_dashboard_created"),
+
+                    # Prepare vendor data
+                    vendor_info = {
+                        "id": str(vendor["_id"]),
+                        "status": vendor["status"],
+                        "business_name": vendor.get("business_name"),
+                        "business_type": vendor.get("business_type"),
+                        "business_address": vendor.get("business_address"),
+                        "business_details": vendor.get("business_details"),
+                        "services": vendor.get("services", []),
+                        "is_payment_verified": vendor.get("is_payment_verified"),
+                        "created_at": vendor.get("created_at"),
+                        "user_details": user_details,
                     }
-                # Append user details along with vendor details
-                vendor_info = {
-                    "id": str(vendor["_id"]),
-                    "status": vendor["status"],
-                    "user_id": user_id_str,
-                    "business_name": vendor["business_name"],
-                    "business_type": vendor["business_type"],
-                    "business_address": vendor["business_address"],
-                    "business_details": vendor["business_details"],
-                    "category_name": vendor["category_name"],
-                    "services": vendor["services"],
-                    "service_details": vendor["service_details"],
-                    "is_payment_verified": vendor["is_payment_verified"],
-                    "created_at": vendor["created_at"],
-                    "user_details": user_details,
-                }
-                vendor_data.append(vendor_info)
+                    vendor_data.append(vendor_info)
+
+                except Exception as e:
+                    print(f"Error processing vendor ID {vendor['_id']}: {e}")
+                    continue
 
             return vendor_data
+
         except HTTPException:
-            # Propagate known HTTP errors to the caller
             raise
         except Exception as ex:
+            print(f"Unexpected error in get_vendor_list_for_services: {ex}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred",
             )
 
     async def create_support_request(self, support_request: Support):
         try:
-            # Get the current user based on the provided token
-            # current_user = await get_current_user(request=request, token=token)
-            # if not current_user:
-            #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            # The title and description will already be set from the request data
-
-            # Insert the support request into the collection
             result = await support_collection.insert_one(support_request.dict())
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support request not found")
@@ -600,4 +604,153 @@ class UserManager:
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
+
+    async def service_search(self, id: str):
+        try:
+            if not ObjectId.is_valid(id):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid service ID")
+
+            result = await services_collection.find_one({"_id": ObjectId(id)})
+            if not result:
+                logger.error(f"Service with ID {id} not found.")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+            updated_service = await services_collection.find_one_and_update(
+                {"_id": ObjectId(id)}, {"$inc": {"number_of_views": 1}}, return_document=True
+            )
+
+            if not updated_service:
+                logger.error(f"Service with ID {id} was not updated correctly.")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update service"
+                )
+
+            result_data = {
+                "service_name": updated_service.get("name"),
+                "number_of_views": updated_service.get("number_of_views"),
+            }
+            return result_data
+
+        except HTTPException as ex:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def category_search(self, id: str):
+        try:
+            if not ObjectId.is_valid(id):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category ID")
+
+            result = await category_collection.find_one({"_id": ObjectId(id)})
+            if not result:
+                logger.error(f"Category with ID {id} not found.")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+
+            updated_category = await category_collection.find_one_and_update(
+                {"_id": ObjectId(id)}, {"$inc": {"number_of_views": 1}}, return_document=True
+            )
+
+            if not updated_category:
+                logger.error(f"Category with ID {id} was not updated correctly.")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update category"
+                )
+
+            result_data = {
+                "category_name": updated_category.get("name"),
+                "number_of_views": updated_category.get("number_of_views"),
+            }
+            return result_data
+
+        except HTTPException as ex:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def get_top_services(self):
+        try:
+            cursor = services_collection.aggregate(
+                [
+                    {"$sort": {"number_of_views": -1}},
+                    {
+                        "$group": {
+                            "_id": "$category_name",
+                            "services": {
+                                "$push": {
+                                    "service_id": "$_id",
+                                    "name": "$name",
+                                    "number_of_views": "$number_of_views",
+                                    "category_name": "$category_name",
+                                }
+                            },
+                        }
+                    },
+                    {"$project": {"_id": 0, "category": "$_id", "services": {"$slice": ["$services", 2]}}},
+                    {"$unwind": "$services"},
+                    {
+                        "$project": {
+                            "id": {"$toString": "$services.service_id"},
+                            "name": "$services.name",
+                            "service_image": "$services.service_image",
+                            "service_image_url": "$services.service_image_url",
+                            "number_of_views": "$services.number_of_views",
+                            "category": "$category",
+                        }
+                    },
+                ]
+            )
+
+            result = await cursor.to_list(length=100)
+
+            for item in result:
+                item["id"] = str(item["id"])
+                item["category"] = str(item["category"])
+
+            return result
+
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def get_category_top_service(self):
+        try:
+            cursor = services_collection.aggregate(
+                [
+                    {"$sort": {"number_of_views": -1}},
+                    {
+                        "$group": {
+                            "_id": "$category_name",
+                            "services": {
+                                "$push": {
+                                    "service_id": "$_id",
+                                    "name": "$name",
+                                    "service_image": "$service_image",
+                                    "service_image_url": "$service_image_url",
+                                    "number_of_views": "$number_of_views",
+                                    "category_name": "$category_name",
+                                }
+                            },
+                        }
+                    },
+                    {"$project": {"_id": 0, "category": "$_id", "services": {"$slice": ["$services", 5]}}},
+                ]
+            )
+
+            result = await cursor.to_list(length=100)
+
+            for item in result:
+                for service in item["services"]:
+                    service["service_id"] = str(service["service_id"])
+
+            return result
+
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

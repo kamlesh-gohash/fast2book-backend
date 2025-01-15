@@ -57,7 +57,7 @@ async def seed_categorys():
     categories = [
         {"name": "Doctor"},
         {"name": "Salon"},
-        {"name": "Cator"},
+        {"name": "Cater"},
     ]
 
     for category in categories:

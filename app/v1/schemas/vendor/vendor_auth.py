@@ -132,7 +132,7 @@ class UpdateVendorRequest(BaseModel):
     phone: Optional[str] = None
     gender: Gender = Field(default=Gender.male)
     roles: list[Role] = [Role.vendor]
-    business_type: BusinessType = Field(default=BusinessType.individual)
+    business_type: Optional[BusinessType] = Field(default=BusinessType.individual)
     business_name: Optional[str] = Field(None, max_length=100)
     business_address: Optional[str] = Field(None, max_length=255)
     business_details: Optional[str] = None
@@ -305,6 +305,41 @@ class ChangePasswordRequest(BaseModel):
     def validate(self):
         try:
             vendor_change_password_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
+
+
+update_vendor_user_validator = zon.record(
+    {
+        "first_name": zon.string().min(1).max(50).optional(),
+        "last_name": zon.string().min(1).max(50).optional(),
+        "email": zon.string().email().optional(),
+        "phone": zon.string().min(10).max(10).optional(),
+        "category": zon.string().optional(),
+        "fees": zon.string().optional(),
+        "gander": zon.enum(["male", "female", "other"]).optional(),
+        "status": zon.enum(["Active", "Inactive"]).optional(),
+    }
+)
+
+
+class VendorUserUpdateRequest(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    category: Optional[str] = None
+    services: Optional[List[Service]] = None
+    phone: Optional[str] = None
+    fees: Optional[str] = None
+    gander: Optional[Gender] = None
+    status: Optional[StatusEnum] = None
+    roles: list[Role] = [Role.vendor_user]
+
+    def validate(self):
+        try:
+            update_vendor_user_validator.validate(self.dict(exclude_none=True))
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})

@@ -72,6 +72,7 @@ class User(Document, BaseModel):
     dob: Optional[str] = None
     status: StatusEnum = StatusEnum.Active
     roles: List[Role] = Field(default=["user"])
+    menu: list = Field(default_factory=list)  # Store assigned menu structure
 
     class Settings:
         name = "users"
