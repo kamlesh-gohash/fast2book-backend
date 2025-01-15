@@ -1133,13 +1133,13 @@ class VendorManager:
         Delete vendor availability for a specific day or time slot.
 
         Args:
-            request (Request): The HTTP request object.
-            token (str): The authentication token for the current user.
-            day (str): The day to delete availability for.
-            start_time (Optional[str]): The specific start time of the slot to delete.
+                request (Request): The HTTP request object.
+                token (str): The authentication token for the current user.
+                day (str): The day to delete availability for.
+                start_time (Optional[str]): The specific start time of the slot to delete.
 
         Returns:
-            dict: Updated vendor availability slots.
+                dict: Updated vendor availability slots.
         """
         try:
             # Authenticate the current user
@@ -1196,13 +1196,13 @@ class VendorManager:
         Set availability slots for a specific user created by the current business user.
 
         Args:
-            request (Request): The HTTP request object.
-            token (str): Authentication token for the current user.
-            user_id (str): ID of the user for whom slots are being set.
-            slots (List[DaySlot]): List of slots to be added.
+                request (Request): The HTTP request object.
+                token (str): Authentication token for the current user.
+                user_id (str): ID of the user for whom slots are being set.
+                slots (List[DaySlot]): List of slots to be added.
 
         Returns:
-            dict: Updated user availability slots.
+                dict: Updated user availability slots.
         """
         try:
             # Authenticate the current user
@@ -1305,13 +1305,13 @@ class VendorManager:
         Set availability slots for a specific user created by the current business user.
 
         Args:
-            request (Request): The HTTP request object.
-            token (str): Authentication token for the current user.
-            user_id (str): ID of the user for whom slots are being set.
-            slots (List[DaySlot]): List of slots to be added.
+                request (Request): The HTTP request object.
+                token (str): Authentication token for the current user.
+                user_id (str): ID of the user for whom slots are being set.
+                slots (List[DaySlot]): List of slots to be added.
 
         Returns:
-            dict: Updated user availability slots.
+                dict: Updated user availability slots.
         """
         try:
             # Authenticate the current user
@@ -1388,12 +1388,12 @@ class VendorManager:
         Fetch availability slots for a vendor or vendor_user.
 
         Args:
-            request (Request): The HTTP request object.
-            token (str): Authentication token for the current user.
-            vendor_id (str): ID of the vendor or vendor_user.
+                request (Request): The HTTP request object.
+                token (str): Authentication token for the current user.
+                vendor_id (str): ID of the vendor or vendor_user.
 
         Returns:
-            dict: Vendor data along with availability slots.
+                dict: Vendor data along with availability slots.
         """
         try:
             # Authenticate the current user
@@ -1527,34 +1527,25 @@ class VendorManager:
 
     async def vendor_user_list_for_slot(self, request: Request, token: str, vendor_id: str):
         try:
-            # Get the current user from the request
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            # Ensure the user is a super admin
-            if current_user.user_role != 2:  # Assuming role `2` is for super admin
+            if current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-            # Validate the vendor ID
             if not ObjectId.is_valid(vendor_id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid vendor ID")
-            # Fetch vendor details by vendor_id
             vendor_details = await vendor_collection.find_one({"user_id": vendor_id})
             if not vendor_details:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-
-            # Check if the vendor's business type is "business"
             if vendor_details.get("business_type") != "business":
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="Vendor's business type is not 'business'"
                 )
-            # Fetch users created by this vendor
             users = await user_collection.find({"created_by": vendor_id}).to_list(None)
             vendor_user_data = []
 
             for user in users:
-                # Process each user (e.g., capitalize names, format email, etc.)
                 user_data = {
                     "id": str(user["_id"]),
                     "first_name": user.get("first_name", "").capitalize(),
@@ -1571,7 +1562,119 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )
+
+    async def update_vendor_user_by_id(
+        self, request: Request, token: str, id: str, vendor_user_request: VendorUserUpdateRequest, role: str = "vendor"
+    ):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            print(current_user.roles)
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            valid_roles = ["admin", "user", "vendor"]
+            if role not in valid_roles:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid role: '{role}'. Valid roles are: {valid_roles}.",
+                )
+            if not ObjectId.is_valid(id):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid vendor user ID")
+            vendor_user = await user_collection.find_one({"_id": ObjectId(id)})
+            if not vendor_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+            if vendor_user.get("created_by") != str(current_user.id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You are not authorized to update this user"
+                )
+            update_data = {key: value for key, value in vendor_user_request.dict().items() if value is not None}
+            if not update_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields provided for update"
+                )
+            result = await user_collection.update_one({"_id": ObjectId(id)}, {"$set": update_data})
+            if result.modified_count == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="No changes were made to the vendor user"
+                )
+            updated_user = await user_collection.find_one({"_id": ObjectId(id)})
+            if updated_user:
+                updated_user["id"] = str(updated_user.pop("_id"))
+            return {"data": updated_user}
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )
+
+    async def delete_vendor_user_by_id(self, request: Request, token: str, id: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            if not ObjectId.is_valid(id):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid vendor user ID")
+            vendor_user = await user_collection.find_one({"_id": ObjectId(id)})
+            if not vendor_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+            if vendor_user.get("created_by") != str(current_user.id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You are not authorized to delete this user"
+                )
+
+            result = await user_collection.delete_one({"_id": ObjectId(id)})
+            if result.deleted_count == 0:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Failed to delete the vendor user")
+
+            return {}
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )
+
+    async def get_vendor_user_by_id(self, request: Request, token: str, id: str, role: str = "vendor"):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            valid_roles = ["admin", "user", "vendor"]
+            if role not in valid_roles:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid role: '{role}'. Valid roles are: {valid_roles}.",
+                )
+            if not ObjectId.is_valid(id):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid vendor user ID")
+            vendor_user = await user_collection.find_one({"_id": ObjectId(id)})
+            if not vendor_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+            if vendor_user.get("created_by") != str(current_user.id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You are not authorized to view this user"
+                )
+            vendor_user["id"] = str(vendor_user.pop("_id"))
+            return vendor_user
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",

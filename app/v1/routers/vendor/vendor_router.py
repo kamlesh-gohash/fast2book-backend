@@ -558,6 +558,7 @@ async def vendor_list_for_slot(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -579,6 +580,69 @@ async def vendor_user_list_for_slot(
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.put("/update-vendor-user/{id}", status_code=status.HTTP_200_OK)
+async def update_vendor_user(
+    id: str,
+    request: Request,
+    vendor_user_request: VendorUserUpdateRequest,
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+    token: str = Depends(get_token_from_header),
+):
+    try:
+        result = await vendor_manager.update_vendor_user_by_id(
+            request=request, token=token, id=id, vendor_user_request=vendor_user_request
+        )
+        return success({"message": "Vendor user updated successfully", "data": result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as e:
+        return failure({"message": str(e)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.delete("/delete-vendor-user/{id}", status_code=status.HTTP_200_OK)
+async def delete_vendor_user(
+    request: Request,
+    id: str,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.delete_vendor_user_by_id(request=request, token=token, id=id)
+        return success({"message": "Vendor user deleted successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-vendor-user/{id}", status_code=status.HTTP_200_OK)
+async def get_vendor_user(
+    request: Request,
+    id: str,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.get_vendor_user_by_id(request=request, token=token, id=id)
+        return success({"message": "vendor user found successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},

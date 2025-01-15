@@ -26,6 +26,9 @@ class Service(Document):
     status: StatusEnum = Field(default=StatusEnum.ACTIVE)
     category_id: PydanticObjectId = Field(..., description="Reference to the Category document")
     category_name: str = Field(..., description="Name of the category")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    number_of_views: int = Field(default=0)
 
     class Settings:
         name = "services"

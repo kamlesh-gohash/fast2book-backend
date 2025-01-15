@@ -1,8 +1,11 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.v1.dependencies import get_support_manager, get_user_manager
 from app.v1.middleware.auth import get_token_from_header
 from app.v1.models import User, UserToken
+from app.v1.models.services import *
 from app.v1.models.support import Support
 from app.v1.schemas.user.auth import *
 from app.v1.services import UserManager
@@ -11,6 +14,7 @@ from app.v1.utils.response.response_format import failure, internal_server_error
 from app.v1.utils.token import *
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -293,6 +297,69 @@ async def support_request(support_request: Support, user_manager: UserManager = 
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/service-search/{id}", status_code=status.HTTP_200_OK)
+async def service_search(id: str, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.service_search(id=id)
+        return success({"message": "Service search successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/category-search/{id}", status_code=status.HTTP_200_OK)
+async def category_search(id: str, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.category_search(id=id)
+        return success({"message": "Category search successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/top-services", status_code=status.HTTP_200_OK)
+async def top_services(user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.get_top_services()
+        return success({"message": "Top services fetched successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+        )
+
+
+@router.get("/category-top-service", status_code=status.HTTP_200_OK)
+async def category_top_service(user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.get_category_top_service()
+        return success({"message": "Category top service fetched successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
