@@ -21,7 +21,7 @@ class Bookings(BaseModel):
     slots_id: Link[Slots]
     # transaction_id: Link[Transaction]
     slot_data: Dict[str, SlotRequest]
-    category: Link[Category]
+    category_id: Link[Category]
     service: Link[Service]
     booking_date: datetime
     description: str

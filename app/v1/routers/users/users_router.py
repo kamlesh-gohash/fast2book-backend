@@ -365,3 +365,32 @@ async def category_top_service(user_manager: UserManager = Depends(get_user_mana
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.post("/change-password", status_code=status.HTTP_200_OK)
+async def change_password(
+    request: Request,
+    change_password_request: ChangePasswordRequest,
+    token: str = Depends(get_token_from_header),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    validation_result = change_password_request.validate()
+    if validation_result:
+        return validation_result
+    try:
+        result = await user_manager.change_password(
+            request=request,
+            token=token,
+            old_password=change_password_request.old_password,
+            new_password=change_password_request.new_password,
+        )
+        return success({"message": "Password changed successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

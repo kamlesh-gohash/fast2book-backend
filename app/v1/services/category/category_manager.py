@@ -9,6 +9,7 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
 from fastapi import Body, HTTPException, Path, Request, status
+from slugify import slugify
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import category_collection, services_collection
@@ -37,20 +38,21 @@ class CategoryManager:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Category with name '{category_request.name}' already exists.",
                 )
+            slug = slugify(category_request.name)
             category_data = {
                 "name": category_request.name,
-                "status": category_request.status.value,  # Convert Enum to string
-                "created_at": datetime.utcnow(),  # Optional timestamp
+                "slug": slug,
+                "status": category_request.status.value,
+                "created_at": datetime.utcnow(),
             }
 
             result = await category_collection.insert_one(category_data)
 
             created_category = await category_collection.find_one({"_id": result.inserted_id})
-
-            # Format the response to include category name, status, and inserted id
             response_data = {
                 "id": str(result.inserted_id),
                 "name": created_category["name"],
+                "slug": created_category["slug"],
                 "status": created_category["status"],
                 "created_at": created_category["created_at"],
             }
@@ -79,22 +81,20 @@ class CategoryManager:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             # Fetch all active categories
             skip = (page - 1) * limit
-            query = {}  # Start with an empty query
-
-            # If there's a search term, modify the query to search by name or category_name
+            query = {}
             if search:
-                search_regex = {"$regex": search, "$options": "i"}  # Case-insensitive search
+                search_regex = {"$regex": search, "$options": "i"}
                 query["$or"] = [
-                    {"name": search_regex},  # Search by service name
-                    {"category_name": search_regex},  # Search by category name (if the category is loaded)
+                    {"name": search_regex},
+                    {"slug": search_regex},
+                    {"category_name": search_regex},
                 ]
             active_categories = await category_collection.find({**query}).skip(skip).limit(limit).to_list(length=100)
-
-            # Format the response with category name, status, and created_at
             category_data = [
                 {
                     "id": str(category["_id"]),
                     "name": category["name"],
+                    "slug": category["slug"] if "slug" in category else None,
                     "status": category["status"],
                     "created_at": category["created_at"],
                 }
@@ -107,6 +107,7 @@ class CategoryManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -131,6 +132,7 @@ class CategoryManager:
             return {
                 "id": str(category["_id"]),
                 "name": category["name"],
+                "slug": category["slug"] if "slug" in category else None,
                 "status": category["status"],
                 "created_at": category["created_at"],
             }
@@ -174,13 +176,12 @@ class CategoryManager:
             if result.matched_count == 0:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Category with ID '{id}' not found")
 
-            # Merge the updated data with the existing data for the response
             updated_category = {**existing_category, **update_data}
 
-            # Format and return the response
             return {
                 "id": str(updated_category["_id"]),
                 "name": updated_category["name"],
+                "slug": updated_category["slug"] if "slug" in updated_category else None,
                 "status": updated_category["status"],
                 "created_at": updated_category["created_at"],
             }
