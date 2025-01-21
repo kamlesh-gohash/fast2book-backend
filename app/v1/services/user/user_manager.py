@@ -414,17 +414,13 @@ class UserManager:
 
             vendor_data = []
             for vendor in active_vendors:
-                print(vendor, "vendor")
                 try:
                     user = await user_collection.find_one(
                         {"$or": [{"_id": vendor["user_id"]}, {"_id": ObjectId(vendor["user_id"])}]}
                     )
 
                     if user:
-                        print(user, "user")
                         if vendor["business_type"] == "business":
-                            print(vendor["user_id"], "vendor user id")
-                            # Fetch created users by vendor
                             created_users = await user_collection.find(
                                 {
                                     "$or": [
@@ -434,10 +430,10 @@ class UserManager:
                                 }
                             ).to_list(length=None)
 
+                            # If created users exist, append each user as a separate vendor entry
                             if created_users:
-                                print(created_users, "created users")
-                                user_details = [
-                                    {
+                                for u in created_users:
+                                    user_details = {
                                         "first_name": u.get("first_name"),
                                         "last_name": u.get("last_name"),
                                         "email": u.get("email"),
@@ -446,10 +442,19 @@ class UserManager:
                                         "roles": u.get("roles"),
                                         "availability_slots": u.get("availability_slots", []),
                                     }
-                                    for u in created_users
-                                ]
-                            else:
-                                user_details = []
+
+                                    vendor_data.append(
+                                        {
+                                            "vendor_id": str(vendor["_id"]),
+                                            "business_name": vendor.get("business_name"),
+                                            "business_type": vendor.get("business_type"),
+                                            "business_address": vendor.get("business_address"),
+                                            "business_details": vendor.get("business_details"),
+                                            "category_id": str(vendor["category_id"]),
+                                            "services": vendor.get("services", []),
+                                            "user_details": user_details,
+                                        }
+                                    )
 
                         else:
                             user_details = {
@@ -461,21 +466,32 @@ class UserManager:
                                 "roles": user.get("roles"),
                                 "availability_slots": vendor.get("availability_slots", []),
                             }
-                    else:
-                        user_details = [] if vendor["business_type"] == "business" else {}
 
-                    vendor_data.append(
-                        {
-                            "vendor_id": str(vendor["_id"]),
-                            "business_name": vendor.get("business_name"),
-                            "business_type": vendor.get("business_type"),
-                            "business_address": vendor.get("business_address"),
-                            "user_details": user_details,
-                        }
-                    )
+                            vendor_data.append(
+                                {
+                                    "vendor_id": str(vendor["_id"]),
+                                    "business_name": vendor.get("business_name"),
+                                    "business_type": vendor.get("business_type"),
+                                    "business_address": vendor.get("business_address"),
+                                    "business_details": vendor.get("business_details"),
+                                    "category_id": str(vendor["category_id"]),
+                                    "services": vendor.get("services", []),
+                                    "user_details": user_details,
+                                }
+                            )
+
+                    else:
+                        vendor_data.append(
+                            {
+                                "vendor_id": str(vendor["_id"]),
+                                "business_name": vendor.get("business_name"),
+                                "business_type": vendor.get("business_type"),
+                                "user_details": [] if vendor["business_type"] == "business" else {},
+                                "availability_slots": vendor.get("availability_slots", []),
+                            }
+                        )
 
                 except Exception as e:
-                    print(f"Error processing vendor ID {vendor['_id']}: {e}")
                     vendor_data.append(
                         {
                             "vendor_id": str(vendor["_id"]),
@@ -491,7 +507,6 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"Unexpected error in get_vendor_list_for_category: {e}")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     async def get_vendor_list_for_services(self, service_id: str) -> List[dict]:
@@ -522,7 +537,6 @@ class UserManager:
                 try:
                     user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
                     if not user:
-                        print(f"User with ID {vendor['user_id']} not found.")
                         continue
 
                     if vendor["business_type"] == "business":
@@ -568,7 +582,6 @@ class UserManager:
                     vendor_data.append(vendor_info)
 
                 except Exception as e:
-                    print(f"Error processing vendor ID {vendor['_id']}: {e}")
                     continue
 
             return vendor_data
@@ -576,7 +589,6 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as ex:
-            print(f"Unexpected error in get_vendor_list_for_services: {ex}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred",
@@ -686,6 +698,8 @@ class UserManager:
                                     "name": "$name",
                                     "number_of_views": "$number_of_views",
                                     "category_name": "$category_name",
+                                    "service_image": "$service_image",
+                                    "service_image_url": "$service_image_url",
                                 }
                             },
                         }
@@ -706,7 +720,6 @@ class UserManager:
             )
 
             result = await cursor.to_list(length=100)
-
             for item in result:
                 item["id"] = str(item["id"])
                 item["category"] = str(item["category"])
@@ -732,24 +745,68 @@ class UserManager:
                                     "name": "$name",
                                     "service_image": "$service_image",
                                     "service_image_url": "$service_image_url",
-                                    "number_of_views": "$number_of_views",
                                     "category_name": "$category_name",
                                 }
                             },
                         }
                     },
-                    {"$project": {"_id": 0, "category": "$_id", "services": {"$slice": ["$services", 5]}}},
+                    {"$project": {"_id": 0, "category": "$_id", "services": 1}},
                 ]
             )
 
             result = await cursor.to_list(length=100)
 
+            data = {}
             for item in result:
-                for service in item["services"]:
+                category = item["category"]
+                services = item["services"]
+
+                if category == "Doctor":
+                    data[category] = {"services": services[:6]}
+                else:
+                    data[category] = {"services": services[:5]}
+                for service in data[category]["services"]:
                     service["service_id"] = str(service["service_id"])
 
-            return result
+            return data
 
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def change_password(self, request: Request, token: str, old_password: str, new_password: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if old_password is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Old Password required")
+            if not bcrypt.checkpw(old_password.encode("utf-8"), current_user.password.encode("utf-8")):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Old password does not match",
+                )
+
+            # Ensure the new password is different
+            if bcrypt.checkpw(new_password.encode("utf-8"), current_user.password.encode("utf-8")):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="New password cannot be the same as the old password",
+                )
+
+            # Hash the new password and save it
+            hashed_new_password = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+            # Update user in the database
+            await user_collection.update_one(
+                {"_id": ObjectId(current_user.id)}, {"$set": {"password": hashed_new_password}}
+            )
+            return {None}
+
+        except HTTPException as ex:
+            raise
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
