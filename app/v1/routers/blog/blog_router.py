@@ -87,21 +87,22 @@ async def get_blog(
 
 
 class StatusEnum(str, Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    DRAFT = "draft"
+    Active = "active"
+    Inactive = "inactive"
+    Draft = "draft"
 
 
 class BlogRequest(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
     blog_url: Optional[str] = None
-    blog_image: Optional[str] = None
-    blog_image_url: Optional[str] = None
+    image: Optional[str] = None
+    # blog_image: Optional[str] = None
+    # blog_image_url: Optional[str] = None
     author_name: Optional[str] = None
     category: Optional[str] = None
     tags: Optional[List[str]] = None
-    status: StatusEnum = Field(default=StatusEnum.ACTIVE)
+    status: StatusEnum = Field(default=StatusEnum.Active)
 
 
 @router.put("/update-blog/{id}", status_code=status.HTTP_200_OK)

@@ -22,7 +22,7 @@ from app.v1.models import (
 )
 from app.v1.models.booking import *
 from app.v1.models.user import User
-from app.v1.schemas.booking.booking import CreateBookingRequest
+from app.v1.schemas.booking.booking import CancelBookingRequest, CreateBookingRequest
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
@@ -184,9 +184,9 @@ class BookingManager:
 
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-            vendor_id = str(current_user.id)
+            user_id = str(current_user.id)
 
-            vendor = await vendor_collection.find_one({"user_id": vendor_id})
+            vendor = await vendor_collection.find_one({"user_id": user_id})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
@@ -200,8 +200,6 @@ class BookingManager:
             booking["vendor_id"] = str(booking["vendor_id"])
             booking["category_id"] = str(booking["category_id"])
             booking["service_id"] = str(booking["service_id"])
-
-            print(booking, "booking")
 
             return booking
 
@@ -217,9 +215,9 @@ class BookingManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-            vendor_id = str(current_user.id)
+            user_id = str(current_user.id)
 
-            vendor = await vendor_collection.find_one({"user_id": vendor_id})
+            vendor = await vendor_collection.find_one({"user_id": user_id})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
@@ -241,6 +239,75 @@ class BookingManager:
             booking["service_id"] = str(booking["service_id"])
 
             return booking
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def user_booking_list(self, request: Request, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            if "user" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            user_id = str(current_user.id)
+
+            user = await user_collection.find_one({"_id": ObjectId(user_id)})
+            if not user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+            # async for booking in booking_collection.find({"user_id": user["_id"]}):
+            #     booking["_id"] = str(booking["_id"])
+            #     bookings.append(booking)
+            bookings = await booking_collection.find({"user_id": user["_id"]}).to_list(None)
+            # Convert ObjectId to string in the response
+
+            for booking in bookings:
+                booking["id"] = str(booking["_id"])
+                booking.pop("_id", None)
+                booking["user_id"] = str(booking["user_id"])
+                booking["vendor_id"] = str(booking["vendor_id"])
+                booking["category_id"] = str(booking["category_id"])
+                booking["service_id"] = str(booking["service_id"])
+
+            return bookings
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def cancel_booking(self, request: Request, token: str, id: str, cancel_request: CancelBookingRequest):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            if "user" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            user_id = str(current_user.id)
+
+            user = await user_collection.find_one({"_id": ObjectId(user_id)})
+            if not user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+            booking = await booking_collection.find_one({"_id": ObjectId(id)})
+            if not booking:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+            cancellation_data = {
+                "status": "Cancelled",
+                "cancellation_reason": cancel_request.reason,
+                "cancelled_at": datetime.utcnow(),
+            }
+            update_result = await booking_collection.update_one({"_id": ObjectId(id)}, {"$set": cancellation_data})
+
+            if update_result.modified_count == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to cancel booking"
+                )
+
+            return {"reason": cancel_request.reason}
 
         except HTTPException:
             raise

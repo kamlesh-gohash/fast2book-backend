@@ -165,6 +165,7 @@ class VendorManager:
                 "last_name": create_vendor_request.last_name,
                 "email": create_vendor_request.email,
                 "phone": create_vendor_request.phone,
+                "gender": create_vendor_request.gender,
                 "roles": create_vendor_request.roles,
                 "password": hashed_password,
                 "status": create_vendor_request.status,
@@ -206,8 +207,8 @@ class VendorManager:
                 "status": create_vendor_request.status,
                 "created_at": datetime.utcnow(),
             }
-            razorpay_response = create_razorpay_subaccount(vendor_data, user_data)
-            vendor_data["razorpay_account_id"] = razorpay_response["id"]
+            # razorpay_response = create_razorpay_subaccount(vendor_data, user_data)
+            # vendor_data["razorpay_account_id"] = razorpay_response["id"]
             # Insert vendor data into the database
             vendor_result = await vendor_collection.insert_one(vendor_data)
 
@@ -217,6 +218,7 @@ class VendorManager:
                 "last_name": create_vendor_request.last_name,
                 "email": create_vendor_request.email,
                 "phone": create_vendor_request.phone,
+                "gender": create_vendor_request.gender,
                 "roles": create_vendor_request.roles,
                 "password": plain_text_password,
                 "status": create_vendor_request.status,
@@ -367,19 +369,43 @@ class VendorManager:
 
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-
+            print(result, "result")
             result["id"] = str(result.pop("_id"))
             result["first_name"] = result["first_name"].capitalize()
             result["last_name"] = result["last_name"].capitalize()
             result["email"] = result["email"]
             result["phone"] = result["phone"]
-            result["created_by"] = result.get("created_by", "Unknown")
-            category_id = result.get("category_id")
-            if category_id:
-                category = await category_collection.find_one({"_id": ObjectId(category_id)})
-                result["category_name"] = category.get("name") if category else "Unknown"
+            if result["phone"]:
+                result["phone"] = result["phone"]
             else:
-                result["category_name"] = "Unknown"
+                result["phone"] = "Unknown"
+            if result["gender"]:
+                result["gender"] = result["gender"]
+            else:
+                result["gender"] = "Unknown"
+            result["created_by"] = result.get("created_by", "Unknown")
+            vendor_details = await vendor_collection.find_one({"user_id": result["id"]})
+            if vendor_details:
+                result["business_name"] = vendor_details.get("business_name")
+                result["business_type"] = vendor_details.get("business_type")
+                result["business_address"] = vendor_details.get("business_address")
+                result["business_details"] = vendor_details.get("business_details")
+                category_id = vendor_details.get("category_id")
+                if category_id:
+                    category = await category_collection.find_one({"_id": ObjectId(category_id)})
+                    result["category_id"] = str(category_id)
+                    result["category_name"] = category.get("name", "Unknown") if category else "Unknown"
+                else:
+                    result["category_name"] = "Unknown"
+                result["services"] = vendor_details.get("services", [])
+                result["service_details"] = vendor_details.get("service_details", [])
+                result["manage_plan"] = vendor_details.get("manage_plan", False)
+                result["manage_fee_and_gst"] = vendor_details.get("manage_fee_and_gst", False)
+                result["manage_offer"] = vendor_details.get("manage_offer", False)
+                result["is_payment_verified"] = vendor_details.get("is_payment_verified", False)
+                result["status"] = vendor_details.get("status", "N/A")
+                result["created_at"] = vendor_details.get("created_at")
+
             result.pop("password", None)
 
             return result

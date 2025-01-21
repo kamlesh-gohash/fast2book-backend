@@ -132,3 +132,49 @@ async def vendor_get_booking(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.get("/user-booking-list", status_code=status.HTTP_200_OK)
+async def user_booking_list(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    booking_manager: BookingManager = Depends(get_booking_manager),
+):
+    try:
+        result = await booking_manager.user_booking_list(request=request, token=token)
+
+        return success({"message": "User Booking List found successfully", "data": result})
+
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.delete("/delete-booking/{id}", status_code=status.HTTP_200_OK)
+async def cancel_booking(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    id: str = Path(..., min_length=1, max_length=100),
+    booking_manager: BookingManager = Depends(get_booking_manager),
+):
+    try:
+        result = await booking_manager.cancel_booking(request=request, token=token, id=id)
+
+        return success({"message": "User Booking deleted successfully", "data": result})
+
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

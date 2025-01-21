@@ -59,3 +59,24 @@ class CreateBookingRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
+
+
+cancel_booking_validator = zon.record(
+    {
+        "booking_id": zon.string(),
+        "reason": zon.string(),
+    }
+)
+
+
+class CancelBookingRequest(BaseModel):
+    booking_id: str
+    reason: str
+
+    def validate(self):
+        try:
+            cancel_booking_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
