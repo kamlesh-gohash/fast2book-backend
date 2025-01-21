@@ -267,3 +267,24 @@ class RefreshTokenRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
+
+
+change_password_validator = zon.record(
+    {
+        "old_password": zon.string().min(6).max(20),
+        "new_password": zon.string().min(6).max(20),
+    }
+)
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+    def validate(self):
+        try:
+            change_password_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None

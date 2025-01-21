@@ -5,6 +5,7 @@ import bcrypt
 import zon
 
 from pydantic import BaseModel, EmailStr
+from slugify import slugify
 
 from app.v1.models.category import StatusEnum
 from app.v1.utils.response.response_format import validation_error
@@ -19,15 +20,21 @@ create_category_validator = zon.record(
 
 class CreateCategoryRequest(BaseModel):
     name: str
-    status: StatusEnum = StatusEnum.ACTIVE
+    status: StatusEnum = StatusEnum.Active
+    slug: str = None  # Add slug field
 
     def validate(self):
+        """Validate the input using zon."""
         try:
             create_category_validator.validate(self.dict())
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
+
+    def generate_slug(self):
+        """Generate slug from the name."""
+        self.slug = slugify(self.name)
 
 
 all_category_validator = zon.record({})

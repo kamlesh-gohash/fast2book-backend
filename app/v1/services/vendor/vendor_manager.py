@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
+import razorpay
 
 from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
@@ -34,7 +35,7 @@ def convert_objectid(obj):
     elif isinstance(obj, list):
         return [convert_objectid(item) for item in obj]
     elif isinstance(obj, ObjectId):
-        return str(obj)  # Convert ObjectId to string
+        return str(obj)
     return obj
 
 
@@ -56,137 +57,53 @@ def validate_time_format(time_str: str):
     return True
 
 
+RAZOR_PAY_KEY_ID = os.getenv("RAZOR_PAY_KEY_ID")
+RAZOR_PAY_KEY_SECRET = os.getenv("RAZOR_PAY_KEY_SECRET")
+razorpay_client = razorpay.Client(auth=(RAZOR_PAY_KEY_ID, RAZOR_PAY_KEY_SECRET))
+
+
+def create_razorpay_subaccount(vendor_data, user_data):
+    """
+    Creates a Razorpay subaccount for the vendor.
+    """
+
+    account_data = {
+        "name": vendor_data["business_name"],
+        "email": user_data["email"],
+        "contact": user_data["phone"],
+        "business_type": vendor_data["business_type"],
+        "business_category": "services",
+        "account_type": "savings",
+    }
+
+    try:
+
+        response = razorpay_client.account.create(account_data)
+        if response and isinstance(response, dict):
+            account_id = response.get("id")
+            account_details = razorpay_client.account.fetch(account_id)
+        else:
+            return {"error": "Failed to create Razorpay subaccount. Response not as expected."}
+
+        return response
+
+    except razorpay.errors.BadRequestError as e:
+        raise HTTPException(status_code=400, detail=f"Razorpay Error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create Razorpay subaccount: {str(e)}")
+
+
 class VendorManager:
-    # async def create_vendor(self, request: Request, token: str, create_vendor_request: SignUpVendorRequest):
-    #     try:
-    #         current_user = await get_current_user(request=request, token=token)
-    #         if not current_user:
-    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-    #         if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-
-    #         # Check if a user with the given email or phone already exists
-    #         existing_user = await user_collection.find_one(
-    #             {
-    #                 "$or": [
-    #                     {"email": {"$eq": create_vendor_request.email, "$nin": [None, ""]}},
-    #                     {"phone": {"$eq": create_vendor_request.phone, "$nin": [None, ""]}},
-    #                 ]
-    #             }
-    #         )
-    #         if existing_user:
-    #             raise HTTPException(
-    #                 status_code=404, detail="Vendor with this email or phone already exists in the database."
-    #             )
-
-    #         # Generate OTP and expiration time
-    #         otp = generate_otp()
-    #         otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-
-    #         # Validate Category
-    #         category_id = create_vendor_request.category_id
-    #         category_data = await category_collection.find_one({"_id": ObjectId(category_id)})
-    #         if not category_data:
-    #             raise HTTPException(status_code=400, detail=f"Invalid category ID: {category_id}.")
-
-    #         # Ensure services is a list and process it correctly
-    #         services = create_vendor_request.services
-    #         if not isinstance(services, list):
-    #             services = [services]  # Wrap single service in a list
-
-    #         # Extract service IDs
-    #         service_ids = [
-    #             ObjectId(service.id) if isinstance(service, Service) else ObjectId(service["id"])
-    #             for service in services
-    #         ]
-
-    #         # Fetch only active services matching the category and IDs
-    #         query = {
-    #             "category_id": ObjectId(category_id),
-    #             "_id": {"$in": service_ids},
-    #             "status": "active",  # Filter only active services
-    #         }
-    #         valid_services = await services_collection.find(query).to_list(None)
-
-    #         # Validate if all provided services are valid
-    #         if len(valid_services) != len(service_ids):
-    #             raise HTTPException(
-    #                 status_code=400, detail="One or more services are invalid for the selected category."
-    #             )
-
-    #         # Prepare User data
-    #         plain_text_password = create_vendor_request.password
-
-    #         # Hash the password
-    #         hashed_password = hashpw(plain_text_password.encode("utf-8"), gensalt()).decode("utf-8")
-    #         create_vendor_request.password = hashed_password
-
-    #         # Prepare User data for insertion
-    #         create_vendor_request_dict = create_vendor_request.dict()
-    #         create_vendor_request_dict["services"] = [
-    #             {"id": str(service["_id"]), "name": service["name"]} for service in valid_services
-    #         ]
-
-    #         # Insert user data into the database
-    #         result = await user_collection.insert_one(create_vendor_request_dict)
-
-    #         # Prepare Vendor data
-    #         vendor_data = {
-    #             "user_id": str(result.inserted_id),
-    #             "business_name": create_vendor_request.business_name,
-    #             "business_type": create_vendor_request.business_type,
-    #             "business_address": create_vendor_request.business_address,
-    #             "business_details": create_vendor_request.business_details,
-    #             "category_id": category_id,
-    #             "category_name": category_data.get("name"),
-    #             "services": [{"id": str(service["_id"]), "name": service["name"]} for service in valid_services],
-    #             "service_details": create_vendor_request.service_details,
-    #             "manage_plan": create_vendor_request.manage_plan,
-    #             "manage_fee_and_gst": create_vendor_request.manage_fee_and_gst,
-    #             "manage_offer": create_vendor_request.manage_offer,
-    #             "is_payment_verified": create_vendor_request.is_payment_verified,
-    #             "status": StatusEnum.Active,
-    #             "created_at": datetime.utcnow(),
-    #         }
-
-    #         # Insert Vendor data into the database
-    #         await vendor_collection.insert_one(vendor_data)
-
-    #         # Prepare Response
-    #         user_data = {
-    #             "first_name": create_vendor_request.first_name,
-    #             "last_name": create_vendor_request.last_name,
-    #             "email": create_vendor_request.email,
-    #             "phone": create_vendor_request.phone,
-    #             "roles": create_vendor_request.roles,
-    #             "password": plain_text_password,  # Include plain text password in response as requested
-    #             "status": create_vendor_request.status,
-    #         }
-
-    #         # Send email to the vendor
-    #         login_link = f"http://192.168.29.173:3000/vendor-admin/sign-in"
-    #         await send_vendor_email(create_vendor_request.email, plain_text_password, login_link)
-
-    #         return {"data": {"user_data": user_data, "vendor_data": vendor_data}}
-
-    #     except HTTPException as ex:
-    #         raise ex
-    #     except Exception as ex:
-    #         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def create_vendor(self, request: Request, token: str, create_vendor_request: SignUpVendorRequest):
         try:
-            # Verify current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            # Check if the user has the required permissions
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-            # Check if a user with the given email or phone already exists
             existing_user = await user_collection.find_one(
                 {
                     "$or": [
@@ -201,17 +118,14 @@ class VendorManager:
                     status_code=400, detail="Vendor with this email or phone already exists in the database."
                 )
 
-            # Generate OTP and expiration time
             otp = generate_otp()
             otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
 
-            # Validate Category
             category_id = create_vendor_request.category_id
             category_data = await category_collection.find_one({"_id": ObjectId(category_id)})
             if not category_data:
                 raise HTTPException(status_code=400, detail=f"Invalid category ID: {category_id}.")
 
-            # Validate Services
             services = create_vendor_request.services
             if not isinstance(services, list):
                 services = [services]
@@ -231,15 +145,19 @@ class VendorManager:
                     status_code=400, detail="One or more services are invalid for the selected category."
                 )
 
-            # Hash password
             plain_text_password = create_vendor_request.password
             hashed_password = hashpw(plain_text_password.encode("utf-8"), gensalt()).decode("utf-8")
 
-            # Convert request data to dictionary
             create_vendor_request_dict = create_vendor_request.dict()
             create_vendor_request_dict["password"] = hashed_password
             create_vendor_request_dict["services"] = [
-                {"id": str(service["_id"]), "name": service["name"]} for service in valid_services
+                {
+                    "id": str(service["_id"]),
+                    "name": service["name"],
+                    "service_image": f"{service['service_image']}",
+                    "service_image_url": f"{service['service_image_url']}",
+                }
+                for service in valid_services
             ]
 
             user_data = {
@@ -247,6 +165,7 @@ class VendorManager:
                 "last_name": create_vendor_request.last_name,
                 "email": create_vendor_request.email,
                 "phone": create_vendor_request.phone,
+                "gender": create_vendor_request.gender,
                 "roles": create_vendor_request.roles,
                 "password": hashed_password,
                 "status": create_vendor_request.status,
@@ -271,7 +190,15 @@ class VendorManager:
                 "business_details": create_vendor_request.business_details,
                 "category_id": category_id,
                 "category_name": category_data.get("name"),
-                "services": [{"id": str(service["_id"]), "name": service["name"]} for service in valid_services],
+                "services": [
+                    {
+                        "id": str(service["_id"]),
+                        "name": service["name"],
+                        "service_image": f"{service['service_image']}",
+                        "service_image_url": f"{service['service_image_url']}",
+                    }
+                    for service in valid_services
+                ],
                 "service_details": create_vendor_request.service_details,
                 "manage_plan": create_vendor_request.manage_plan,
                 "manage_fee_and_gst": create_vendor_request.manage_fee_and_gst,
@@ -280,7 +207,8 @@ class VendorManager:
                 "status": create_vendor_request.status,
                 "created_at": datetime.utcnow(),
             }
-
+            # razorpay_response = create_razorpay_subaccount(vendor_data, user_data)
+            # vendor_data["razorpay_account_id"] = razorpay_response["id"]
             # Insert vendor data into the database
             vendor_result = await vendor_collection.insert_one(vendor_data)
 
@@ -290,6 +218,7 @@ class VendorManager:
                 "last_name": create_vendor_request.last_name,
                 "email": create_vendor_request.email,
                 "phone": create_vendor_request.phone,
+                "gender": create_vendor_request.gender,
                 "roles": create_vendor_request.roles,
                 "password": plain_text_password,
                 "status": create_vendor_request.status,
@@ -303,7 +232,15 @@ class VendorManager:
                     "business_details": create_vendor_request.business_details,
                     "category_id": category_id,
                     "category_name": category_data.get("name"),
-                    "services": [{"id": str(service["_id"]), "name": service["name"]} for service in valid_services],
+                    "services": [
+                        {
+                            "id": str(service["_id"]),
+                            "name": service["name"],
+                            "service_image": f"{service['service_image']}",
+                            "service_image_url": f"{service['service_image_url']}",
+                        }
+                        for service in valid_services
+                    ],
                     "service_details": create_vendor_request.service_details,
                     "manage_plan": create_vendor_request.manage_plan,
                     "manage_fee_and_gst": create_vendor_request.manage_fee_and_gst,
@@ -426,28 +363,49 @@ class VendorManager:
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-            # Query for vendor role and the specific user id
             query = {"_id": ObjectId(id), "roles": {"$in": ["vendor"]}}
 
-            # Find the vendor by id and role
             result = await user_collection.find_one(query)
 
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-
-            # Convert _id to string and format other fields
+            print(result, "result")
             result["id"] = str(result.pop("_id"))
             result["first_name"] = result["first_name"].capitalize()
             result["last_name"] = result["last_name"].capitalize()
             result["email"] = result["email"]
             result["phone"] = result["phone"]
-            result["created_by"] = result.get("created_by", "Unknown")  # Avoid .get() for strings
-            category_id = result.get("category_id")
-            if category_id:
-                category = await category_collection.find_one({"_id": ObjectId(category_id)})
-                result["category_name"] = category.get("name") if category else "Unknown"
+            if result["phone"]:
+                result["phone"] = result["phone"]
             else:
-                result["category_name"] = "Unknown"
+                result["phone"] = "Unknown"
+            if result["gender"]:
+                result["gender"] = result["gender"]
+            else:
+                result["gender"] = "Unknown"
+            result["created_by"] = result.get("created_by", "Unknown")
+            vendor_details = await vendor_collection.find_one({"user_id": result["id"]})
+            if vendor_details:
+                result["business_name"] = vendor_details.get("business_name")
+                result["business_type"] = vendor_details.get("business_type")
+                result["business_address"] = vendor_details.get("business_address")
+                result["business_details"] = vendor_details.get("business_details")
+                category_id = vendor_details.get("category_id")
+                if category_id:
+                    category = await category_collection.find_one({"_id": ObjectId(category_id)})
+                    result["category_id"] = str(category_id)
+                    result["category_name"] = category.get("name", "Unknown") if category else "Unknown"
+                else:
+                    result["category_name"] = "Unknown"
+                result["services"] = vendor_details.get("services", [])
+                result["service_details"] = vendor_details.get("service_details", [])
+                result["manage_plan"] = vendor_details.get("manage_plan", False)
+                result["manage_fee_and_gst"] = vendor_details.get("manage_fee_and_gst", False)
+                result["manage_offer"] = vendor_details.get("manage_offer", False)
+                result["is_payment_verified"] = vendor_details.get("is_payment_verified", False)
+                result["status"] = vendor_details.get("status", "N/A")
+                result["created_at"] = vendor_details.get("created_at")
+
             result.pop("password", None)
 
             return result
@@ -463,19 +421,15 @@ class VendorManager:
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-            # Validate vendor ID
             if not ObjectId.is_valid(id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid vendor ID: '{id}'")
 
-            # Check if the vendor exists
             vendor = await user_collection.find_one({"_id": ObjectId(id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Prepare update data
             update_data = {}
 
-            # Update basic fields
             for field in [
                 "first_name",
                 "last_name",
@@ -494,7 +448,6 @@ class VendorManager:
                 if value is not None:
                     update_data[field] = value
 
-            # Process category
             if update_vendor_request.category_id is not None:
                 category_id = update_vendor_request.category_id
                 category_data = await category_collection.find_one({"_id": ObjectId(category_id)})
@@ -505,19 +458,16 @@ class VendorManager:
                 update_data["category_id"] = category_id
                 update_data["category_name"] = category_data.get("name")
 
-            # Process services
             if update_vendor_request.services is not None:
                 services = update_vendor_request.services
                 if not isinstance(services, list):
                     services = [services]
 
-                # Extract service IDs
                 service_ids = [
                     ObjectId(service.id) if isinstance(service, Service) else ObjectId(service["id"])
                     for service in services
                 ]
 
-                # Fetch only active services matching the category and IDs
                 query = {
                     "category_id": ObjectId(update_vendor_request.category_id or vendor.get("category_id")),
                     "_id": {"$in": service_ids},
@@ -525,31 +475,31 @@ class VendorManager:
                 }
                 valid_services = await services_collection.find(query).to_list(None)
 
-                # Validate if all provided services are valid
                 if len(valid_services) != len(service_ids):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="One or more services are invalid for the selected category.",
                     )
 
-                # Add services details to the update data
                 update_data["services"] = [
-                    {"id": str(service["_id"]), "name": service["name"]} for service in valid_services
+                    {
+                        "id": str(service["_id"]),
+                        "name": service["name"],
+                        "service_image": service["service_image"],
+                        "service_image_url": service["service_image_url"],
+                    }
+                    for service in valid_services
                 ]
 
-            # Check if update_data is empty
             if not update_data:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields provided for update."
                 )
 
-            # Update the vendor in the database
             await user_collection.update_one({"_id": ObjectId(id)}, {"$set": update_data})
 
-            # Fetch the updated vendor data
             result = await user_collection.find_one({"_id": ObjectId(id)})
 
-            # Prepare response
             return {
                 "id": str(result.pop("_id")),
                 "first_name": result.get("first_name"),
@@ -599,13 +549,11 @@ class VendorManager:
             if not any(role in allowed_roles for role in user_roles) and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-            # Query to get all active services for the given category_id
             services = await services_collection.find({"category_id": ObjectId(id), "status": "active"}).to_list(None)
 
             if not services:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No services found for this category")
 
-            # Format the services to include only the necessary fields (id and name)
             formatted_services = [
                 {"id": str(service["_id"]), "name": service["name"], "status": service["status"]}
                 for service in services
@@ -617,12 +565,10 @@ class VendorManager:
 
     async def vendor_sign_in(self, vendor_request: SignInVendorRequest):
         try:
-            # Check if vendor exists in user collection
             vendor = await user_collection.find_one({"email": vendor_request.email})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Check if the user role is "vendor"
             if "roles" not in vendor or "vendor" not in vendor["roles"]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not a vendor")
             stored_password_hash = vendor.get("password")
@@ -630,32 +576,23 @@ class VendorManager:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
                 )
-
-            # Check if the entered password matches the stored hashed password
             if not bcrypt.checkpw(
                 vendor_request.password.encode("utf-8"),
                 stored_password_hash.encode("utf-8") if isinstance(stored_password_hash, str) else stored_password_hash,
             ):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Password")
-
-            # Fetch vendor-specific details from vendor collection using the user_id
             vendor_data = await vendor_collection.find_one({"user_id": str(vendor["_id"])})
             if not vendor_data:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor details not found")
 
-            # Generate tokens
             access_token = create_access_token(data={"sub": vendor["email"]})
             refresh_token = create_refresh_token(data={"sub": vendor["email"]})
-
-            # Prepare the response data by merging user and vendor details
             vendor_response = {key: str(value) if key == "_id" else value for key, value in vendor.items()}
             vendor_response["id"] = vendor_response.pop("_id")
-            vendor_response.pop("password", None)  # Remove the password field for security
+            vendor_response.pop("password", None)
             vendor_response.pop("otp", None)
             vendor_response["access_token"] = access_token
             vendor_response["refresh_token"] = refresh_token
-
-            # Add vendor-specific data to the response
             vendor_response["vendor_details"] = {
                 "business_name": vendor_data.get("business_name"),
                 "business_type": vendor_data.get("business_type"),
@@ -671,7 +608,6 @@ class VendorManager:
                 "availability_slots": vendor_data.get("availability_slots"),
             }
 
-            # Return merged response data
             return vendor_response
 
         except Exception as ex:
@@ -844,7 +780,13 @@ class VendorManager:
 
                 # Add services details to the update data
                 vendor_data["services"] = [
-                    {"id": str(service["_id"]), "name": service["name"]} for service in valid_services
+                    {
+                        "id": str(service["_id"]),
+                        "name": service["name"],
+                        "service_image": service["service_image"],
+                        "service_image_url": service["service_image_url"],
+                    }
+                    for service in valid_services
                 ]
 
             if update_vendor_request.service_details is not None:
@@ -903,16 +845,13 @@ class VendorManager:
         self, request: Request, token: str, vendor_user_create_request: VendorUserCreateRequest
     ):
         try:
-            # Get the current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            # Check if the current user has the "vendor" role
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-            # Fetch the current vendor's details
             vendor = await vendor_collection.find_one({"user_id": str(current_user.id)})
             if not vendor or vendor.get("business_type") != "business":
                 raise HTTPException(
@@ -920,7 +859,6 @@ class VendorManager:
                     detail="Only vendors with business type 'business' can create vendor users.",
                 )
 
-            # Validate the vendor user creation request
             if (
                 not vendor_user_create_request.first_name
                 or not vendor_user_create_request.last_name
@@ -931,7 +869,6 @@ class VendorManager:
                     detail="First name, last name, and email are required for vendor user creation.",
                 )
 
-            # Check if the vendor user already exists
             query = {"email": vendor_user_create_request.email}
             existing_vendor_user = await user_collection.find_one(query)
             if existing_vendor_user:
@@ -939,9 +876,7 @@ class VendorManager:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="A user with the provided email already exists.",
                 )
-            # vendor_category = vendor.get("category")  # Assuming the category is stored under the "category" field
             vendor_user_create_request.category = vendor.get("category_name")
-            # Validate services
             services = vendor_user_create_request.services
             if not isinstance(services, list):
                 services = [services]
@@ -949,18 +884,13 @@ class VendorManager:
             service_ids = [ObjectId(service.id) for service in services]
             vendor_services = vendor.get("services", [])
             vendor_service_ids = [ObjectId(service["id"]) for service in vendor_services]
-
-            # Ensure all requested services are valid and belong to the vendor
             if not all(service_id in vendor_service_ids for service_id in service_ids):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="One or more services are invalid or not associated with the vendor.",
                 )
-
-            # Fetch the service details for the provided service IDs
             valid_services = [service for service in vendor_services if ObjectId(service["id"]) in service_ids]
 
-            # Prepare new vendor user data
             new_vendor_user = {
                 "first_name": vendor_user_create_request.first_name,
                 "last_name": vendor_user_create_request.last_name,
@@ -972,15 +902,21 @@ class VendorManager:
                 "status": vendor_user_create_request.status,
                 "created_by": str(current_user.id),
                 "category": vendor_user_create_request.category,
-                "services": [{"id": str(service["id"]), "name": service["name"]} for service in valid_services],
+                "services": [
+                    {
+                        "id": str(service["id"]),
+                        "name": service["name"],
+                        "service_image": service["service_image"],
+                        "service_image_url": service["service_image_url"],
+                    }
+                    for service in valid_services
+                ],
             }
 
-            # Insert the new vendor user into the database
             result = await user_collection.insert_one(new_vendor_user)
-            new_vendor_user["id"] = str(result.inserted_id)  # Add `id` field
+            new_vendor_user["id"] = str(result.inserted_id)
             new_vendor_user.pop("_id", None)
 
-            # Return the created vendor user
             return new_vendor_user
 
         except Exception as ex:
@@ -1165,20 +1101,16 @@ class VendorManager:
             updated_slots = []
             for slot in availability_slots:
                 if slot["day"] == day:
-                    # If deleting a specific slot
                     if start_time:
                         if "time_slots" in slot:
                             slot["time_slots"] = [ts for ts in slot["time_slots"] if ts["start_time"] != start_time]
                             if not slot["time_slots"]:
-                                continue  # Skip this day if no slots remain
+                                continue
                     else:
-                        continue  # Skip the whole day if start_time is not provided
+                        continue
                 updated_slots.append(slot)
-
-            # Update vendor availability slots in the database
             await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": {"availability_slots": updated_slots}})
 
-            # Fetch updated vendor document
             updated_vendor = await vendor_collection.find_one({"_id": vendor["_id"]})
             if updated_vendor:
                 updated_vendor = serialize_mongo_document(updated_vendor)
@@ -1205,7 +1137,6 @@ class VendorManager:
                 dict: Updated user availability slots.
         """
         try:
-            # Authenticate the current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
@@ -1214,12 +1145,9 @@ class VendorManager:
             vendor = await vendor_collection.find_one({"user_id": str(current_user.id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-            # Ensure the user is of type `business` and business type is `business`
             if vendor.get("business_type") != "business":
 
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: User is not a business")
-
-            # Check if the provided user ID is valid and created by the current user
             user = await user_collection.find_one({"_id": ObjectId(id), "created_by": str(current_user.id)})
             if not user:
                 raise HTTPException(
@@ -1231,7 +1159,6 @@ class VendorManager:
             for day_slot in slots:
                 day_slot_data = day_slot.dict()
                 for time_slot in day_slot_data.get("time_slots", []):
-                    # Format start_time and end_time
                     time_slot["start_time"] = (
                         time_slot["start_time"].strftime("%H:%M")
                         if isinstance(time_slot["start_time"], time)
@@ -1243,7 +1170,6 @@ class VendorManager:
                         else time_slot["end_time"]
                     )
 
-                    # Calculate duration
                     ts = TimeSlot(**time_slot)
                     ts.calculate_duration()
                     time_slot["duration"] = ts.duration
@@ -1277,17 +1203,14 @@ class VendorManager:
                     detail="Old password does not match",
                 )
 
-            # Ensure the new password is different
             if bcrypt.checkpw(new_password.encode("utf-8"), user.password.encode("utf-8")):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="New password cannot be the same as the old password",
                 )
 
-            # Hash the new password and save it
             hashed_new_password = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-            # Update user in the database
             await user_collection.update_one(
                 {"email": email}, {"$set": {"password": hashed_new_password, "is_dashboard_created": True}}
             )
@@ -1314,36 +1237,24 @@ class VendorManager:
                 dict: Updated user availability slots.
         """
         try:
-            # Authenticate the current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            # Ensure the user is a super admin
-            if current_user.user_role != 2:  # Assuming role `2` is for super admin
+            if current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-
-            # Fetch the vendor by vendor_id
             vendor = await vendor_collection.find_one({"user_id": vendor_id})
             if not vendor:
-                # If no vendor found, check if the vendor is a business vendor
                 user = await user_collection.find_one({"_id": ObjectId(vendor_id), "roles": "vendor_user"})
                 if not user:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-
-                # Use the user_id from the user table to fetch the vendor
                 vendor = await vendor_collection.find_one({"user_id": user["created_by"]})
                 if not vendor:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
-
-            # Initialize the list of new availability slots
             new_availability_slots = []
-            print(new_availability_slots, "new_availability_slotsaaaaaaaaaaaaaaa")
             for day_slot in slots:
                 day_slot_data = day_slot.dict()
 
                 for time_slot in day_slot_data.get("time_slots", []):
-                    # Format start_time and end_time
                     time_slot["start_time"] = (
                         time_slot["start_time"].strftime("%H:%M")
                         if isinstance(time_slot["start_time"], time)
@@ -1355,32 +1266,23 @@ class VendorManager:
                         else time_slot["end_time"]
                     )
 
-                    # Calculate the duration of the slot
                     ts = TimeSlot(**time_slot)
                     ts.calculate_duration()
                     time_slot["duration"] = ts.duration
 
-                # Add the day slot data to the new availability slots
                 new_availability_slots.append(day_slot_data)
-
-            # Update the user's availability slots in the database
             await user_collection.update_one(
                 {"_id": ObjectId(vendor_id)}, {"$set": {"availability_slots": new_availability_slots}}
             )
-            # Fetch the updated user document
             updated_user = await user_collection.find_one({"_id": ObjectId(vendor_id)})
-            print(updated_user, "updated usermmmmmmmmmmmmmmmmmmmmm")
             if updated_user:
                 updated_user = serialize_mongo_document(updated_user)
-
-            # Convert Mongo _id to a string for consistency in the response
             updated_user["id"] = str(updated_user.pop("_id"))
             return updated_user
 
         except HTTPException as ex:
             raise ex
         except Exception as ex:
-            print(ex)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def get_vendor_slots(self, request: Request, token: str, vendor_id: str):
@@ -1396,34 +1298,24 @@ class VendorManager:
                 dict: Vendor data along with availability slots.
         """
         try:
-            # Authenticate the current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            # Ensure the user is a super admin
-            if current_user.user_role != 2:  # Assuming role `2` is for super admin
+            if current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-
-            # Fetch the vendor by vendor_id
             vendor = await vendor_collection.find_one({"user_id": vendor_id})
             if not vendor:
-                # If no vendor found, check if the vendor is a business vendor
                 user = await user_collection.find_one({"_id": ObjectId(vendor_id), "roles": "vendor_user"})
                 if not user:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-
-                # Use the user_id from the user table to fetch the vendor
                 vendor = await vendor_collection.find_one({"user_id": user["created_by"]})
                 if not vendor:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Check the business type
             business_type = vendor.get("business_type", "individual")
             if business_type == "individual":
-                # Fetch availability slots for individual vendors directly
                 availability_slots = vendor.get("availability_slots", [])
-                print(availability_slots, "availability slots,hhhhhhhoooooooooooooooo")
                 return {
                     "vendor_id": vendor["user_id"],
                     "vendor_name": vendor.get("business_name", "N/A"),
@@ -1431,20 +1323,16 @@ class VendorManager:
                     "availability_slots": availability_slots,
                 }
 
-            # For business vendors, check for vendor_user slots
             user = await user_collection.find_one({"_id": ObjectId(vendor_id), "roles": "vendor_user"})
             if not user:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
 
-            # Use the `created_by` field to locate the vendor associated with the vendor_user
             parent_vendor = await vendor_collection.find_one({"user_id": user["created_by"]})
             if not parent_vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent vendor not found")
 
-            # Retrieve availability slots for the vendor_user
             user_slots = user.get("availability_slots", [])
 
-            # Prepare response
             response = {
                 "vendor_id": parent_vendor["user_id"],
                 "vendor_name": parent_vendor.get("business_name", "N/A"),
@@ -1453,11 +1341,10 @@ class VendorManager:
                 "business_type": business_type,
                 "availability_slots": user_slots,
             }
-            print(response, "responses hhhhhhhhhhhhhhhhhhhhhhhhhhhhhh")
             return response
 
         except HTTPException:
-            raise  # Propagate HTTP exceptions
+            raise
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
@@ -1575,7 +1462,6 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            print(current_user.roles)
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             valid_roles = ["admin", "user", "vendor"]
