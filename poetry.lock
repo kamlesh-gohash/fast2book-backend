@@ -2692,4 +2692,4 @@ dev = ["black", "build", "pylint", "pylint-pytest", "pytest", "pytest-cov"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "2785c218f06a3fbd1240afed734ded9a3ac005f1e7455c65823c1cd55568b410"
+content-hash = "b81b207ad5472e28a0e13d7b8d4b4870c68cf3fd60d7c43136ab871c16ab958c"
