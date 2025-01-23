@@ -55,6 +55,7 @@ async def blog_list(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -80,6 +81,7 @@ async def get_blog(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=validation_error(str(e)))
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -96,9 +98,9 @@ class BlogRequest(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
     blog_url: Optional[str] = None
-    image: Optional[str] = None
-    # blog_image: Optional[str] = None
-    # blog_image_url: Optional[str] = None
+    # image: Optional[str] = None
+    blog_image: Optional[str] = None
+    blog_image_url: Optional[str] = None
     author_name: Optional[str] = None
     category: Optional[str] = None
     tags: Optional[List[str]] = None
@@ -116,6 +118,7 @@ async def update_blog(id: str, blog_request: BlogRequest, blog_manager: BlogMana
     except ValueError as e:
         return failure({"message": str(e)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

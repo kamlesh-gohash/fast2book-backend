@@ -237,16 +237,17 @@ async def get_category_list_for_users(user_manager: UserManager = Depends(get_us
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
-@router.get("/service-list-for-category/{category_id}", status_code=status.HTTP_200_OK)
-async def get_service_list_for_category(category_id: str, user_manager: UserManager = Depends(get_user_manager)):
+@router.get("/service-list-for-category/{category_slug}", status_code=status.HTTP_200_OK)
+async def get_service_list_for_category(category_slug: str, user_manager: UserManager = Depends(get_user_manager)):
     try:
-        result = await user_manager.get_service_list_for_category(category_id)
+        result = await user_manager.get_service_list_for_category(category_slug)
         return success({"message": "Service list fetched successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -258,10 +259,28 @@ async def get_service_list_for_category(category_id: str, user_manager: UserMana
         )
 
 
-@router.get("/vendor-list-for-category/{category_id}", status_code=status.HTTP_200_OK)
-async def get_vendor_list_for_category(category_id: str, user_manager: UserManager = Depends(get_user_manager)):
+# @router.get("/vendor-list-for-category/{category_slug}", status_code=status.HTTP_200_OK)
+# async def get_vendor_list_for_category(category_slug: str, user_manager: UserManager = Depends(get_user_manager)):
+#     try:
+#         result = await user_manager.get_vendor_list_for_category(category_slug)
+#         return success({"message": "Vendor list fetched successfully", "data": result})
+#     except HTTPException as http_ex:
+#         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+#     except ValueError as ex:
+#         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+#     except Exception as ex:
+#         return internal_server_error(
+#             {"message": "An unexpected error occurred", "error": str(ex)},
+#         )
+@router.get("/vendor-list-for-category/{category_slug}", status_code=status.HTTP_200_OK)
+async def get_vendor_list_for_category(
+    category_slug: str,
+    service_id: str = None,  # Optional query parameter
+    user_manager: UserManager = Depends(get_user_manager),
+):
     try:
-        result = await user_manager.get_vendor_list_for_category(category_id)
+        # Pass service_id to the user manager
+        result = await user_manager.get_vendor_list_for_category(category_slug, service_id=service_id)
         return success({"message": "Vendor list fetched successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

@@ -21,6 +21,25 @@ class Service(BaseModel):
     name: Optional[str] = None
 
 
+class TimeSlot(BaseModel):
+    start_time: str
+    end_time: str
+    max_seat: int = Field(..., gt=0, description="Maximum number of seats for the time slot")
+
+
+class DaySlot(BaseModel):
+    day: str
+    time_slots: List[TimeSlot]
+
+
+def default_availability_slots():
+    time_slots = [
+        {"start_time": f"{hour:02}:00", "end_time": f"{hour+1:02}:00", "max_seat": 10} for hour in range(9, 17)
+    ]
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    return [{"day": day, "time_slots": time_slots} for day in days]
+
+
 # Validator for vendor creation
 vendor_create_validator = zon.record(
     {
@@ -230,6 +249,8 @@ class SignUpVendorRequest(BaseModel):
     manage_offer: Optional[str] = None
     is_payment_verified: bool = Field(default=False)
     is_dashboard_created: bool = Field(default=False)
+    # availability_slots: List[DaySlot] = Field(default_factory=default_availability_slots)
+
     status: StatusEnum = Field(default=StatusEnum.Active)
     password: str
 
