@@ -60,6 +60,8 @@ jobs:
             --build-arg FRONT_URL="${{ vars.FRONT_URL }}" \
             --build-arg GOOGLE_REDIRECT_URI="${{ vars.GOOGLE_REDIRECT_URI }}" \
             --build-arg PORT="${{ vars.PORT }}" \
+            --build-arg RAZOR_PAY_KEY_ID="${{ secrets.RAZOR_PAY_KEY_ID }}" \
+            --build-arg RAZOR_PAY_KEY_SECRET="${{ secrets.RAZOR_PAY_KEY_SECRET }}" \
             -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest .
 
       - name: Push Docker image to AWS ECR
@@ -106,4 +108,6 @@ jobs:
             -e FRONT_URL="${{ vars.FRONT_URL }}" \
             -e GOOGLE_REDIRECT_URI="${{ vars.GOOGLE_REDIRECT_URI }}" \
             -e PORT="${{ vars.PORT }}" \
+            -e RAZOR_PAY_KEY_ID="${{ secrets.RAZOR_PAY_KEY_ID }}" \
+            -e RAZOR_PAY_KEY_SECRET="${{ secrets.RAZOR_PAY_KEY_SECRET }}" \
             $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest
