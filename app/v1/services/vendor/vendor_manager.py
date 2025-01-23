@@ -207,6 +207,8 @@ class VendorManager:
                 "status": create_vendor_request.status,
                 "created_at": datetime.utcnow(),
             }
+            if create_vendor_request.business_type.lower() == "individual":
+                vendor_data["availability_slots"] = default_availability_slots()
             # razorpay_response = create_razorpay_subaccount(vendor_data, user_data)
             # vendor_data["razorpay_account_id"] = razorpay_response["id"]
             # Insert vendor data into the database
@@ -242,6 +244,7 @@ class VendorManager:
                         for service in valid_services
                     ],
                     "service_details": create_vendor_request.service_details,
+                    "availability_slots": default_availability_slots(),
                     "manage_plan": create_vendor_request.manage_plan,
                     "manage_fee_and_gst": create_vendor_request.manage_fee_and_gst,
                     "manage_offer": create_vendor_request.manage_offer,
@@ -615,12 +618,10 @@ class VendorManager:
 
     async def vendor_sign_up(self, vendor_request: SignUpVendorRequest):
         try:
-            # Check if vendor already exists
             existing_vendor = await user_collection.find_one({"email": vendor_request.email})
             if existing_vendor:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Vendor already exists")
 
-            # Create new vendor (user profile)
             hashed_password = bcrypt.hashpw(vendor_request.password.encode("utf-8"), bcrypt.gensalt())
             vendor_request.is_dashboard_created = True
             otp = generate_otp()
@@ -633,30 +634,26 @@ class VendorManager:
                 "password": hashed_password,
                 "is_dashboard_created": vendor_request.is_dashboard_created,
             }
-            # Insert user into user_collection
             result = await user_collection.insert_one(new_vendor_user)
 
-            # Get the user_id from inserted user and create vendor business details
             user_id = str(result.inserted_id)
 
-            # Create vendor-specific data
             vendor_data = {
-                "user_id": user_id,  # Link the vendor with the user
+                "user_id": user_id,
                 "business_name": vendor_request.business_name,
                 "business_type": vendor_request.business_type,
                 "status": vendor_request.status,
                 "created_at": datetime.utcnow(),
             }
+            if vendor_request.business_type.lower() == "individual":
+                vendor_data["availability_slots"] = default_availability_slots()
 
-            # Insert vendor data into vendor_collection
             vendor_result = await vendor_collection.insert_one(vendor_data)
 
-            # Prepare response data
-            new_vendor_user["id"] = user_id  # Add user id to the response
-            new_vendor_user.pop("_id", None)  # Remove the _id field
-            new_vendor_user.pop("password", None)  # Remove the password field for security
-            new_vendor_user.pop("otp", None)  # Remove the otp field for security
-            # Optionally, return vendor data as well
+            new_vendor_user["id"] = user_id
+            new_vendor_user.pop("_id", None)
+            new_vendor_user.pop("password", None)
+            new_vendor_user.pop("otp", None)
             new_vendor_user["vendor_details"] = {
                 "id": str(vendor_result.inserted_id),
                 "business_name": vendor_request.business_name,
@@ -911,6 +908,7 @@ class VendorManager:
                     }
                     for service in valid_services
                 ],
+                "availability_slots": default_availability_slots(),
             }
 
             result = await user_collection.insert_one(new_vendor_user)

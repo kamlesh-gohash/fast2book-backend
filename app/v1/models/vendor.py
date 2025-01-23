@@ -13,9 +13,28 @@ class BusinessType(str, Enum):
     business = "business"
 
 
+class TimeSlot(BaseModel):
+    start_time: str
+    end_time: str
+    max_seat: int = Field(..., gt=0, description="Maximum number of seats for the time slot")
+
+
+class DaySlot(BaseModel):
+    day: str
+    time_slots: List[TimeSlot]
+
+
 class Service(BaseModel):
     id: str
     name: Optional[str] = None
+
+
+def default_availability_slots():
+    time_slots = [
+        {"start_time": f"{hour:02}:00", "end_time": f"{hour+1:02}:00", "max_seat": 10} for hour in range(9, 17)
+    ]
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    return [{"day": day, "time_slots": time_slots} for day in days]
 
 
 class Vendor(Document):
@@ -34,6 +53,8 @@ class Vendor(Document):
     service_details: Optional[str] = None
     status: StatusEnum = Field(default=StatusEnum.Active)
     availability_slots: Optional[Link["SlotRequest"]] = None
+    # availability_slots: List[DaySlot] = Field(default_factory=default_availability_slots)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:

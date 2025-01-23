@@ -19,6 +19,7 @@ from motor.motor_asyncio import AsyncIOMotorCollection  # Ensure this import for
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import (
     User,
+    booking_collection,
     category_collection,
     services_collection,
     support_collection,
@@ -359,7 +360,12 @@ class UserManager:
 
             active_categories = await category_collection.find({"status": "active"}).to_list(length=None)
             category_data = [
-                {"id": str(category["_id"]), "name": category["name"], "status": category["status"]}
+                {
+                    "id": str(category["_id"]),
+                    "name": category["name"],
+                    "slug": category["slug"],
+                    "status": category["status"],
+                }
                 for category in active_categories
             ]
 
@@ -367,20 +373,22 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_service_list_for_category(self, category_id: str) -> List[Service]:
+    async def get_service_list_for_category(self, category_slug: str) -> List[Service]:
         try:
-            if not ObjectId.is_valid(category_id):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category ID")
-            category = await category_collection.find_one({"_id": ObjectId(category_id)})
+            if not category_slug:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
+
+            category = await category_collection.find_one({"slug": category_slug})
             if not category:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
 
             active_services = await services_collection.find(
-                {"category_id": ObjectId(category_id), "status": "active"}
+                {"category_id": category["_id"], "status": "active"}
             ).to_list(length=None)
             service_data = [
                 {"id": str(service["_id"]), "name": service["name"], "status": service["status"]}
@@ -395,23 +403,50 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_vendor_list_for_category(self, category_id: str) -> List[dict]:
-        try:
-            if not ObjectId.is_valid(category_id):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category ID")
+    # async def get_vendor_list_for_category(self, category_slug: str) -> List[dict]:
+    #     try:
+    #         if not category_slug:
+    #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
 
-            category = await category_collection.find_one({"_id": ObjectId(category_id)})
+    #         category = await category_collection.find_one({"slug": category_slug})
+    #         if not category:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+    #         category_id = str(category["_id"])
+    #         active_vendors = await vendor_collection.find({"category_id": category_id, "status": "active"}).to_list(length=None)
+    #         if not active_vendors:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active vendors found for the given category")
+    async def get_vendor_list_for_category(self, category_slug: str, service_id: Optional[str] = None) -> List[dict]:
+        try:
+            if not category_slug:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
+
+            category = await category_collection.find_one({"slug": category_slug})
             if not category:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
 
-            active_vendors = await vendor_collection.find({"category_id": category_id, "status": "active"}).to_list(
-                length=None
-            )
+            category_id = str(category["_id"])
+
+            # Base filter
+            vendor_filter = {"category_id": category_id, "status": "active"}
+
+            # If service_id is provided, add it to the filter
+            if service_id:
+                if not ObjectId.is_valid(service_id):
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid service ID")
+
+                service = await services_collection.find_one({"_id": ObjectId(service_id), "status": "active"})
+                if not service:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+                vendor_filter["services.id"] = service_id
+
+            # Fetch vendors based on the constructed filter
+            active_vendors = await vendor_collection.find(vendor_filter).to_list(length=None)
             if not active_vendors:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="No active vendors found for the given category"
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No active vendors found for the given category" + (f" and service" if service_id else ""),
                 )
-
             vendor_data = []
             for vendor in active_vendors:
                 try:
@@ -440,9 +475,52 @@ class UserManager:
                                         "phone": u.get("phone"),
                                         "status": u.get("status"),
                                         "roles": u.get("roles"),
-                                        "availability_slots": u.get("availability_slots", []),
+                                        "availability_slots": [],
                                     }
+                                    availability_slots = vendor.get("availability_slots", [])
+                                for slot in availability_slots:
+                                    slot_day = slot["day"]
+                                    current_date = datetime.now().date()
+                                    days = {
+                                        "Monday": 0,
+                                        "Tuesday": 1,
+                                        "Wednesday": 2,
+                                        "Thursday": 3,
+                                        "Friday": 4,
+                                        "Saturday": 5,
+                                        "Sunday": 6,
+                                    }
+                                    current_weekday = current_date.weekday()
+                                    target_weekday = days[slot_day]
+                                    days_ahead = (target_weekday - current_weekday) % 7
+                                    target_date = current_date + timedelta(days=days_ahead)
 
+                                    day_slot = {
+                                        "day": slot_day,
+                                        "date": target_date.strftime("%Y-%m-%d"),
+                                        "time_slots": [],
+                                    }
+                                    daily_booking_count = await self.get_daily_booking_count(
+                                        str(vendor["_id"]), slot_day
+                                    )
+                                    day_slot["daily_booking_count"] = daily_booking_count
+                                    total_seat_count = await self.get_max_seat_count(str(vendor["_id"]), slot_day)
+                                    day_slot["max_seat_count"] = total_seat_count
+                                    for time_slot in slot.get("time_slots", []):
+                                        booking_count = await self.get_booking_count_for_slot(
+                                            str(vendor["_id"]), slot_day, time_slot["start_time"]
+                                        )
+
+                                        day_slot["time_slots"].append(
+                                            {
+                                                "start_time": time_slot["start_time"],
+                                                "end_time": time_slot["end_time"],
+                                                "max_seat": time_slot["max_seat"],
+                                                "booking_count": booking_count,
+                                            }
+                                        )
+
+                                    user_details["availability_slots"].append(day_slot)
                                     vendor_data.append(
                                         {
                                             "vendor_id": str(vendor["_id"]),
@@ -455,7 +533,6 @@ class UserManager:
                                             "user_details": user_details,
                                         }
                                     )
-
                         else:
                             user_details = {
                                 "first_name": user.get("first_name"),
@@ -464,8 +541,47 @@ class UserManager:
                                 "phone": user.get("phone"),
                                 "status": user.get("status"),
                                 "roles": user.get("roles"),
-                                "availability_slots": vendor.get("availability_slots", []),
+                                "availability_slots": [],
                             }
+
+                            availability_slots = vendor.get("availability_slots", [])
+                            for slot in availability_slots:
+                                slot_day = slot["day"]
+                                current_date = datetime.now().date()
+                                days = {
+                                    "Monday": 0,
+                                    "Tuesday": 1,
+                                    "Wednesday": 2,
+                                    "Thursday": 3,
+                                    "Friday": 4,
+                                    "Saturday": 5,
+                                    "Sunday": 6,
+                                }
+                                current_weekday = current_date.weekday()
+                                target_weekday = days[slot_day]
+                                days_ahead = (target_weekday - current_weekday) % 7
+                                target_date = current_date + timedelta(days=days_ahead)
+
+                                day_slot = {"day": slot_day, "date": target_date.strftime("%Y-%m-%d"), "time_slots": []}
+                                daily_booking_count = await self.get_daily_booking_count(str(vendor["_id"]), slot_day)
+                                day_slot["daily_booking_count"] = daily_booking_count
+                                total_seat_count = await self.get_max_seat_count(str(vendor["_id"]), slot_day)
+                                day_slot["max_seat_count"] = total_seat_count
+                                for time_slot in slot.get("time_slots", []):
+                                    booking_count = await self.get_booking_count_for_slot(
+                                        str(vendor["_id"]), slot_day, time_slot["start_time"]
+                                    )
+
+                                    day_slot["time_slots"].append(
+                                        {
+                                            "start_time": time_slot["start_time"],
+                                            "end_time": time_slot["end_time"],
+                                            "max_seat": time_slot["max_seat"],
+                                            "booking_count": booking_count,
+                                        }
+                                    )
+
+                                user_details["availability_slots"].append(day_slot)
 
                             vendor_data.append(
                                 {
@@ -490,7 +606,6 @@ class UserManager:
                                 "availability_slots": vendor.get("availability_slots", []),
                             }
                         )
-
                 except Exception as e:
                     vendor_data.append(
                         {
@@ -503,11 +618,79 @@ class UserManager:
                     )
 
             return vendor_data
-
         except HTTPException:
             raise
         except Exception as e:
+            print(e)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    async def get_booking_count_for_slot(self, vendor_id: str, day: str, time_slot: str) -> int:
+        try:
+            current_date = datetime.now().date()
+
+            days = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+            current_weekday = current_date.weekday()
+            target_weekday = days[day]
+            days_ahead = (target_weekday - current_weekday) % 7
+            target_date = current_date + timedelta(days=days_ahead)
+            # Combine date and time
+            # slot_datetime = datetime.combine(
+            #     target_date,
+            #     datetime.strptime(start_time, "%H:%M").time()
+            # )
+            # Count bookings for this specific slot
+            booking_count = await booking_collection.count_documents(
+                {
+                    "vendor_id": vendor_id,
+                    "date": target_date.strftime("%Y-%m-%d"),
+                    "time_slot": {"$regex": f"^{time_slot}"},
+                }
+            )
+            return booking_count
+        except Exception as e:
+            print(f"Error getting booking count: {e}")
+            return 0
+
+    async def get_daily_booking_count(self, vendor_id: str, day: str) -> int:
+        try:
+            current_date = datetime.now().date()
+
+            days = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+            current_weekday = current_date.weekday()
+            target_weekday = days[day]
+            days_ahead = (target_weekday - current_weekday) % 7
+            target_date = current_date + timedelta(days=days_ahead)
+
+            # Get bookings for the entire day
+            daily_booking_count = await booking_collection.count_documents(
+                {
+                    "vendor_id": vendor_id,
+                    "date": target_date.strftime("%Y-%m-%d"),
+                }
+            )
+
+            return daily_booking_count
+        except Exception as e:
+            print(f"Error getting daily booking count: {e}")
+            return 0
+
+    async def get_max_seat_count(self, vendor_id: str, day: str) -> int:
+        try:
+            vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+            if not vendor:
+                return 0
+            availability_slots = vendor.get("availability_slots", [])
+            max_seat_count = 0
+
+            for slot in availability_slots:
+                if slot["day"] == day:
+                    for time_slot in slot.get("time_slots", []):
+                        max_seat_count += time_slot.get("max_seat", 0)
+
+            return max_seat_count
+        except Exception as e:
+            print(f"Error getting max seat count: {e}")
+            return 0
 
     async def get_vendor_list_for_services(self, service_id: str) -> List[dict]:
         try:

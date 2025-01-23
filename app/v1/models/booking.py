@@ -42,6 +42,7 @@ class Bookings(BaseModel):
     booking_status: BookingStatusEnum = BookingStatusEnum.pending
     payment_status: PaymentStatusEnum = PaymentStatusEnum.unpaid
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    booking_order_id: Optional[str] = None
 
     class Settings:
         name = "bookings"

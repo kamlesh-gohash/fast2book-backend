@@ -30,79 +30,79 @@ from app.v1.utils.token import create_access_token, create_refresh_token, get_oa
 class BookingManager:
 
     async def book_appointment(self, request: Request, token: str, booking_request: CreateBookingRequest):
-        print(booking_request, "booking_request")
         try:
+            # Get current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
+            # Validate vendor
             vendor_id = booking_request.vendor_id
             vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            date = booking_request.date
-            time_slot = booking_request.time_slot
-
+            # Validate time_slot
             try:
-                requested_slot = {
-                    "start_time": time_slot.split(" - ")[0].strip(),
-                    "end_time": time_slot.split(" - ")[1].strip(),
-                    "duration": (
-                        datetime.strptime(time_slot.split(" - ")[1], "%H:%M")
-                        - datetime.strptime(time_slot.split(" - ")[0], "%H:%M")
-                    ).seconds
-                    // 60,
-                }
+                start_time, end_time = [time.strip() for time in booking_request.time_slot.split(" - ")]
             except (IndexError, ValueError):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid time_slot format. Expected 'HH:MM - HH:MM'.",
                 )
 
-            available_slots = self.get_vendor_slots(vendor, date)
-            print(available_slots, "available_slots")
+            requested_slot = {"start_time": start_time, "end_time": end_time}
+            available_slots = self.get_vendor_slots(vendor, booking_request.booking_date)
+
+            # Check slot availability
             if not self.is_slot_available(available_slots, requested_slot):
-                print("not available")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Selected time slot is not available",
                 )
 
+            # Validate category
             category_id = booking_request.category_id
-            print(category_id, "category_id")
             category = await category_collection.find_one({"_id": ObjectId(category_id)})
             if not category:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
 
             # Validate service
             service_id = booking_request.service_id
-            print(service_id, "service_id")
             service = await services_collection.find_one({"_id": ObjectId(service_id)})
-            print(service, "service")
             if not service:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-            print("service", service)
-
+            booking_order_id = str(random.randint(100000, 999999))
+            # Insert new booking
             new_booking = await booking_collection.insert_one(
                 {
                     "user_id": current_user.id,
                     "vendor_id": vendor_id,
                     "category_id": category_id,
                     "service_id": service_id,
-                    "date": date,
-                    "time_slot": time_slot,
-                    "status": "pending",
+                    "booking_date": booking_request.booking_date,
+                    "time_slot": booking_request.time_slot,
+                    "description": booking_request.description,
+                    "status": booking_request.status,
+                    "booking_status": booking_request.booking_status,
+                    "payment_status": booking_request.payment_status,
+                    "booking_order_id": booking_order_id,
                     "created_at": datetime.utcnow(),
                 }
             )
-            print(new_booking, "new_booking")
+
+            # Return success response
             return {"booking_id": str(new_booking.inserted_id)}
 
-        except HTTPException:
-            raise
+        except HTTPException as http_ex:
+            # Propagate HTTP exceptions
+            raise http_ex
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            # Catch and handle other errors
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )
 
     def get_vendor_slots(self, vendor, date):
         """
@@ -126,7 +126,7 @@ class BookingManager:
             if (
                 slot["start_time"] == requested_slot["start_time"]
                 and slot["end_time"] == requested_slot["end_time"]
-                and slot["duration"] == requested_slot["duration"]
+                # and slot["duration"] == requested_slot["duration"]
             ):
                 print("Slot is available")
                 return True
@@ -138,6 +138,28 @@ class BookingManager:
         Returns the day of the week for a given date.
         """
         return datetime.strptime(date, "%Y-%m-%d").strftime("%A")
+
+    async def user_booking_checkout(self, request: Request, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            current_user_id = str(current_user.id)
+            booking_details = await booking_collection.find_one({"user_id": current_user_id})
+            if not booking_details:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="booking not found")
+
+            booking_details["id"] = str(booking_details["_id"])
+            booking_details.pop("_id", None)
+            booking_details["user_id"] = str(booking_details["user_id"])
+            booking_details["vendor_id"] = str(booking_details["vendor_id"])
+            booking_details["category_id"] = str(booking_details["category_id"])
+            booking_details["service_id"] = str(booking_details["service_id"])
+            return booking_details
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def user_booking_list_for_vendor(self, request: Request, token: str):
         try:
@@ -308,6 +330,60 @@ class BookingManager:
                 )
 
             return {"reason": cancel_request.reason}
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def user_booking_list_for_admin(self, request: Request, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            if "admin" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # async for booking in booking_collection.find():
+            #     booking["_id"] = str(booking["_id"])
+            #     bookings.append(booking)
+            bookings = await booking_collection.find().to_list(None)
+            # Convert ObjectId to string in the response
+
+            for booking in bookings:
+                booking["id"] = str(booking["_id"])
+                booking.pop("_id", None)
+                booking["user_id"] = str(booking["user_id"])
+                booking["vendor_id"] = str(booking["vendor_id"])
+                booking["category_id"] = str(booking["category_id"])
+                booking["service_id"] = str(booking["service_id"])
+
+            return bookings
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_user_booking_for_admin(self, request: Request, token: str, id: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            if "admin" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            booking = await booking_collection.find_one({"_id": ObjectId(id)})
+            if not booking:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+            booking["id"] = str(booking["_id"])
+            booking.pop("_id", None)
+            booking["user_id"] = str(booking["user_id"])
+            booking["vendor_id"] = str(booking["vendor_id"])
+            booking["category_id"] = str(booking["category_id"])
+            booking["service_id"] = str(booking["service_id"])
+
+            return booking
 
         except HTTPException:
             raise

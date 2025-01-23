@@ -36,7 +36,7 @@ async def appointment_time(
         )
 
 
-@router.post("/user-book-appointment", status_code=status.HTTP_200_OK)
+@router.post("/user-book-appointment", status_code=status.HTTP_201_CREATED)
 async def book_appointment(
     request: Request,
     booking_request: CreateBookingRequest,
@@ -51,7 +51,29 @@ async def book_appointment(
         print(booking_request, "booking_request")
         result = await booking_manager.book_appointment(request=request, token=token, booking_request=booking_request)
 
-        return success({"message": "Appointment Time found successfully", "data": result})
+        return success({"message": "Booking Created Successfully", "data": result})
+
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/checkout", status_code=status.HTTP_200_OK)
+async def user_booking_checkout(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    booking_manager: BookingManager = Depends(get_booking_manager),
+):
+    try:
+        result = await booking_manager.user_booking_checkout(request=request, token=token)
+        return success({"message": "boking detail found successfully", "data": result})
 
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -168,6 +190,52 @@ async def cancel_booking(
         result = await booking_manager.cancel_booking(request=request, token=token, id=id)
 
         return success({"message": "User Booking deleted successfully", "data": result})
+
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/user-booking-list-for-admin", status_code=status.HTTP_200_OK)
+async def user_booking_list_for_admin(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    booking_manager: BookingManager = Depends(get_booking_manager),
+):
+    try:
+        result = await booking_manager.user_booking_list_for_admin(request=request, token=token)
+
+        return success({"message": "User Booking List found successfully", "data": result})
+
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-user-booking-for-admin/{id}", status_code=status.HTTP_200_OK)
+async def get_user_booking_for_admin(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    id: str = Path(..., min_length=1, max_length=100),
+    booking_manager: BookingManager = Depends(get_booking_manager),
+):
+    try:
+        result = await booking_manager.get_user_booking_for_admin(request=request, token=token, id=id)
+
+        return success({"message": "User Booking found successfully", "data": result})
 
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

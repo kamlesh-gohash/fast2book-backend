@@ -68,6 +68,8 @@ async def seed_categorys():
             # Create a new category
             seed_category = Category(
                 name=category["name"],
+                slug=category["name"].lower().replace(" ", "-"),
+                created_at=datetime.utcnow(),
             )
 
             await seed_category.create()
