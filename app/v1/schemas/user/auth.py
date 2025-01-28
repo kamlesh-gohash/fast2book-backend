@@ -56,6 +56,7 @@ sign_in_validator = zon.record(
     {
         "email": zon.string().email(),
         "password": zon.string().min(6).max(20),
+        "is_login_with_otp": zon.boolean().optional(),
     }
 )
 
@@ -63,6 +64,7 @@ sign_in_validator = zon.record(
 class SignInRequest(BaseModel):
     email: str
     password: str
+    is_login_with_otp: Optional[bool] = False
 
     def validate(self):
         try:

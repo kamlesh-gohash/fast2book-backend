@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.post("/create-costumer", status_code=status.HTTP_201_CREATED)
-async def register_costumer(
+async def register_customer(
     request: Request,
     costumer_create_request: CostumerCreateRequest,
     token: str = Depends(get_token_from_header),
@@ -26,10 +26,10 @@ async def register_costumer(
         return validation_result
     try:
         # User registration logic
-        result = await costumer_manager.create_costumer(
+        result = await costumer_manager.create_customer(
             request=request, token=token, create_costumer_request=costumer_create_request
         )
-        return success({"message": "Costumer created successfully", "data": result})
+        return success({"message": "customer created successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -43,7 +43,7 @@ async def register_costumer(
 
 
 @router.get("/costumer-list", status_code=status.HTTP_200_OK)
-async def costumer_list(
+async def customer_list(
     request: Request,
     token: str = Depends(get_token_from_header),
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
@@ -52,10 +52,10 @@ async def costumer_list(
     costumer_manager: CostumerManager = Depends(get_costumer_manager),
 ):
     try:
-        result = await costumer_manager.costumer_list(
+        result = await costumer_manager.customer_list(
             request=request, token=token, page=page, limit=limit, search=search
         )
-        return success({"message": "Costumer List found successfully", "data": result})
+        return success({"message": "customer List found successfully", "data": result})
     except HTTPException as http_ex:
 
         # Explicitly handle HTTPException and return its response
@@ -70,17 +70,17 @@ async def costumer_list(
 
 
 @router.get("/get-costumer/{id}", status_code=status.HTTP_200_OK)
-async def get_costumer(
+async def get_customer(
     request: Request,
     token: str = Depends(get_token_from_header),
     id: str = Path(..., title="The ID of the costumer to retrieve"),
     costumer_manager: CostumerManager = Depends(get_costumer_manager),
 ):
     try:
-        result = await costumer_manager.get_costumer(request=request, token=token, id=id)
+        result = await costumer_manager.get_customer(request=request, token=token, id=id)
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Costumer not found")
-        return success({"message": "Costumer found successfully", "data": result})
+        return success({"message": "customer found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -94,7 +94,7 @@ async def get_costumer(
 
 
 @router.put("/update-costumer/{id}", status_code=status.HTTP_200_OK)
-async def update_costumer(
+async def update_customer(
     request: Request,
     update_costumer_request: UpdateCostumerRequest,
     token: str = Depends(get_token_from_header),
@@ -119,12 +119,12 @@ async def update_costumer(
             detail="At least one field (first_name ,last_name ,email, status, gender or phone) must be provided",
         )
     try:
-        result = await costumer_manager.update_costumer(
+        result = await costumer_manager.update_customer(
             request=request, token=token, id=id, update_costumer_request=update_costumer_request
         )
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Costumer not found")
-        return success({"message": "Costumer updated successfully", "data": result})
+        return success({"message": "customer updated successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -138,17 +138,17 @@ async def update_costumer(
 
 
 @router.delete("/delete-costumer/{id}", status_code=status.HTTP_200_OK)
-async def delete_costumer(
+async def delete_customer(
     request: Request,
     token: str = Depends(get_token_from_header),
     id: str = Path(..., title="The ID of the costumer to delete"),
     costumer_manager: CostumerManager = Depends(get_costumer_manager),
 ):
     try:
-        result = await costumer_manager.delete_costumer(request=request, token=token, id=id)
+        result = await costumer_manager.delete_customer(request=request, token=token, id=id)
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Costumer not found")
-        return success({"message": "Costumer deleted successfully", "data": result})
+        return success({"message": "customer deleted successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

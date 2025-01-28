@@ -12,11 +12,12 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import Body, HTTPException, Path, Request, status
 
 from app.v1.middleware.auth import get_current_user
-from app.v1.models import User, user_collection, vendor_collection
+from app.v1.models import User, booking_collection, user_collection, vendor_collection
 from app.v1.models.permission import *
 from app.v1.models.slots import *
 from app.v1.schemas.superuser.superuser_auth import *
 from app.v1.utils.email import generate_otp, send_email
+from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
@@ -40,19 +41,25 @@ def validate_time_format(time_str: str):
 
 class SuperUserManager:
 
-    async def super_user_sign_in(self, email: str, password: str) -> dict:
+    async def super_user_sign_in(self, email: str, password: str = None, is_login_with_otp: bool = False) -> dict:
         """Sign in a user by email and password."""
         try:
             result = await user_collection.find_one({"email": email})
             if not result:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
             # Check if the entered password matches the stored hashed password
+            if is_login_with_otp:
+                otp = generate_otp()
+                otp_expires = datetime.utcnow() + timedelta(minutes=5)
+                await user_collection.update_one({"email": email}, {"$set": {"otp": otp, "otp_expires": otp_expires}})
+                await send_email(email, otp)
+                # return success({"message": "OTP sent successfully", "data": None})
+                return {"message": "OTP sent successfully"}
             stored_password_hash = result.get("password")
             if not stored_password_hash:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
                 )
-            # Check if the entered password matches the stored hashed password
             if not bcrypt.checkpw(
                 password.encode("utf-8"),
                 stored_password_hash.encode("utf-8") if isinstance(stored_password_hash, str) else stored_password_hash,
@@ -126,6 +133,7 @@ class SuperUserManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -435,5 +443,31 @@ class SuperUserManager:
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
             return {"data": None}
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_dashboard_data(self, request: Request, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            total_users = await user_collection.count_documents({"roles": {"$in": ["user"]}, "user_role": {"$ne": 2}})
+            total_bookings = await booking_collection.count_documents({})
+
+            # Bookings that are canceled
+            canceled_bookings = await booking_collection.count_documents({"booking_status": "cancelled"})
+
+            # Bookings that are resulting
+            resulting_bookings = await booking_collection.count_documents({"booking_status": "rescheduled"})
+
+            return {
+                "total_users": total_users,
+                "total_bookings": total_bookings,
+                "canceled_bookings": canceled_bookings,
+                "resulting_bookings": resulting_bookings,
+            }
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))

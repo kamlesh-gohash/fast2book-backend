@@ -54,7 +54,8 @@ class Vendor(Document):
     status: StatusEnum = Field(default=StatusEnum.Active)
     availability_slots: Optional[Link["SlotRequest"]] = None
     # availability_slots: List[DaySlot] = Field(default_factory=default_availability_slots)
-
+    fees: float = Field(default=0.0)
+    location: Optional[List[float]] = Field(None, description="Location of the vendor as [latitude, longitude]")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:

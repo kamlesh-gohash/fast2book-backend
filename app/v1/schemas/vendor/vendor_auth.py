@@ -205,6 +205,7 @@ sign_in_vendor_validator = zon.record(
 class SignInVendorRequest(BaseModel):
     email: str
     password: str
+    is_login_with_otp: bool = False
 
     def validate(self):
         try:
@@ -235,7 +236,7 @@ class SignUpVendorRequest(BaseModel):
     image_url: Optional[str] = None
     phone: Optional[str] = Field(None, min_length=10, max_length=10)
     gender: Gender = Field(default=Gender.male)
-    roles: list[Role] = [Role.vendor]  # Default role is 'vendor'
+    roles: list[Role] = [Role.vendor]
     business_type: BusinessType = Field(default=BusinessType.individual)
     business_name: Optional[str] = Field(None, max_length=100)
     business_address: Optional[str] = Field(None, max_length=255)
@@ -244,13 +245,16 @@ class SignUpVendorRequest(BaseModel):
     category_name: Optional[str] = Field(None, description="Name of the selected category")
     services: Optional[List[Service]] = Field(None, description="List of selected services with their IDs and names")
     service_details: Optional[str] = None
-    manage_plan: Optional[str] = None
+    # manage_plan: Optional[str] = None
+    manage_plan: Optional[str] = Field(None, description="PLan ID for the manage plan")
+
     manage_fee_and_gst: Optional[str] = None
     manage_offer: Optional[str] = None
     is_payment_verified: bool = Field(default=False)
     is_dashboard_created: bool = Field(default=False)
     # availability_slots: List[DaySlot] = Field(default_factory=default_availability_slots)
-
+    fees: float = Field(default=0.0)
+    location: Optional[List[float]] = Field(None, description="Location of the vendor as [latitude, longitude]")
     status: StatusEnum = Field(default=StatusEnum.Active)
     password: str
 
@@ -361,6 +365,22 @@ class VendorUserUpdateRequest(BaseModel):
     def validate(self):
         try:
             update_vendor_user_validator.validate(self.dict(exclude_none=True))
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
+
+
+vendor_subscription_validator = zon.record({"subscription_id": zon.string(), "subscription_status": zon.string()})
+
+
+class VendorSubscriptionRequest(BaseModel):
+    plan_id: str
+    vendor_id: str
+
+    def validate(self):
+        try:
+            vendor_subscription_validator.validate(self.dict())
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})

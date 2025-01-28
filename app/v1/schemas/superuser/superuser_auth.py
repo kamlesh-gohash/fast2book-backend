@@ -13,14 +13,16 @@ from app.v1.utils.response.response_format import validation_error
 super_user_sign_in_validator = zon.record(
     {
         "email": zon.string().email(),
-        "password": zon.string().min(6).max(20),
+        "password": zon.string().min(6).max(20).optional(),
+        "is_login_with_otp": zon.boolean().optional(),
     }
 )
 
 
 class SuperUserSignInRequest(BaseModel):
     email: str
-    password: str
+    password: Optional[str] = None
+    is_login_with_otp: bool = False
 
     def validate(self):
         try:

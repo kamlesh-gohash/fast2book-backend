@@ -48,7 +48,11 @@ async def sign_in_user(sign_in_request: SignInRequest, user_manager: UserManager
         return validation_result
     try:
         # Proceed with the sign-in logic after Zon validation
-        data = await user_manager.sign_in(sign_in_request.email, sign_in_request.password)
+        data = await user_manager.sign_in(
+            sign_in_request.email, sign_in_request.password, sign_in_request.is_login_with_otp
+        )
+        if "OTP sent successfully" in data.get("message", ""):
+            return data
         return success({"data": data, "token_type": "bearer"})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response

@@ -119,13 +119,19 @@ class UserManager:
         result["id"] = str(result["_id"])  # Convert ObjectId to string
         return result
 
-    async def sign_in(self, email: str, password: str) -> dict:
+    async def sign_in(self, email: str, password: str = None, is_login_with_otp: bool = False) -> dict:
         """Sign in a user by email and password."""
         try:
             result = await user_collection.find_one({"email": email})
             if not result:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-            # Check if the entered password matches the stored hashed password
+            if is_login_with_otp:
+                otp = generate_otp()
+                await user_collection.update_one(
+                    {"email": email}, {"$set": {"otp": otp, "otp_expires": datetime.utcnow() + timedelta(minutes=10)}}
+                )
+                await send_email(email, otp)
+                return {"message": "OTP sent to your email address"}
             stored_password_hash = result.get("password")
             if not stored_password_hash:
                 raise HTTPException(
@@ -530,6 +536,7 @@ class UserManager:
                                             "business_details": vendor.get("business_details"),
                                             "category_id": str(vendor["category_id"]),
                                             "services": vendor.get("services", []),
+                                            "fees": vendor.get("fees", 0),
                                             "user_details": user_details,
                                         }
                                     )
@@ -592,6 +599,7 @@ class UserManager:
                                     "business_details": vendor.get("business_details"),
                                     "category_id": str(vendor["category_id"]),
                                     "services": vendor.get("services", []),
+                                    "fees": vendor.get("fees", 0),
                                     "user_details": user_details,
                                 }
                             )
@@ -621,7 +629,6 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as e:
-            print(e)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     async def get_booking_count_for_slot(self, vendor_id: str, day: str, time_slot: str) -> int:
@@ -642,13 +649,12 @@ class UserManager:
             booking_count = await booking_collection.count_documents(
                 {
                     "vendor_id": vendor_id,
-                    "date": target_date.strftime("%Y-%m-%d"),
+                    "booking_date": target_date.strftime("%Y-%m-%d"),
                     "time_slot": {"$regex": f"^{time_slot}"},
                 }
             )
             return booking_count
         except Exception as e:
-            print(f"Error getting booking count: {e}")
             return 0
 
     async def get_daily_booking_count(self, vendor_id: str, day: str) -> int:
@@ -665,13 +671,12 @@ class UserManager:
             daily_booking_count = await booking_collection.count_documents(
                 {
                     "vendor_id": vendor_id,
-                    "date": target_date.strftime("%Y-%m-%d"),
+                    "booking_date": target_date.strftime("%Y-%m-%d"),
                 }
             )
 
             return daily_booking_count
         except Exception as e:
-            print(f"Error getting daily booking count: {e}")
             return 0
 
     async def get_max_seat_count(self, vendor_id: str, day: str) -> int:
@@ -689,7 +694,6 @@ class UserManager:
 
             return max_seat_count
         except Exception as e:
-            print(f"Error getting max seat count: {e}")
             return 0
 
     async def get_vendor_list_for_services(self, service_id: str) -> List[dict]:

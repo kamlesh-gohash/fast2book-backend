@@ -21,7 +21,7 @@ from app.v1.utils.token import create_access_token, create_refresh_token, get_oa
 
 class CostumerManager:
 
-    async def create_costumer(self, request: Request, token: str, create_costumer_request: User):
+    async def create_customer(self, request: Request, token: str, create_costumer_request: User):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -41,7 +41,7 @@ class CostumerManager:
 
             if existing_user:
                 raise HTTPException(
-                    status_code=404, detail="Costumer with this email or phone already exists in the database."
+                    status_code=404, detail="customer with this email or phone already exists in the database."
                 )
 
             otp = generate_otp()
@@ -65,7 +65,7 @@ class CostumerManager:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def costumer_list(
+    async def customer_list(
         self, request: Request, token: str, page: int, limit: int, search: str = None, role: str = "user"
     ):
         try:
@@ -140,7 +140,7 @@ class CostumerManager:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def get_costumer(self, request: Request, token: str, id: str):
+    async def get_customer(self, request: Request, token: str, id: str):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -196,7 +196,7 @@ class CostumerManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def update_costumer(
+    async def update_customer(
         self, request: Request, token: str, id: str, update_costumer_request: UpdateCostumerRequest
     ):
         try:
@@ -267,7 +267,7 @@ class CostumerManager:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def delete_costumer(self, request: Request, token: str, id: str):
+    async def delete_customer(self, request: Request, token: str, id: str):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:

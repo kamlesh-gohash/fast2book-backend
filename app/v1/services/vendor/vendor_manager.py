@@ -204,6 +204,7 @@ class VendorManager:
                 "manage_fee_and_gst": create_vendor_request.manage_fee_and_gst,
                 "manage_offer": create_vendor_request.manage_offer,
                 "is_payment_verified": create_vendor_request.is_payment_verified,
+                "fees": create_vendor_request.fees,
                 "status": create_vendor_request.status,
                 "created_at": datetime.utcnow(),
             }
@@ -249,6 +250,7 @@ class VendorManager:
                     "manage_fee_and_gst": create_vendor_request.manage_fee_and_gst,
                     "manage_offer": create_vendor_request.manage_offer,
                     "is_payment_verified": create_vendor_request.is_payment_verified,
+                    "fees": create_vendor_request.fees,
                     "created_at": vendor_data["created_at"],
                 },
             }
@@ -574,6 +576,18 @@ class VendorManager:
 
             if "roles" not in vendor or "vendor" not in vendor["roles"]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not a vendor")
+            if vendor_request.is_login_with_otp:  # Check the flag from the frontend
+                # Generate a 6-digit OTP
+                otp = generate_otp()
+
+                # Update the vendor document with the OTP
+                await user_collection.update_one({"_id": vendor["_id"]}, {"$set": {"otp": otp}})
+
+                # Send the OTP to the vendor's email
+                await send_email(to_email=vendor_request.email, otp=otp)
+
+                # Return a response indicating OTP has been sent
+                return {"message": "OTP sent to registered email"}
             stored_password_hash = vendor.get("password")
             if not stored_password_hash:
                 raise HTTPException(
@@ -1393,7 +1407,6 @@ class VendorManager:
                     else:
                         vendor["category_name"] = "Unknown"
 
-                # Remove sensitive information
                 vendor.pop("password", None)
                 vendor.pop("otp", None)
 
@@ -1555,6 +1568,55 @@ class VendorManager:
                 )
             vendor_user["id"] = str(vendor_user.pop("_id"))
             return vendor_user
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )
+
+    async def vendor_subscription_plan(self, request: Request, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            vendor = await vendor_collection.find_one({"user_id": current_user.id})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            subscription_plan = vendor.get("manage_plan", False)
+
+            return subscription_plan
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )
+
+    async def create_vendor_subscription(
+        self, request: Request, token: str, vendor_subscription_request: VendorSubscriptionRequest
+    ):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            vendor = await vendor_collection.find_one({"user_id": current_user.id})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            vendor["manage_plan"] = vendor_subscription_request.manage_plan
+            result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor})
+            if result.modified_count == 0:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
+
+            return {}
 
         except HTTPException as e:
             raise e

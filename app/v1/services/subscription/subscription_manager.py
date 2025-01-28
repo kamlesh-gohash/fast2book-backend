@@ -1,9 +1,12 @@
+import os
 import random
 
 from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
+import razorpay
+import razorpay.errors
 
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
@@ -11,12 +14,17 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import Body, HTTPException, Path, Request, status
 
 from app.v1.middleware.auth import get_current_user
-from app.v1.models import category_collection, subscription_collection
+from app.v1.models import category_collection, plan_collection, subscription_collection
 from app.v1.models.category import Category
 from app.v1.models.services import Service
-from app.v1.schemas.subscription.subscription_auth import CreateSubscriptionRequest, UpdateSubscriptionRequest
+from app.v1.models.subscription import Subscription, SubscriptionDuration
+from app.v1.schemas.subscription.subscription_auth import *
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
+
+
+razorpay_client = razorpay.Client(auth=(os.getenv("RAZOR_PAY_KEY_ID"), os.getenv("RAZOR_PAY_KEY_SECRET")))
+print(f"Razorpay Client Type: {type(razorpay_client)}")
 
 
 class SubscriptionManager:
@@ -24,12 +32,15 @@ class SubscriptionManager:
         self, request: Request, token: str, subscription_request: CreateSubscriptionRequest
     ) -> dict:
         try:
+            # Validate the current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Check for existing subscription with the same title
             existing_subscription = await subscription_collection.find_one({"title": subscription_request.title})
             if existing_subscription:
                 raise HTTPException(
@@ -37,25 +48,28 @@ class SubscriptionManager:
                     detail=f"Subscription with title '{subscription_request.title}' already exists.",
                 )
 
-            # Prepare service data
+            # Prepare subscription data
             subscription_data = {
                 "title": subscription_request.title,
-                "price": subscription_request.price,
-                "features": [
-                    {"item": feature.item} for feature in subscription_request.features
-                ],  # Handle features list
+                "one_month_price": subscription_request.one_month_price,
+                "three_months_price": subscription_request.three_months_price,
+                "yearly_price": subscription_request.yearly_price,
+                "features": [{"item": feature.item} for feature in subscription_request.features],
                 "status": subscription_request.status,
                 "created_at": datetime.utcnow(),
             }
 
+            # Insert the subscription into the database
             result = await subscription_collection.insert_one(subscription_data)
 
-            # Fetch the inserted service
+            # Fetch the created subscription
             created_subscription = await subscription_collection.find_one({"_id": result.inserted_id})
             response_data = {
                 "id": str(created_subscription["_id"]),
                 "title": created_subscription["title"],
-                "price": created_subscription["price"],
+                "one_month_price": created_subscription["one_month_price"],
+                "three_months_price": created_subscription["three_months_price"],
+                "yearly_price": created_subscription["yearly_price"],
                 "features": created_subscription["features"],
                 "status": created_subscription["status"],
                 "created_at": created_subscription["created_at"],
@@ -94,7 +108,9 @@ class SubscriptionManager:
                     {
                         "id": str(subscription["_id"]),
                         "title": subscription["title"],
-                        "price": subscription["price"],
+                        "one_month_price": subscription["one_month_price"],
+                        "three_months_price": subscription["three_months_price"],
+                        "yearly_price": subscription["yearly_price"],
                         "features": subscription["features"],
                         "status": subscription["status"],
                         "created_at": subscription["created_at"],
@@ -130,7 +146,9 @@ class SubscriptionManager:
             return {
                 "id": str(subscription["_id"]),
                 "title": subscription["title"],
-                "price": subscription["price"],
+                "one_month_price": subscription["one_month_price"],
+                "three_months_price": subscription["three_months_price"],
+                "yearly_price": subscription["yearly_price"],
                 "features": subscription["features"],
                 "status": subscription["status"],
                 "created_at": subscription["created_at"],
@@ -163,8 +181,12 @@ class SubscriptionManager:
             update_data = {}
             if subscription_request.title is not None:
                 update_data["title"] = subscription_request.title
-            if subscription_request.price is not None:
-                update_data["price"] = subscription_request.price
+            if subscription_request.one_month_price is not None:
+                update_data["one_month_price"] = subscription_request.one_month_price
+            if subscription_request.three_month_price is not None:
+                update_data["three_month_price"] = subscription_request.three_month_price
+            if subscription_request.yearly_price is not None:
+                update_data["yearly_price"] = subscription_request.yearly_price
             if subscription_request.features is not None:
                 update_data["features"] = [
                     {"item": feature.item} for feature in subscription_request.features
@@ -185,7 +207,9 @@ class SubscriptionManager:
             return {
                 "id": str(updated_subscription["_id"]),
                 "title": updated_subscription.get("title"),
-                "price": updated_subscription.get("price"),
+                "one_month_price": updated_subscription.get("one_month_price"),
+                "three_month_price": updated_subscription.get("three_month_price"),
+                "yearly_price": updated_subscription.get("yearly_price"),
                 "features": updated_subscription.get("features"),
                 "status": updated_subscription.get("status"),
                 "updated_at": updated_subscription.get("updated_at"),
@@ -202,6 +226,126 @@ class SubscriptionManager:
             await subscription_collection.delete_one({"_id": ObjectId(id)})
             return {"data": None}
         except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def plan_create(self, request: Request, token: str, plan_request: CreateSubscriptionRequest):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            razorpay_plan_data = {
+                "period": plan_request.period,
+                "interval": plan_request.interval,
+                "item": {
+                    "name": plan_request.name,
+                    "description": plan_request.description,
+                    "amount": int(plan_request.amount * 100),
+                    "currency": plan_request.currency,
+                },
+            }
+
+            try:
+                razorpay_plan = razorpay_client.plan.create(data=razorpay_plan_data)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+            except razorpay.errors.BadRequestError as e:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Bad request: {str(e)}")
+            except razorpay.errors.GatewayError as e:
+                raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Gateway error: {str(e)}")
+            except razorpay.errors.ServerError as e:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Server error: {str(e)}")
+            except razorpay.errors.SignatureVerificationError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=f"Signature verification error: {str(e)}"
+                )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(e)}"
+                )
+            insert_data = {
+                "name": plan_request.name,
+                "description": plan_request.description,
+                "amount": plan_request.amount,
+                "currency": plan_request.currency,
+                "period": plan_request.period,
+                "interval": plan_request.interval,
+                "razorpay_plan_id": razorpay_plan["id"],
+                "features": [feature.to_dict() for feature in plan_request.features],
+                "created_at": datetime.utcnow(),
+                "status": plan_request.status,
+            }
+
+            await plan_collection.insert_one(insert_data)
+
+            inserted_plan = await plan_collection.find_one({"razorpay_plan_id": razorpay_plan["id"]})
+
+            return {
+                "id": str(inserted_plan["_id"]),
+                "name": inserted_plan["name"],
+                "description": inserted_plan["description"],
+                "amount": inserted_plan["amount"],
+                "currency": inserted_plan["currency"],
+                "period": inserted_plan["period"],
+                "interval": inserted_plan["interval"],
+                "features": inserted_plan["features"],
+                "razorpay_plan_id": inserted_plan["razorpay_plan_id"],
+                "created_at": inserted_plan["created_at"],
+                "status": inserted_plan["status"],
+            }
+
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def plan_list(self, request: Request, token: str, page: int, limit: int, search: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            query = {}
+            if search:
+                query["name"] = {"$regex": search, "$options": "i"}
+
+            total_count = await plan_collection.count_documents(query)
+            skip = (page - 1) * limit
+
+            plans = await plan_collection.find(query).skip(skip).limit(limit).to_list(length=None)
+            print(plans, "plans")
+            plan_data = []
+            for plan in plans:
+                plan_data.append(
+                    {
+                        "id": str(plan["_id"]),
+                        "name": plan["name"],
+                        "description": plan["description"],
+                        "amount": plan["amount"],
+                        "currency": plan["currency"],
+                        "period": plan["period"],
+                        "interval": plan["interval"],
+                        "features": plan["features"],
+                        "razorpay_plan_id": plan["razorpay_plan_id"],
+                        "created_at": plan["created_at"],
+                        "status": plan["status"],
+                    }
+                )
+
+            return {
+                "data": plan_data,
+                "total_items": total_count,
+                "total_pages": (total_count + limit - 1) // limit,
+            }
+        except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
