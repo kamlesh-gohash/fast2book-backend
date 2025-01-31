@@ -255,18 +255,10 @@ class SignUpVendorRequest(BaseModel):
     # availability_slots: List[DaySlot] = Field(default_factory=default_availability_slots)
     fees: float = Field(default=0.0)
     location: Optional[List[float]] = Field(None, description="Location of the vendor as [latitude, longitude]")
+    specialization: Optional[str] = Field(None, description="specialization of the vendor")
     status: StatusEnum = Field(default=StatusEnum.Active)
     password: str
 
-    # first_name: str
-    # last_name: str
-    # email: str
-    # business_name: str
-    # business_type: BusinessType = Field(default=BusinessType.individual)
-    # status: StatusEnum = Field(default=StatusEnum.Active)
-    # is_dashboard_created: bool = Field(default=True)
-    # roles: list[Role] = [Role.vendor]
-    # password: str
     @validator("roles", pre=True, always=True)
     def ensure_vendor_role(cls, roles):
         """
@@ -376,7 +368,11 @@ vendor_subscription_validator = zon.record({"subscription_id": zon.string(), "su
 
 class VendorSubscriptionRequest(BaseModel):
     plan_id: str
-    vendor_id: str
+    vendor_id: Optional[str] = None
+    total_count: int
+    quantity: int = 1
+    start_at: Optional[datetime] = None
+    expire_by: Optional[datetime] = None
 
     def validate(self):
         try:

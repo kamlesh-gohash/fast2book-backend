@@ -15,7 +15,7 @@ signup_validator = (
             "first_name": zon.string().min(1).max(50),
             "last_name": zon.string().min(0).max(50),
             "email": zon.string().email().optional(),  # Optional but must pass refinement
-            "phone": zon.string().min(10).max(10).optional(),  # Optional but must pass refinement
+            "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional but must pass refinement
             "gender": zon.string().min(1).max(10),  # Allow values like "male", "female", or "other"
             "password": zon.string().min(6).max(20),
             "otp": zon.string().min(6).max(6).optional(),
@@ -34,7 +34,7 @@ class SignUpRequest(BaseModel):
     first_name: str
     last_name: str
     email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    phone: Optional[int] = None
     roles: Optional[List[str]] = None  # Optional roles, can be a list of strings like ['user', 'vendor']
     gender: str
     password: str
@@ -43,10 +43,10 @@ class SignUpRequest(BaseModel):
 
     def validate(self):
         try:
-            # Validate using the signup_validator
-            signup_validator.validate(self.dict())
+            data = self.dict()
+            print("Validating data:", data)  # Debugging output
+            signup_validator.validate(data)
         except zon.error.ZonError as e:
-            # Construct a detailed error message for validation failures
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
@@ -55,7 +55,7 @@ class SignUpRequest(BaseModel):
 sign_in_validator = zon.record(
     {
         "email": zon.string().email(),
-        "password": zon.string().min(6).max(20),
+        "password": zon.string().min(6).max(20).optional(),
         "is_login_with_otp": zon.boolean().optional(),
     }
 )
@@ -63,7 +63,7 @@ sign_in_validator = zon.record(
 
 class SignInRequest(BaseModel):
     email: str
-    password: str
+    password: Optional[str] = None
     is_login_with_otp: Optional[bool] = False
 
     def validate(self):
@@ -78,7 +78,7 @@ class SignInRequest(BaseModel):
 resend_otp_validator = zon.record(
     {
         "email": zon.string().email().optional(),  # Optional email validation
-        "phone": zon.string().min(10).max(10).optional(),  # Optional phone validation
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional phone validation
     }
 ).refine(
     lambda data: data.get("email") or data.get("phone"),  # At least one required
@@ -88,7 +88,7 @@ resend_otp_validator = zon.record(
 
 class ResendOtpRequest(BaseModel):
     email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    phone: Optional[int] = None
 
     def validate(self):
         # Ensure either email or phone is provided, but not both
@@ -168,7 +168,7 @@ class ForgotPasswordRequest(BaseModel):
 validate_otp_validator = zon.record(
     {
         "email": zon.string().email().optional(),  # Optional email validation
-        "phone": zon.string().min(10).max(10).optional(),  # Optional phone validation
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional phone validation
         "otp": zon.string().min(6).max(6),  # OTP validation
     }
 ).refine(
@@ -179,7 +179,7 @@ validate_otp_validator = zon.record(
 
 class ValidateOtpRequest(BaseModel):
     email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    phone: Optional[int] = None
     otp: str
 
     def validate(self):

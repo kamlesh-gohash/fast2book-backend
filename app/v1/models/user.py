@@ -56,7 +56,7 @@ class User(Document, BaseModel):
     otp_expires: Optional[datetime] = None
     password: str
     user_role: int = Field(default=1)
-    phone: Optional[str] = Field(default=None, pattern=r"^\+?[0-9\-]{7,20}$")
+    phone: Optional[int] = Field(default=None)
     is_deleted: bool = Field(default=False)
     is_active: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)

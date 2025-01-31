@@ -223,7 +223,7 @@ class SubscriptionManager:
 
     async def subscription_delete(self, id: str):
         try:
-            await subscription_collection.delete_one({"_id": ObjectId(id)})
+            await plan_collection.delete_one({"_id": ObjectId(id)})
             return {"data": None}
         except Exception as ex:
             raise HTTPException(
@@ -345,7 +345,6 @@ class SubscriptionManager:
                 "total_pages": (total_count + limit - 1) // limit,
             }
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

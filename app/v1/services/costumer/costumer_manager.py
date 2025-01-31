@@ -54,15 +54,32 @@ class CostumerManager:
             # await send_sms(to_phone, otp)  # Uncomment this line when implementing SMS functionality
             otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
             # create_costumer_request.otp = otp
-            # create_costumer_request.otp_expiration_time = otp_expiration_time
+            # # create_costumer_request.otp_expiration_time = otp_expiration_time
+            plain_password = create_costumer_request.password
+
+            # Hash the password before saving
+            hashed_password = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt())
+            create_costumer_request.password = hashed_password
             # create_costumer_request.password = hashpw(create_costumer_request.password.encode('utf-8'), gensalt()).decode('utf-8')
+            # print(create_costumer_request.password, 'create_costumer_request.password')
             create_costumer_request_dict = create_costumer_request.dict()
             create_costumer_request_dict["created_at"] = datetime.utcnow()
+            create_costumer_request_dict["is_active"] = True
             result = await user_collection.insert_one(create_costumer_request_dict)
             create_costumer_request_dict["id"] = str(result.inserted_id)  # Add `id`
             del create_costumer_request_dict["_id"]
+            sign_in_link = f"http://localhost:3000/sign-in"
+            source = "Account created"
+            
+            context = {
+                "password": plain_password,
+                "sign_in_link": sign_in_link
+            }
+            to_email = create_costumer_request.email
+            await send_email(to_email, source, context)
             return create_costumer_request_dict
         except Exception as e:
+            print(e)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     async def customer_list(

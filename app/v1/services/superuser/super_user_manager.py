@@ -52,7 +52,10 @@ class SuperUserManager:
                 otp = generate_otp()
                 otp_expires = datetime.utcnow() + timedelta(minutes=5)
                 await user_collection.update_one({"email": email}, {"$set": {"otp": otp, "otp_expires": otp_expires}})
-                await send_email(email, otp)
+                source = "Login With Otp"
+                context = {"otp": otp}
+                to_email = email
+                await send_email(to_email, source, context)
                 # return success({"message": "OTP sent successfully", "data": None})
                 return {"message": "OTP sent successfully"}
             stored_password_hash = result.get("password")
@@ -68,12 +71,13 @@ class SuperUserManager:
             user = await User.find_one(User.email == email)
             if user is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
+            if "admin" not in user.roles and user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not authorized as an admin")
             user_data = user.dict()
             user_data.pop("password", None)
             user_data.pop("otp", None)
-
+            user_data.pop("otp_expires", None)
+            user_data['id'] = str(user.id)
             # Generate access and refresh tokens
             access_token = create_access_token(data={"sub": user.email})
             refresh_token = create_refresh_token(data={"sub": user.email})
@@ -260,10 +264,10 @@ class SuperUserManager:
             user = await User.find_one(User.email == super_user_create_request.email)
             if user is not None:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists")
-
+            print(super_user_create_request.password,'super_user_create_request.password')
             # Hash the password
             hashed_password = bcrypt.hashpw(super_user_create_request.password.encode("utf-8"), bcrypt.gensalt())
-
+            print(hashed_password,'hashed_password')
             # Create the user object
             user = User(
                 first_name=super_user_create_request.first_name,

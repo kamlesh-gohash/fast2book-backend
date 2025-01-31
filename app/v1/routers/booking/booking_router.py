@@ -12,7 +12,7 @@ from app.v1.schemas.booking.booking import *
 from app.v1.schemas.subscription.subscription_auth import CreateSubscriptionRequest, UpdateSubscriptionRequest
 from app.v1.services import BookingManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
-
+from app.v1.utils.email import send_email
 
 razorpay_client = razorpay.Client(auth=(os.getenv("RAZOR_PAY_KEY_ID"), os.getenv("RAZOR_PAY_KEY_SECRET")))
 
@@ -99,10 +99,13 @@ async def user_booking_checkout(
 async def user_booking_list_for_vendor(
     request: Request,
     token: str = Depends(get_token_from_header),
+    search: str = Query(None, description="Search query"),
+    start_date: str = Query(None, description="Start date for filtering bookings (format: YYYY-MM-DD HH:MM:SS)"),
+    end_date: str = Query(None, description="End date for filtering bookings (format: YYYY-MM-DD HH:MM:SS)"),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.user_booking_list_for_vendor(request=request, token=token)
+        result = await booking_manager.user_booking_list_for_vendor(request=request, token=token, search=search, start_date=start_date, end_date=end_date)
 
         return success({"message": "User Booking List found successfully", "data": result})
 
@@ -214,15 +217,23 @@ async def cancel_booking(
 async def user_booking_list_for_admin(
     request: Request,
     token: str = Depends(get_token_from_header),
+    search: str = Query(None, description="Search query"),
+    start_date: str = Query(None, description="Start date for filtering bookings (format: YYYY-MM-DD HH:MM:SS)"),
+    end_date: str = Query(None, description="End date for filtering bookings (format: YYYY-MM-DD HH:MM:SS)"),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.user_booking_list_for_admin(request=request, token=token)
+        result = await booking_manager.user_booking_list_for_admin(
+            request=request, 
+            token=token, 
+            search=search, 
+            start_date=start_date, 
+            end_date=end_date
+        )
 
         return success({"message": "User Booking List found successfully", "data": result})
 
     except HTTPException as http_ex:
-        # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
@@ -231,7 +242,6 @@ async def user_booking_list_for_admin(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-
 
 @router.get("/get-user-booking-for-admin/{id}", status_code=status.HTTP_200_OK)
 async def get_user_booking_for_admin(
@@ -309,7 +319,7 @@ async def verify_payment(request: Request, payload: dict):
             {"_id": ObjectId(order_id)},
             {"$set": {"payment_status": "paid", "booking_status": "completed", "payment_method": payment_method}},
         )
-
+        
         return success({"message": "Payment verification successful"})
     except razorpay.errors.SignatureVerificationError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment signature")

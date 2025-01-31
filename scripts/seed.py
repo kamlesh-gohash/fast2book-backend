@@ -22,7 +22,7 @@ async def seed_data():
             email="vicky@yopmail.com",
             password=hashed_password,
             user_role=2,
-            phone="+919928821640",
+            phone="9928821640",
             created_at=datetime.utcnow(),
         )
         await seed_user.create()
