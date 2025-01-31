@@ -140,31 +140,37 @@ async def send_vendor_email(to_email, password, login_link):
     except Exception as e:
         return {"status": "FAILURE", "message": str(e)}
 
+
 import logging
 import os
 import random
 import smtplib
+
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 from string import Template
+
 from bs4 import BeautifulSoup
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def strip_tags(html_content: str) -> str:
     """Remove HTML tags from the given content."""
     soup = BeautifulSoup(html_content, "lxml")
     return soup.get_text()
 
+
 async def send_email(to_email: str, source: str, context: dict = None):
     """Send email based on the source and context provided."""
-    from_email = os.getenv('EMAIL_USER')
-    from_password = os.getenv('EMAIL_PASSWORD')
+    from_email = os.getenv("EMAIL_USER")
+    from_password = os.getenv("EMAIL_PASSWORD")
     if not from_email or not from_password:
         raise ValueError("Email credentials (EMAIL_USER and EMAIL_PASSWORD) are not set in environment variables.")
-    
+
     # Define the project root and template paths
     project_root = Path(__file__).resolve().parent.parent.parent
     templates = {
@@ -182,16 +188,16 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "Login With Otp": project_root / "templates/email/login_with_otp.html",
         "Vednor Create": project_root / "templates/email/vendor_create_email.html",
     }
-    
+
     # Get the template path based on the source
     template_path = templates.get(source)
     if not template_path:
         raise ValueError(f"No template defined for source: {source}")
-    
+
     # Verify if the template exists
     if not template_path.exists():
         raise FileNotFoundError(f"Template not found at: {template_path}")
-    
+
     # Read the HTML template
     try:
         with open(template_path, "r", encoding="utf-8") as file:
@@ -199,7 +205,7 @@ async def send_email(to_email: str, source: str, context: dict = None):
     except Exception as e:
         logger.error(f"Failed to read template file: {e}")
         raise
-    
+
     # Replace placeholders with actual values
     try:
         template = Template(html_template)
@@ -210,7 +216,7 @@ async def send_email(to_email: str, source: str, context: dict = None):
     except Exception as e:
         logger.error(f"Failed to substitute placeholders: {e}")
         raise
-    
+
     # Create plain text version by stripping HTML tags
     plain_text_content = strip_tags(html_content)
     # Set up the email
@@ -227,22 +233,22 @@ async def send_email(to_email: str, source: str, context: dict = None):
         # Add other sources and subjects here
     }
     msg["Subject"] = subject_map.get(source, "Your OTP Code")  # Default subject
-    
+
     # Attach both plain text and HTML versions
     text_part = MIMEText(plain_text_content, "plain")
     html_part = MIMEText(html_content, "html")
     msg.attach(text_part)
     msg.attach(html_part)
-    
+
     # Send the email
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(from_email, from_password)
-        
+
         text = msg.as_string()
         server.sendmail(from_email, to_email, text)
-        
+
         server.quit()
         logger.info(f"Email sent successfully to {to_email}.")
         return {"status": "SUCCESS", "message": "Email sent successfully."}

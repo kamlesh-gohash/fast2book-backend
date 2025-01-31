@@ -60,8 +60,8 @@ class UserManager:
             source = "Activation_code"
             context = {"otp": otp, "to_email": user.email}
             to_email = user.email
-            print(context, source,'context,source')
-            await send_email(to_email,source, context)
+            print(context, source, "context,source")
+            await send_email(to_email, source, context)
         if user.phone:
             print(user.phone)
             to_phone = user.phone
@@ -189,7 +189,7 @@ class UserManager:
             try:
                 # Check if email exists in the database
                 user = await user_collection.find_one({"email": email})
-                print(user, 'user')
+                print(user, "user")
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found")
 
@@ -198,15 +198,9 @@ class UserManager:
                 context = {"otp": otp}
                 await send_email(email, source, context)
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-                update_data = {
-                    "otp": otp,
-                    "otp_expires": otp_expiration_time
-                }
+                update_data = {"otp": otp, "otp_expires": otp_expiration_time}
 
-                await user_collection.update_one(
-                    {"phone": phone},
-                    {"$set": update_data}
-                )
+                await user_collection.update_one({"phone": phone}, {"$set": update_data})
                 return otp
 
             except Exception as ex:
@@ -222,20 +216,14 @@ class UserManager:
                 # Send OTP to phone (SMS)
                 # await send_sms(phone, otp)  # Uncomment when implementing SMS
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-                update_data = {
-                    "otp": otp,
-                    "otp_expires": otp_expiration_time
-                }
+                update_data = {"otp": otp, "otp_expires": otp_expiration_time}
 
-                await user_collection.update_one(
-                    {"phone": phone},
-                    {"$set": update_data}
-                )
+                await user_collection.update_one({"phone": phone}, {"$set": update_data})
 
                 return otp
 
             except Exception as ex:
-                print(ex,'ex')
+                print(ex, "ex")
                 raise HTTPException(status_code=500, detail="Internal Server Error")
 
         raise ValueError("Either email or phone must be provided to send OTP.")
@@ -270,15 +258,9 @@ class UserManager:
                 # Send OTP to the user's phone
                 # await send_sms(phone, otp)  # Uncomment when implementing SMS
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-                update_data = {
-                    "otp": otp,
-                    "otp_expires": otp_expiration_time
-                }
+                update_data = {"otp": otp, "otp_expires": otp_expiration_time}
 
-                await user_collection.update_one(
-                    {"phone": phone},
-                    {"$set": update_data}
-                )
+                await user_collection.update_one({"phone": phone}, {"$set": update_data})
 
                 return {"otp": otp}
 
@@ -314,8 +296,8 @@ class UserManager:
             if user is None:
                 raise HTTPException(status_code=404, detail="User not found with the provided phone.")
 
-            if user.get("otp") != otp: 
-                print('otp', otp)
+            if user.get("otp") != otp:
+                print("otp", otp)
                 raise HTTPException(status_code=400, detail="Invalid OTP.")
             if datetime.utcnow() > user.otp_expires:
                 raise HTTPException(status_code=400, detail="OTP has expired.")
@@ -1034,17 +1016,17 @@ class UserManager:
 
     async def google_login(self, request: Request, token: str):
         try:
-            print(token,'token')
+            print(token, "token")
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             return current_user
 
         except HTTPException as ex:
-            print(ex,'ex')
+            print(ex, "ex")
             raise
         except Exception as ex:
-            print(ex,'ex')
+            print(ex, "ex")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

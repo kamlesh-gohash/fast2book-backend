@@ -70,11 +70,8 @@ class CostumerManager:
             del create_costumer_request_dict["_id"]
             sign_in_link = f"http://localhost:3000/sign-in"
             source = "Account created"
-            
-            context = {
-                "password": plain_password,
-                "sign_in_link": sign_in_link
-            }
+
+            context = {"password": plain_password, "sign_in_link": sign_in_link}
             to_email = create_costumer_request.email
             await send_email(to_email, source, context)
             return create_costumer_request_dict

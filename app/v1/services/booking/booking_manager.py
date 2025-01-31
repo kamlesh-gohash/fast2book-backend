@@ -177,7 +177,9 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def user_booking_list_for_vendor(self, request: Request, token: str,search: str = None, start_date: str = None, end_date: str = None):
+    async def user_booking_list_for_vendor(
+        self, request: Request, token: str, search: str = None, start_date: str = None, end_date: str = None
+    ):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -197,7 +199,7 @@ class BookingManager:
             query = {}
             if start_date or end_date:
                 date_filter = {}
-                
+
                 if start_date:
                     try:
                         # Validate the date format
@@ -205,21 +207,17 @@ class BookingManager:
                         date_filter["$gte"] = start_date
                     except ValueError:
                         raise HTTPException(
-                            status_code=400,
-                            detail="Invalid start date format. Please use 'YYYY-MM-DD'"
+                            status_code=400, detail="Invalid start date format. Please use 'YYYY-MM-DD'"
                         )
-                
+
                 if end_date:
                     try:
                         # Validate the date format
                         datetime.strptime(end_date, "%Y-%m-%d")
                         date_filter["$lte"] = end_date
                     except ValueError:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="Invalid end date format. Please use 'YYYY-MM-DD'"
-                        )
-                
+                        raise HTTPException(status_code=400, detail="Invalid end date format. Please use 'YYYY-MM-DD'")
+
                 if date_filter:
                     query["booking_date"] = date_filter
             if search:
@@ -240,22 +238,22 @@ class BookingManager:
                 booking["id"] = str(booking["_id"])
                 booking.pop("_id", None)
 
-            # for booking in bookings:
-            #     booking["user_id"] = str(booking["user_id"])
-            #     booking["vendor_id"] = str(booking["vendor_id"])
-            #     booking["category_id"] = str(booking["category_id"])
-            #     booking["service_id"] = str(booking["service_id"])
-            # for booking in bookings:
-            #     booking["id"] = str(booking["_id"])
-            #     booking.pop("_id", None)
-                
+                # for booking in bookings:
+                #     booking["user_id"] = str(booking["user_id"])
+                #     booking["vendor_id"] = str(booking["vendor_id"])
+                #     booking["category_id"] = str(booking["category_id"])
+                #     booking["service_id"] = str(booking["service_id"])
+                # for booking in bookings:
+                #     booking["id"] = str(booking["_id"])
+                #     booking.pop("_id", None)
+
                 # Fetch user details
                 user_id = booking["user_id"]
                 user = await user_collection.find_one({"_id": ObjectId(user_id)})
                 if user:
                     booking["user_name"] = user["first_name"]
                     booking["user_email"] = user["email"]
-                
+
                 # Fetch vendor details
                 vendor_id = booking["vendor_id"]
                 vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
@@ -263,13 +261,13 @@ class BookingManager:
                     vendor_user_id = vendor["user_id"]
                     booking["business_name"] = vendor["business_name"]
                     booking["business_type"] = vendor["business_type"]
-                
+
                 # Fetch vendor user details
                 vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
                 if vendor_user:
                     booking["vendor_email"] = vendor_user["email"]
                     booking["vendor_name"] = vendor_user["first_name"]
-                
+
                 # Fetch category details
                 category_id = booking["category_id"]
                 category = await category_collection.find_one({"_id": ObjectId(category_id)})
@@ -391,11 +389,10 @@ class BookingManager:
                 category = await category_collection.find_one({"_id": category_id})
                 booking["category_id"] = str(booking["category_id"])
                 booking["category_name"] = category.get("name") if category else None
-                
+
                 service = await services_collection.find_one({"_id": service_id})
                 booking["service_id"] = str(booking["service_id"])
                 booking["service_name"] = service.get("name") if service else None
-
 
             return bookings
 
@@ -439,14 +436,22 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def user_booking_list_for_admin(self, request: Request, token: str, search: str = None, role: str = "vendor", start_date: str = None, end_date: str = None):
+    async def user_booking_list_for_admin(
+        self,
+        request: Request,
+        token: str,
+        search: str = None,
+        role: str = "vendor",
+        start_date: str = None,
+        end_date: str = None,
+    ):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise ValueError(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-            
+
             valid_roles = ["admin", "user", "vendor"]
             if role not in valid_roles:
                 raise HTTPException(
@@ -455,13 +460,13 @@ class BookingManager:
                 )
 
             # Pagination and search query
-            
+
             query = {}
 
             # Add date filter if provided
             if start_date or end_date:
                 date_filter = {}
-                
+
                 if start_date:
                     try:
                         # Validate the date format
@@ -469,24 +474,20 @@ class BookingManager:
                         date_filter["$gte"] = start_date
                     except ValueError:
                         raise HTTPException(
-                            status_code=400,
-                            detail="Invalid start date format. Please use 'YYYY-MM-DD'"
+                            status_code=400, detail="Invalid start date format. Please use 'YYYY-MM-DD'"
                         )
-                
+
                 if end_date:
                     try:
                         # Validate the date format
                         datetime.strptime(end_date, "%Y-%m-%d")
                         date_filter["$lte"] = end_date
                     except ValueError:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="Invalid end date format. Please use 'YYYY-MM-DD'"
-                        )
-                
+                        raise HTTPException(status_code=400, detail="Invalid end date format. Please use 'YYYY-MM-DD'")
+
                 if date_filter:
                     query["booking_date"] = date_filter
-                    print(query,'query')
+                    print(query, "query")
             if search:
                 search = search.strip()
                 if not search:
@@ -500,7 +501,7 @@ class BookingManager:
                 ]
 
             bookings = await booking_collection.find(query).to_list(None)
-            print(bookings,'bookings')
+            print(bookings, "bookings")
 
             for booking in bookings:
                 booking["id"] = str(booking["_id"])
@@ -527,18 +528,16 @@ class BookingManager:
                 category = await category_collection.find_one({"_id": category_id})
                 booking["category_id"] = str(booking["category_id"])
                 booking["category_name"] = category.get("name") if category else None
-                    
+
                 service = await services_collection.find_one({"_id": service_id})
                 booking["service_id"] = str(booking["service_id"])
                 booking["service_name"] = service.get("name") if service else None
 
             total_bookings = await booking_collection.count_documents(query)
-            
 
             return {
                 "data": bookings,
                 "total_bookings": total_bookings,
-                
             }
 
         except HTTPException:

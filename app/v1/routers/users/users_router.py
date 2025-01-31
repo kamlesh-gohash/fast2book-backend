@@ -20,6 +20,8 @@ router = APIRouter()
 
 class GoogleLoginRequest(BaseModel):
     token: str  # Google ID token
+
+
 # Register a new user (POST request)
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_user(sign_up_request: SignUpRequest, user_manager: UserManager = Depends(get_user_manager)):
@@ -37,7 +39,7 @@ async def register_user(sign_up_request: SignUpRequest, user_manager: UserManage
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_409_CONFLICT)
     except Exception as ex:
-        print(ex,'ex')
+        print(ex, "ex")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -434,20 +436,19 @@ async def change_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+
 @router.post("/google-login", status_code=status.HTTP_200_OK)
-async def google_login(
-    request: Request, 
-    user_manager: UserManager = Depends(get_user_manager)):
+async def google_login(request: Request, user_manager: UserManager = Depends(get_user_manager)):
     try:
         result = await user_manager.google_login(request=request)
-        print(result,'result')
+        print(result, "result")
         return success({"message": "Google login successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex,'kkkkkkkkkkkkk')
+        print(ex, "kkkkkkkkkkkkk")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

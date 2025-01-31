@@ -30,6 +30,7 @@ class TimeSlot(BaseModel):
         except Exception as e:
             raise ValueError(f"Error calculating duration: {str(e)}")
 
+
 class DaySlot(BaseModel):
     day: str
     time_slots: List[TimeSlot]
