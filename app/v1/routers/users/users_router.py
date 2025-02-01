@@ -18,11 +18,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class GoogleLoginRequest(BaseModel):
+    token: str  # Google ID token
+
+
 # Register a new user (POST request)
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_user(sign_up_request: SignUpRequest, user_manager: UserManager = Depends(get_user_manager)):
     validation_result = sign_up_request.validate()
     if validation_result:
+        print(validation_result)
         return validation_result
     try:
         # User registration logic
@@ -34,6 +39,7 @@ async def register_user(sign_up_request: SignUpRequest, user_manager: UserManage
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_409_CONFLICT)
     except Exception as ex:
+        print(ex, "ex")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -48,7 +54,11 @@ async def sign_in_user(sign_in_request: SignInRequest, user_manager: UserManager
         return validation_result
     try:
         # Proceed with the sign-in logic after Zon validation
-        data = await user_manager.sign_in(sign_in_request.email, sign_in_request.password)
+        data = await user_manager.sign_in(
+            sign_in_request.email, sign_in_request.password, sign_in_request.is_login_with_otp
+        )
+        if "OTP sent successfully" in data.get("message", ""):
+            return data
         return success({"data": data, "token_type": "bearer"})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -74,6 +84,7 @@ async def resend_otp(resend_otp_request: ResendOtpRequest, user_manager: UserMan
         otp = await user_manager.resend_otp(email=resend_otp_request.email, phone=resend_otp_request.phone)
         return success({"message": "OTP resent", "data": None})
     except HTTPException as http_ex:
+        print(http_ex)
         # Explicitly handle HTTPException and return its response
         return failure({"message": "user not found", "data": None})
     except ValueError as ex:
@@ -150,6 +161,7 @@ async def validate_otp(validate_otp_request: ValidateOtpRequest, user_manager: U
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -194,7 +206,7 @@ async def update_profile(
         )
 
 
-@router.post("/refresh-token", response_model=UserToken)
+@router.post("/refresh-token", status_code=status.HTTP_200_OK)
 async def refresh_token(request: RefreshTokenRequest):
     validation_result = request.validate()
     if validation_result:
@@ -212,12 +224,22 @@ async def refresh_token(request: RefreshTokenRequest):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
         # Generate a new access token
-        new_access_token = create_access_token(data={"sub": user_email})
+        user_data = user.dict()
+        user_data["id"] = str(user.id)  # Convert ObjectId to string
 
-        # Return a UserToken instance
-        # Convert the ObjectId to a string
-        user_token = UserToken(user_id=str(user.id), access_token=new_access_token)
-        return user_token
+        user_data.pop("password", None)
+        user_data.pop("otp", None)
+
+        # Generate new access and refresh tokens
+        new_access_token = create_access_token(data={"sub": user.email})
+        new_refresh_token = create_refresh_token(data={"sub": user.email})
+
+        data = {
+            "access_token": new_access_token,
+            "refresh_token": new_refresh_token,
+            "user_data": user_data,
+        }
+        return success({"message": "Tokens refreshed successfully", "data": data})
 
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -409,6 +431,24 @@ async def change_password(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/google-login", status_code=status.HTTP_200_OK)
+async def google_login(request: Request, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.google_login(request=request)
+        print(result, "result")
+        return success({"message": "Google login successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        print(ex, "kkkkkkkkkkkkk")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

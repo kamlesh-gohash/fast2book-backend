@@ -21,7 +21,7 @@ from app.v1.utils.token import create_access_token, create_refresh_token, get_oa
 
 class CostumerManager:
 
-    async def create_costumer(self, request: Request, token: str, create_costumer_request: User):
+    async def create_customer(self, request: Request, token: str, create_costumer_request: User):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -41,7 +41,7 @@ class CostumerManager:
 
             if existing_user:
                 raise HTTPException(
-                    status_code=404, detail="Costumer with this email or phone already exists in the database."
+                    status_code=404, detail="customer with this email or phone already exists in the database."
                 )
 
             otp = generate_otp()
@@ -54,18 +54,32 @@ class CostumerManager:
             # await send_sms(to_phone, otp)  # Uncomment this line when implementing SMS functionality
             otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
             # create_costumer_request.otp = otp
-            # create_costumer_request.otp_expiration_time = otp_expiration_time
+            # # create_costumer_request.otp_expiration_time = otp_expiration_time
+            plain_password = create_costumer_request.password
+
+            # Hash the password before saving
+            hashed_password = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt())
+            create_costumer_request.password = hashed_password
             # create_costumer_request.password = hashpw(create_costumer_request.password.encode('utf-8'), gensalt()).decode('utf-8')
+            # print(create_costumer_request.password, 'create_costumer_request.password')
             create_costumer_request_dict = create_costumer_request.dict()
             create_costumer_request_dict["created_at"] = datetime.utcnow()
+            create_costumer_request_dict["is_active"] = True
             result = await user_collection.insert_one(create_costumer_request_dict)
             create_costumer_request_dict["id"] = str(result.inserted_id)  # Add `id`
             del create_costumer_request_dict["_id"]
+            sign_in_link = f"http://localhost:3000/sign-in"
+            source = "Account created"
+
+            context = {"password": plain_password, "sign_in_link": sign_in_link}
+            to_email = create_costumer_request.email
+            await send_email(to_email, source, context)
             return create_costumer_request_dict
         except Exception as e:
+            print(e)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def costumer_list(
+    async def customer_list(
         self, request: Request, token: str, page: int, limit: int, search: str = None, role: str = "user"
     ):
         try:
@@ -140,7 +154,7 @@ class CostumerManager:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def get_costumer(self, request: Request, token: str, id: str):
+    async def get_customer(self, request: Request, token: str, id: str):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -196,7 +210,7 @@ class CostumerManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def update_costumer(
+    async def update_customer(
         self, request: Request, token: str, id: str, update_costumer_request: UpdateCostumerRequest
     ):
         try:
@@ -267,7 +281,7 @@ class CostumerManager:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def delete_costumer(self, request: Request, token: str, id: str):
+    async def delete_customer(self, request: Request, token: str, id: str):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:

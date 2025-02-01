@@ -29,6 +29,8 @@ payment_collection = get_model("payments")
 support_collection = get_model("supports")
 permission_collection = get_model("permissions")
 permission_assign_request = get_model("permission_assign_request")
+plan_collection = get_model("plans")
+booking_payments_collection = get_model("booking_payments")
 
 
 __all__ = {
@@ -45,4 +47,6 @@ __all__ = {
     "support_collection": support_collection,
     "permission_collection": permission_collection,
     "permission_assign_request": permission_assign_request,
+    "plan_collection": plan_collection,
+    "booking_payments_collection": booking_payments_collection,
 }

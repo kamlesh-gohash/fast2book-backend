@@ -17,6 +17,18 @@ class TimeSlot(BaseModel):
     start_time: str
     end_time: str
     max_seat: int = Field(..., gt=0, description="Maximum number of seats for the time slot")
+    duration: int = Field(default=0, description="Duration of the time slot in minutes")
+
+    def calculate_duration(self):
+        """
+        Calculate the duration between start_time and end_time in minutes.
+        """
+        try:
+            start = datetime.strptime(self.start_time, "%H:%M")
+            end = datetime.strptime(self.end_time, "%H:%M")
+            self.duration = int((end - start).total_seconds() / 60)
+        except Exception as e:
+            raise ValueError(f"Error calculating duration: {str(e)}")
 
 
 class DaySlot(BaseModel):
@@ -52,9 +64,12 @@ class Vendor(Document):
     services: Optional[List[Service]] = Field(None, description="List of selected services with their IDs and names")
     service_details: Optional[str] = None
     status: StatusEnum = Field(default=StatusEnum.Active)
-    availability_slots: Optional[Link["SlotRequest"]] = None
-    # availability_slots: List[DaySlot] = Field(default_factory=default_availability_slots)
-
+    # availability_slots: Optional[Link["SlotRequest"]] = None
+    availability_slots: List[DaySlot] = Field(default_factory=default_availability_slots)
+    fees: float = Field(default=0.0)
+    location: Optional[List[float]] = Field(None, description="Location of the vendor as [latitude, longitude]")
+    specialization: Optional[str] = None
+    razorpay_customer_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:

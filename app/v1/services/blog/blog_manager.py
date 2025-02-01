@@ -151,9 +151,8 @@ class BlogManager:
                 update_data["blog_image"] = image_name
                 update_data["blog_image_url"] = file_url
             else:
-                file_url = (
-                    f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{blog_request.get('blog_image')}"
-                )
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{blog_request.blog_image}"
+
             if blog_request.tags:
                 # Ensure that tags are a list of strings
                 if not isinstance(blog_request.tags, list) or not all(

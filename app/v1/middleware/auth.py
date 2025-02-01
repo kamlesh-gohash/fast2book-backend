@@ -6,6 +6,9 @@ from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
+from google.auth.exceptions import GoogleAuthError
+from google.auth.transport import requests
+from google.oauth2 import id_token
 
 from app.v1.config.auth import oauth
 from app.v1.models import User
@@ -42,27 +45,86 @@ SECRET_KEY = os.getenv("SECRET_KEY")  # Use the same secret key that signs the J
 ALGORITHM = "HS256"  # Ensure this matches the algorithm used to sign the token
 
 
+# async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)):
+#     """Get the current authenticated user from the JWT token."""
+#     try:
+
+#         # Decode the token
+#         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+#         # Extract email from the token's payload
+#         email = payload.get("sub")  # Ensure the token contains a 'sub' claim for email
+#         if not email:
+#             raise HTTPException(status_code=401, detail="Invalid token: Missing 'sub' claim.")
+
+#         # Fetch the user from the database
+#         user = await User.get_user_by_email(email)
+#         if not user:
+#             raise HTTPException(status_code=404, detail="User not found.")
+
+#         return user
+#     except ExpiredSignatureError:
+#         raise HTTPException(status_code=401, detail="Token has expired.")
+#     except InvalidTokenError as e:
+#         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail="Internal server error")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+
+
 async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)):
-    """Get the current authenticated user from the JWT token."""
+    """Get the current authenticated user from either a JWT token or a Google ID token."""
     try:
+        # Check if the token is a Google ID token
+        if token.startswith("google_"):
+            # Extract the actual Google ID token
+            google_token = token.replace("google_", "")
 
-        # Decode the token
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        # Extract email from the token's payload
-        email = payload.get("sub")  # Ensure the token contains a 'sub' claim for email
-        if not email:
-            raise HTTPException(status_code=401, detail="Invalid token: Missing 'sub' claim.")
+            # Verify the Google ID token
+            id_info = id_token.verify_oauth2_token(google_token, requests.Request(), GOOGLE_CLIENT_ID)
 
-        # Fetch the user from the database
-        user = await User.get_user_by_email(email)
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found.")
+            # Validate the issuer
+            if id_info["iss"] not in ["accounts.google.com", "https://accounts.google.com"]:
+                raise HTTPException(status_code=401, detail="Invalid Google token issuer.")
 
-        return user
+            # Extract email from Google ID token
+            email = id_info.get("email")
+            if not email:
+                raise HTTPException(status_code=401, detail="Invalid Google token: Missing email.")
+
+            # Fetch or create the user in your database
+            user = await User.get_user_by_email(email)
+            if not user:
+                # Create a new user if they don't exist
+                user = await User.create_user(
+                    email=email,
+                    name=id_info.get("name"),
+                    picture=id_info.get("picture"),
+                    provider="google",
+                )
+
+            return user
+
+        else:
+            # Handle JWT token
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            email = payload.get("sub")  # Ensure the token contains a 'sub' claim for email
+            if not email:
+                raise HTTPException(status_code=401, detail="Invalid token: Missing 'sub' claim.")
+
+            # Fetch the user from the database
+            user = await User.get_user_by_email(email)
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found.")
+
+            return user
+
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired.")
+
     except InvalidTokenError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+    except GoogleAuthError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid Google token: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
