@@ -17,9 +17,10 @@ from app.v1.models.vendor import Vendor
 
 class BookingStatusEnum(str, Enum):
     pending = "pending"
-    successful = "successful"
+    completed = "completed"
     failed = "failed"
     cancelled = "cancelled"
+    rescheduled = "rescheduled"
 
 
 class PaymentStatusEnum(str, Enum):
@@ -37,11 +38,34 @@ class Bookings(BaseModel):
     category_id: Link[Category]
     service: Link[Service]
     booking_date: datetime
-    description: str
     status: StatusEnum = StatusEnum.Active
     booking_status: BookingStatusEnum = BookingStatusEnum.pending
     payment_status: PaymentStatusEnum = PaymentStatusEnum.unpaid
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    booking_order_id: Optional[str] = None
+    amount: Optional[float] = None
+    payment_method: Optional[str] = None
 
     class Settings:
         name = "bookings"
+
+
+# class TransactionStatusEnum(str, Enum):
+#     pending = "pending"
+#     successful = "successful"
+#     failed = "failed"
+#     cancelled = "cancelled"
+
+# class BookingPayment(BaseModel):
+#     booking_id: Link[Bookings]
+#     user_id: Link[User]
+#     razorpaytransaction_id: str
+#     amount: float
+#     currency: str
+#     payment_method: str
+#     transaction_status: TransactionStatusEnum = TransactionStatusEnum.pending
+#     payment_date: datetime
+#     razorpay_signature: str
+
+#     class Settings:
+#         name = "booking_payments"

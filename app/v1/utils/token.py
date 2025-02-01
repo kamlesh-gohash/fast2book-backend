@@ -11,8 +11,8 @@ from app.v1.config.auth import oauth
 
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 ALGORITHM = "HS256"  # You can use other algorithms like RS256 if you want
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
-REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
+ACCESS_TOKEN_EXPIRE_MINUTES = 24 * 60  # 1 day
+REFRESH_TOKEN_EXPIRE_MINUTES = 30 * 24 * 60  # 30 days
 
 
 async def get_oauth_tokens(user) -> dict:
@@ -41,6 +41,7 @@ async def get_oauth_tokens(user) -> dict:
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    print(expire, "expire")
     to_encode.update({"exp": expire})
 
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)

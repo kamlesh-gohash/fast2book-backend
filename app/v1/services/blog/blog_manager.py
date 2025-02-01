@@ -27,11 +27,13 @@ class BlogManager:
     async def create_blog(self, create_blog_request: Blog) -> dict:
         try:
             blog_data = create_blog_request.dict()
-            # image_name = create_blog_request.blog_image
-            # bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-            # file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
+            image_name = create_blog_request.blog_image
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
 
             # Insert the blog data into the database
+            blog_data["blog_image_url"] = file_url
+            blog_data["blog_image"] = image_name
             result = await blog_collection.insert_one(blog_data)
             blog_data["_id"] = str(result.inserted_id)
 
@@ -66,6 +68,8 @@ class BlogManager:
                     "title": blog["title"],
                     "content": blog["content"],
                     "blog_url": blog["blog_url"],
+                    "blog_image": blog["blog_image"],
+                    "blog_image_url": blog["blog_image_url"],
                     "author_name": blog["author_name"],
                     "category": blog["category"],
                     "tags": blog["tags"],
@@ -82,6 +86,7 @@ class BlogManager:
         except Exception as e:
             raise e
         except Exception as e:
+            print(e)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch list of blogs: {str(e)}"
             )
@@ -103,6 +108,8 @@ class BlogManager:
                 "title": existing_blog["title"],
                 "content": existing_blog["content"],
                 "blog_url": existing_blog["blog_url"],
+                "blog_image": existing_blog["blog_image"],
+                "blog_image_url": existing_blog["blog_image_url"],
                 "author_name": existing_blog["author_name"],
                 "category": existing_blog["category"],
                 "tags": existing_blog["tags"],
@@ -112,6 +119,7 @@ class BlogManager:
             }
             return blog_data
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -129,6 +137,7 @@ class BlogManager:
 
             # Debugging fields
 
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
             if blog_request.category:
                 if not isinstance(blog_request.category, str):
                     raise HTTPException(
@@ -136,6 +145,13 @@ class BlogManager:
                         detail=f"Invalid category format: {blog_request.category}",
                     )
                 update_data["category"] = blog_request.category
+            if blog_request.blog_image:
+                image_name = blog_request.blog_image
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
+                update_data["blog_image"] = image_name
+                update_data["blog_image_url"] = file_url
+            else:
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{blog_request.blog_image}"
 
             if blog_request.tags:
                 # Ensure that tags are a list of strings
@@ -166,6 +182,8 @@ class BlogManager:
                 "title": updated_blog["title"],
                 "content": updated_blog["content"],
                 "blog_url": updated_blog["blog_url"],
+                "blog_image": updated_blog["blog_image"],
+                "blog_image_url": updated_blog["blog_image_url"],
                 "author_name": updated_blog["author_name"],
                 "category": updated_blog["category"],
                 "tags": updated_blog["tags"],
@@ -174,6 +192,7 @@ class BlogManager:
                 "updated_at": updated_blog["updated_at"],
             }
         except Exception as e:
+            print(e)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update blog: {str(e)}"
             )

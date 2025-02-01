@@ -36,9 +36,9 @@ create_booking_validator = zon.record(
         "vendor_id": zon.string(),
         "category_id": zon.string(),
         "service_id": zon.string(),
-        "date": zon.string(),
+        "booking_date": zon.string(),
         "time_slot": zon.string().optional(),
-        "description": zon.string(),
+        "booking_order_id": zon.string().optional(),
     }
 )
 
@@ -48,9 +48,14 @@ class CreateBookingRequest(BaseModel):
     vendor_id: str
     category_id: str
     service_id: str
-    date: str
+    booking_date: str
     time_slot: Optional[str] = None
-    description: str
+    status: StatusEnum = StatusEnum.Active
+    booking_status: BookingStatusEnum = BookingStatusEnum.pending
+    payment_status: PaymentStatusEnum = PaymentStatusEnum.unpaid
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    booking_order_id: Optional[str] = None
+    amount: Optional[float] = None
 
     def validate(self):
         try:

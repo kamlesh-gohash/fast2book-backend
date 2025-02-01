@@ -19,6 +19,7 @@ from motor.motor_asyncio import AsyncIOMotorCollection  # Ensure this import for
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import (
     User,
+    booking_collection,
     category_collection,
     services_collection,
     support_collection,
@@ -56,10 +57,15 @@ class UserManager:
         otp = generate_otp()
 
         if user.email:
+            source = "Activation_code"
+            context = {"otp": otp, "to_email": user.email}
             to_email = user.email
-            await send_email(to_email, otp)
+            print(context, source, "context,source")
+            await send_email(to_email, source, context)
         if user.phone:
+            print(user.phone)
             to_phone = user.phone
+            print(to_phone)
             # await send_sms(to_phone, otp)  # Uncomment this line when implementing SMS functionality
         otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
         user.otp = otp
@@ -118,13 +124,24 @@ class UserManager:
         result["id"] = str(result["_id"])  # Convert ObjectId to string
         return result
 
-    async def sign_in(self, email: str, password: str) -> dict:
+    async def sign_in(self, email: str, password: str = None, is_login_with_otp: bool = False) -> dict:
         """Sign in a user by email and password."""
         try:
             result = await user_collection.find_one({"email": email})
             if not result:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-            # Check if the entered password matches the stored hashed password
+            if is_login_with_otp:
+                print(result, "result")
+                print(is_login_with_otp, "is_login_with_otp")
+                otp = generate_otp()
+                await user_collection.update_one(
+                    {"email": email}, {"$set": {"otp": otp, "otp_expires": datetime.utcnow() + timedelta(minutes=10)}}
+                )
+                source = "Login With Otp"
+                context = {"otp": otp}
+                to_email = email
+                await send_email(to_email, source, context)
+                return {"message": "OTP sent to your email address"}
             stored_password_hash = result.get("password")
             if not stored_password_hash:
                 raise HTTPException(
@@ -159,29 +176,31 @@ class UserManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex, "ex")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def resend_otp(self, email: Optional[str] = None, phone: Optional[str] = None) -> str:
+    async def resend_otp(self, email: Optional[str] = None, phone: Optional[int] = None) -> str:
         """Send OTP to the user's email or phone."""
         otp = generate_otp()  # Generate OTP
 
         if email:
             try:
                 # Check if email exists in the database
-                user = await User.find_one(User.email == email)
-
+                user = await user_collection.find_one({"email": email})
+                print(user, "user")
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found")
 
                 # Send OTP to email
-                await send_email(email, otp)
-                user.otp = otp  # Update the OTP in the database
-
+                source = "Resend OTP"
+                context = {"otp": otp}
+                await send_email(email, source, context)
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-                user.otp_expires = otp_expiration_time
-                await user.save()
+                update_data = {"otp": otp, "otp_expires": otp_expiration_time}
+
+                await user_collection.update_one({"phone": phone}, {"$set": update_data})
                 return otp
 
             except Exception as ex:
@@ -190,26 +209,26 @@ class UserManager:
         if phone:
             try:
                 # Check if phone exists in the database
-                user = await User.find_one(User.phone == phone)
-
-                if user is None:
+                user = await user_collection.find_one({"phone": phone})
+                if not user:
                     raise HTTPException(status_code=404, detail="User not found")
 
                 # Send OTP to phone (SMS)
                 # await send_sms(phone, otp)  # Uncomment when implementing SMS
-                user.otp = otp  # Update the OTP in the database
-
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-                user.otp_expires = otp_expiration_time
-                await user.save()
+                update_data = {"otp": otp, "otp_expires": otp_expiration_time}
+
+                await user_collection.update_one({"phone": phone}, {"$set": update_data})
+
                 return otp
 
             except Exception as ex:
+                print(ex, "ex")
                 raise HTTPException(status_code=500, detail="Internal Server Error")
 
         raise ValueError("Either email or phone must be provided to send OTP.")
 
-    async def forgot_password(self, email: Optional[str] = None, phone: Optional[str] = None) -> dict:
+    async def forgot_password(self, email: Optional[str] = None, phone: Optional[int] = None) -> dict:
         """Verify user by email or phone and send OTP."""
         try:
             otp = generate_otp()  # Generate OTP
@@ -219,9 +238,10 @@ class UserManager:
                 user = await User.find_one(User.email == email)
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found with the provided email.")
-
+                source = "Forgot Password"
+                context = {"otp": otp}
                 # Send OTP to the user's email
-                await send_email(email, otp)
+                await send_email(email, source, context)
                 user.otp = otp
 
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
@@ -230,15 +250,21 @@ class UserManager:
                 return {"message": "OTP sent to email", "otp": otp}  # Include OTP in response for testing
 
             if phone:
-                user = await User.find_one(User.phone == phone)
+                # Check if the user exists with the provided phone
+                user = await user_collection.find_one({"phone": phone})
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found with the provided phone.")
-                user.otp = otp
 
+                # Send OTP to the user's phone
+                # await send_sms(phone, otp)  # Uncomment when implementing SMS
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-                user.otp_expires = otp_expiration_time
-                await user.save()
-                return {"message": "OTP sent to phone", "otp": otp}
+                update_data = {"otp": otp, "otp_expires": otp_expiration_time}
+
+                await user_collection.update_one({"phone": phone}, {"$set": update_data})
+
+                return {"otp": otp}
+
+            raise ValueError("Either email or phone must be provided to send OTP.")
         except HTTPException as e:
             raise e
         except Exception as ex:
@@ -246,7 +272,7 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def validate_otp(self, email: Optional[str] = None, phone: Optional[str] = None, otp: str = None) -> dict:
+    async def validate_otp(self, email: Optional[str] = None, phone: Optional[int] = None, otp: str = None) -> dict:
         if email:
             user = await User.find_one(User.email == email)
             if user is None:
@@ -266,14 +292,16 @@ class UserManager:
             return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
 
         if phone:
-            user = await User.find_one(User.phone == phone)
+            user = await user_collection.find_one({"phone": phone})
             if user is None:
                 raise HTTPException(status_code=404, detail="User not found with the provided phone.")
-            if user.otp != otp:
+
+            if user.get("otp") != otp:
+                print("otp", otp)
                 raise HTTPException(status_code=400, detail="Invalid OTP.")
             if datetime.utcnow() > user.otp_expires:
                 raise HTTPException(status_code=400, detail="OTP has expired.")
-            user.is_active = True
+            user.get("is_active") == True
             await user.save()
             user_data = user.dict(by_alias=True)
             user_data["id"] = str(user_data.pop("_id"))
@@ -359,7 +387,12 @@ class UserManager:
 
             active_categories = await category_collection.find({"status": "active"}).to_list(length=None)
             category_data = [
-                {"id": str(category["_id"]), "name": category["name"], "status": category["status"]}
+                {
+                    "id": str(category["_id"]),
+                    "name": category["name"],
+                    "slug": category["slug"],
+                    "status": category["status"],
+                }
                 for category in active_categories
             ]
 
@@ -367,20 +400,22 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_service_list_for_category(self, category_id: str) -> List[Service]:
+    async def get_service_list_for_category(self, category_slug: str) -> List[Service]:
         try:
-            if not ObjectId.is_valid(category_id):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category ID")
-            category = await category_collection.find_one({"_id": ObjectId(category_id)})
+            if not category_slug:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
+
+            category = await category_collection.find_one({"slug": category_slug})
             if not category:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
 
             active_services = await services_collection.find(
-                {"category_id": ObjectId(category_id), "status": "active"}
+                {"category_id": category["_id"], "status": "active"}
             ).to_list(length=None)
             service_data = [
                 {"id": str(service["_id"]), "name": service["name"], "status": service["status"]}
@@ -395,23 +430,50 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_vendor_list_for_category(self, category_id: str) -> List[dict]:
-        try:
-            if not ObjectId.is_valid(category_id):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category ID")
+    # async def get_vendor_list_for_category(self, category_slug: str) -> List[dict]:
+    #     try:
+    #         if not category_slug:
+    #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
 
-            category = await category_collection.find_one({"_id": ObjectId(category_id)})
+    #         category = await category_collection.find_one({"slug": category_slug})
+    #         if not category:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+    #         category_id = str(category["_id"])
+    #         active_vendors = await vendor_collection.find({"category_id": category_id, "status": "active"}).to_list(length=None)
+    #         if not active_vendors:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active vendors found for the given category")
+    async def get_vendor_list_for_category(self, category_slug: str, service_id: Optional[str] = None) -> List[dict]:
+        try:
+            if not category_slug:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
+
+            category = await category_collection.find_one({"slug": category_slug})
             if not category:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
 
-            active_vendors = await vendor_collection.find({"category_id": category_id, "status": "active"}).to_list(
-                length=None
-            )
+            category_id = str(category["_id"])
+
+            # Base filter
+            vendor_filter = {"category_id": category_id, "status": "active"}
+
+            # If service_id is provided, add it to the filter
+            if service_id:
+                if not ObjectId.is_valid(service_id):
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid service ID")
+
+                service = await services_collection.find_one({"_id": ObjectId(service_id), "status": "active"})
+                if not service:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+                vendor_filter["services.id"] = service_id
+
+            # Fetch vendors based on the constructed filter
+            active_vendors = await vendor_collection.find(vendor_filter).to_list(length=None)
             if not active_vendors:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="No active vendors found for the given category"
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No active vendors found for the given category" + (f" and service" if service_id else ""),
                 )
-
             vendor_data = []
             for vendor in active_vendors:
                 try:
@@ -440,9 +502,52 @@ class UserManager:
                                         "phone": u.get("phone"),
                                         "status": u.get("status"),
                                         "roles": u.get("roles"),
-                                        "availability_slots": u.get("availability_slots", []),
+                                        "availability_slots": [],
                                     }
+                                    availability_slots = vendor.get("availability_slots", [])
+                                for slot in availability_slots:
+                                    slot_day = slot["day"]
+                                    current_date = datetime.now().date()
+                                    days = {
+                                        "Monday": 0,
+                                        "Tuesday": 1,
+                                        "Wednesday": 2,
+                                        "Thursday": 3,
+                                        "Friday": 4,
+                                        "Saturday": 5,
+                                        "Sunday": 6,
+                                    }
+                                    current_weekday = current_date.weekday()
+                                    target_weekday = days[slot_day]
+                                    days_ahead = (target_weekday - current_weekday) % 7
+                                    target_date = current_date + timedelta(days=days_ahead)
 
+                                    day_slot = {
+                                        "day": slot_day,
+                                        "date": target_date.strftime("%Y-%m-%d"),
+                                        "time_slots": [],
+                                    }
+                                    daily_booking_count = await self.get_daily_booking_count(
+                                        str(vendor["_id"]), slot_day
+                                    )
+                                    day_slot["daily_booking_count"] = daily_booking_count
+                                    total_seat_count = await self.get_max_seat_count(str(vendor["_id"]), slot_day)
+                                    day_slot["max_seat_count"] = total_seat_count
+                                    for time_slot in slot.get("time_slots", []):
+                                        booking_count = await self.get_booking_count_for_slot(
+                                            str(vendor["_id"]), slot_day, time_slot["start_time"]
+                                        )
+
+                                        day_slot["time_slots"].append(
+                                            {
+                                                "start_time": time_slot["start_time"],
+                                                "end_time": time_slot["end_time"],
+                                                "max_seat": time_slot["max_seat"],
+                                                "booking_count": booking_count,
+                                            }
+                                        )
+
+                                    user_details["availability_slots"].append(day_slot)
                                     vendor_data.append(
                                         {
                                             "vendor_id": str(vendor["_id"]),
@@ -452,10 +557,10 @@ class UserManager:
                                             "business_details": vendor.get("business_details"),
                                             "category_id": str(vendor["category_id"]),
                                             "services": vendor.get("services", []),
+                                            "fees": vendor.get("fees", 0),
                                             "user_details": user_details,
                                         }
                                     )
-
                         else:
                             user_details = {
                                 "first_name": user.get("first_name"),
@@ -464,8 +569,47 @@ class UserManager:
                                 "phone": user.get("phone"),
                                 "status": user.get("status"),
                                 "roles": user.get("roles"),
-                                "availability_slots": vendor.get("availability_slots", []),
+                                "availability_slots": [],
                             }
+
+                            availability_slots = vendor.get("availability_slots", [])
+                            for slot in availability_slots:
+                                slot_day = slot["day"]
+                                current_date = datetime.now().date()
+                                days = {
+                                    "Monday": 0,
+                                    "Tuesday": 1,
+                                    "Wednesday": 2,
+                                    "Thursday": 3,
+                                    "Friday": 4,
+                                    "Saturday": 5,
+                                    "Sunday": 6,
+                                }
+                                current_weekday = current_date.weekday()
+                                target_weekday = days[slot_day]
+                                days_ahead = (target_weekday - current_weekday) % 7
+                                target_date = current_date + timedelta(days=days_ahead)
+
+                                day_slot = {"day": slot_day, "date": target_date.strftime("%Y-%m-%d"), "time_slots": []}
+                                daily_booking_count = await self.get_daily_booking_count(str(vendor["_id"]), slot_day)
+                                day_slot["daily_booking_count"] = daily_booking_count
+                                total_seat_count = await self.get_max_seat_count(str(vendor["_id"]), slot_day)
+                                day_slot["max_seat_count"] = total_seat_count
+                                for time_slot in slot.get("time_slots", []):
+                                    booking_count = await self.get_booking_count_for_slot(
+                                        str(vendor["_id"]), slot_day, time_slot["start_time"]
+                                    )
+
+                                    day_slot["time_slots"].append(
+                                        {
+                                            "start_time": time_slot["start_time"],
+                                            "end_time": time_slot["end_time"],
+                                            "max_seat": time_slot["max_seat"],
+                                            "booking_count": booking_count,
+                                        }
+                                    )
+
+                                user_details["availability_slots"].append(day_slot)
 
                             vendor_data.append(
                                 {
@@ -476,38 +620,96 @@ class UserManager:
                                     "business_details": vendor.get("business_details"),
                                     "category_id": str(vendor["category_id"]),
                                     "services": vendor.get("services", []),
+                                    "fees": vendor.get("fees", 0),
                                     "user_details": user_details,
                                 }
                             )
 
                     else:
-                        vendor_data.append(
-                            {
-                                "vendor_id": str(vendor["_id"]),
-                                "business_name": vendor.get("business_name"),
-                                "business_type": vendor.get("business_type"),
-                                "user_details": [] if vendor["business_type"] == "business" else {},
-                                "availability_slots": vendor.get("availability_slots", []),
-                            }
-                        )
-
+                        # vendor_data.append(
+                        #     {
+                        #         "vendor_id": str(vendor["_id"]),
+                        #         "business_name": vendor.get("business_name"),
+                        #         "business_type": vendor.get("business_type"),
+                        #         "user_details": [] if vendor["business_type"] == "business" else {},
+                        #         "services": vendor.get("services", []),
+                        #         "availability_slots": vendor.get("availability_slots", []),
+                        #     }
+                        # )
+                        pass
                 except Exception as e:
-                    vendor_data.append(
-                        {
-                            "vendor_id": str(vendor["_id"]),
-                            "business_name": vendor.get("business_name"),
-                            "business_type": vendor.get("business_type"),
-                            "user_details": [] if vendor["business_type"] == "business" else {},
-                            "availability_slots": vendor.get("availability_slots", []),
-                        }
-                    )
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
             return vendor_data
-
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    async def get_booking_count_for_slot(self, vendor_id: str, day: str, time_slot: str) -> int:
+        try:
+            current_date = datetime.now().date()
+
+            days = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+            current_weekday = current_date.weekday()
+            target_weekday = days[day]
+            days_ahead = (target_weekday - current_weekday) % 7
+            target_date = current_date + timedelta(days=days_ahead)
+            # Combine date and time
+            # slot_datetime = datetime.combine(
+            #     target_date,
+            #     datetime.strptime(start_time, "%H:%M").time()
+            # )
+            # Count bookings for this specific slot
+            booking_count = await booking_collection.count_documents(
+                {
+                    "vendor_id": vendor_id,
+                    "booking_date": target_date.strftime("%Y-%m-%d"),
+                    "time_slot": {"$regex": f"^{time_slot}"},
+                }
+            )
+            return booking_count
+        except Exception as e:
+            return 0
+
+    async def get_daily_booking_count(self, vendor_id: str, day: str) -> int:
+        try:
+            current_date = datetime.now().date()
+
+            days = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+            current_weekday = current_date.weekday()
+            target_weekday = days[day]
+            days_ahead = (target_weekday - current_weekday) % 7
+            target_date = current_date + timedelta(days=days_ahead)
+
+            # Get bookings for the entire day
+            daily_booking_count = await booking_collection.count_documents(
+                {
+                    "vendor_id": vendor_id,
+                    "booking_date": target_date.strftime("%Y-%m-%d"),
+                }
+            )
+
+            return daily_booking_count
+        except Exception as e:
+            return 0
+
+    async def get_max_seat_count(self, vendor_id: str, day: str) -> int:
+        try:
+            vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+            if not vendor:
+                return 0
+            availability_slots = vendor.get("availability_slots", [])
+            max_seat_count = 0
+
+            for slot in availability_slots:
+                if slot["day"] == day:
+                    for time_slot in slot.get("time_slots", []):
+                        max_seat_count += time_slot.get("max_seat", 0)
+
+            return max_seat_count
+        except Exception as e:
+            return 0
 
     async def get_vendor_list_for_services(self, service_id: str) -> List[dict]:
         try:
@@ -808,6 +1010,23 @@ class UserManager:
         except HTTPException as ex:
             raise
         except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def google_login(self, request: Request, token: str):
+        try:
+            print(token, "token")
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            return current_user
+
+        except HTTPException as ex:
+            print(ex, "ex")
+            raise
+        except Exception as ex:
+            print(ex, "ex")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

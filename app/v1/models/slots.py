@@ -23,6 +23,7 @@ class TimeSlot(BaseModel):
     start_time: time  # Only time
     end_time: time  # Only time
     duration: int = 0  # Duration will be calculated on the backend
+    max_seat: int = 10
 
     # Calculate duration based on start_time and end_time
     def calculate_duration(self):

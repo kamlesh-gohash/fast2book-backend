@@ -36,7 +36,7 @@ costumer_create_validator = zon.record(
         "last_name": zon.string().min(1).max(50),
         "email": zon.string().email(),
         "phone": zon.string().min(10).max(10),
-        # "password": zon.string().min(6).max(20),
+        "password": zon.string().min(6).max(20),
     }
 )
 
@@ -51,7 +51,8 @@ class CostumerCreateRequest(BaseModel):
     status: StatusEnum = StatusEnum.ACTIVE
     costumer_address: Optional[str] = None
     costumer_details: Optional[str] = None
-    # password: str
+
+    password: str
 
     @validator("roles", pre=True, always=True)
     def ensure_user_role(cls, roles):

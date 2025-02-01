@@ -16,24 +16,38 @@ from app.v1.utils.response.response_format import validation_error
 
 
 class StatusEnum(str, Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    DRAFT = "draft"
+    Active = "active"
+    Inactive = "inactive"
+    Draft = "draft"
 
 
 create_subscription_request = zon.record(
     {
-        "title": zon.string(),
-        "status": zon.string(),
+        "name": zon.string(),
+        "description": zon.string(),
+        "amount": zon.number(),
+        "currency": zon.string(),
+        "period": zon.string(),
+        "interval": zon.number(),
     }
 )
 
 
 class CreateSubscriptionRequest(BaseModel):
-    title: str
-    price: float
+    # title: str
+    # one_month_price: float
+    # three_months_price: float
+    # yearly_price: float
+    # features: List[FeatureItem]
+    # status: StatusEnum = StatusEnum.ACTIVE
+    name: str
+    description: str
+    amount: float
+    currency: str = "INR"
+    period: str
+    interval: int
     features: List[FeatureItem]
-    status: StatusEnum = StatusEnum.ACTIVE
+    status: StatusEnum = StatusEnum.Active
 
     @validator("status")
     def validate_status(cls, v):
@@ -46,9 +60,14 @@ class CreateSubscriptionRequest(BaseModel):
         try:
             create_subscription_request.validate(
                 {
-                    "title": self.title,
-                    "price": self.price,
-                    "status": self.status.value,  # Enum to string
+                    "name": self.name,
+                    "description": self.description,
+                    "amount": self.amount,
+                    "currency": self.currency,
+                    "period": self.period,
+                    "interval": self.interval,
+                    "features": self.features,
+                    "status": self.status.value,
                 }
             )
         except zon.error.ZonError as e:
@@ -97,7 +116,9 @@ update_subscription_validator = zon.record(
 
 class UpdateSubscriptionRequest(BaseModel):
     title: Optional[str] = None
-    price: Optional[float] = None
+    one_month_price: Optional[float] = None
+    three_month_price: Optional[float] = None
+    yearly_price: Optional[float] = None
     features: Optional[List[FeatureItem]] = None
     status: Optional[StatusEnum] = None
 
@@ -119,6 +140,35 @@ class DeleteSubscriptionRequest(BaseModel):
     def validate(self):
         try:
             delete_subscription_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
+
+
+create_plan_validator = zon.record(
+    {
+        "name": zon.string(),
+        "description": zon.string(),
+        "amount": zon.number(),
+        "currency": zon.string(),
+        "period": zon.string(),
+        "interval": zon.number(),
+    }
+)
+
+
+class CreatePlanRequest(BaseModel):
+    name: str
+    description: str
+    amount: float
+    currency: str = "INR"
+    period: str
+    interval: int
+
+    def validate(self):
+        try:
+            create_plan_validator.validate(self.dict())
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
