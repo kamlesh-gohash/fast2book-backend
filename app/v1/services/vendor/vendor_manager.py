@@ -636,8 +636,8 @@ class VendorManager:
                 result["manage_offer"] = vendor_details.get("manage_offer", False)
                 result["is_payment_verified"] = vendor_details.get("is_payment_verified", False)
                 result["status"] = vendor_details.get("status", "N/A")
-                if not result.get("location"):
-                    result["location"] = vendor_details.get("location")
+                # if not result.get("location"):
+                result["location"] = vendor_details.get("location")
                 result["specialization"] = vendor_details.get("specialization")
                 result["created_at"] = vendor_details.get("created_at")
 
@@ -649,6 +649,7 @@ class VendorManager:
 
     async def update_vendor(self, request: Request, token: str, id: str, update_vendor_request: UpdateVendorRequest):
         try:
+            # Authenticate and authorize the user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
@@ -656,20 +657,25 @@ class VendorManager:
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
+            # Validate the vendor ID
             if not ObjectId.is_valid(id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid vendor ID: '{id}'")
 
+            # Fetch the vendor from the user collection
             vendor = await user_collection.find_one({"_id": ObjectId(id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            update_data = {}
+            # Prepare update data for user collection
+            user_update_data = {}
+            for field in ["first_name", "last_name", "email", "phone", "gender"]:
+                value = getattr(update_vendor_request, field, None)
+                if value is not None:
+                    user_update_data[field] = value
 
+            # Prepare update data for vendor collection
+            vendor_update_data = {}
             for field in [
-                "first_name",
-                "last_name",
-                "email",
-                "phone",
                 "business_type",
                 "business_details",
                 "business_address",
@@ -681,8 +687,9 @@ class VendorManager:
             ]:
                 value = getattr(update_vendor_request, field, None)
                 if value is not None:
-                    update_data[field] = value
+                    vendor_update_data[field] = value
 
+            # Handle category update
             if update_vendor_request.category_id is not None:
                 category_id = update_vendor_request.category_id
                 category_data = await category_collection.find_one({"_id": ObjectId(category_id)})
@@ -690,12 +697,14 @@ class VendorManager:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid category ID: {category_id}."
                     )
-                update_data["category_id"] = category_id
-                update_data["category_name"] = category_data.get("name")
+                vendor_update_data["category_id"] = category_id
+                vendor_update_data["category_name"] = category_data.get("name")
 
+            # Handle fees update
             if update_vendor_request.fees is not None:
-                update_data["fees"] = update_vendor_request.fees
+                vendor_update_data["fees"] = update_vendor_request.fees
 
+            # Handle services update
             if update_vendor_request.services is not None:
                 services = update_vendor_request.services
                 if not isinstance(services, list):
@@ -719,7 +728,7 @@ class VendorManager:
                         detail="One or more services are invalid for the selected category.",
                     )
 
-                update_data["services"] = [
+                vendor_update_data["services"] = [
                     {
                         "id": str(service["_id"]),
                         "name": service["name"],
@@ -728,40 +737,60 @@ class VendorManager:
                     }
                     for service in valid_services
                 ]
-            if update_vendor_request.specialization is not None:
-                update_data["specialization"] = update_vendor_request.specialization
 
+            # Handle specialization update
+            if update_vendor_request.specialization is not None:
+                vendor_update_data["specialization"] = update_vendor_request.specialization
+
+            # Handle location update
             if update_vendor_request.location is not None:
-                update_data["location"] = update_vendor_request.location.dict()
-            if not update_data:
+                vendor_update_data["location"] = update_vendor_request.location.dict()
+
+            # Check if there are any updates to perform
+            if not user_update_data and not vendor_update_data:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields provided for update."
                 )
 
-            await user_collection.update_one({"_id": ObjectId(id)}, {"$set": update_data})
-            # Fetch updated vendor details
+            # Update user collection with user details
+            if user_update_data:
+                await user_collection.update_one({"_id": ObjectId(id)}, {"$set": user_update_data})
 
-            result = await user_collection.find_one({"_id": ObjectId(id)})
+            # Update vendor collection with business details
+            if vendor_update_data:
+                # Use the `user_id` to find and update the existing vendor document
+                await vendor_collection.update_one(
+                    {"user_id": id},  # Use `user_id` to find the correct document
+                    {"$set": vendor_update_data},
+                    upsert=True,  # Create a new document if it doesn't exist
+                )
+
+            # Fetch updated vendor details
+            updated_vendor = await vendor_collection.find_one({"user_id": id})
+            updated_user = await user_collection.find_one({"_id": ObjectId(id)})
+
+            # Return the combined response
             return {
-                "id": str(result.pop("_id")),
-                "first_name": result.get("first_name"),
-                "last_name": result.get("last_name"),
-                "email": result.get("email"),
-                "phone": result.get("phone"),
-                "business_type": result.get("business_type"),
-                "business_details": result.get("business_details"),
-                "business_address": result.get("business_address"),
-                "business_name": result.get("business_name"),
-                "category_id": result.get("category_id"),
-                "category_name": result.get("category_name"),
-                "services": result.get("services"),
-                "manage_plan": result.get("manage_plan"),
-                "manage_fee_and_gst": result.get("manage_fee_and_gst"),
-                "manage_offer": result.get("manage_offer"),
-                "location": result.get("location"),
-                "specialization": result.get("specialization"),
-                "fees": result.get("fees"),
-                "status": result.get("status"),
+                "id": str(updated_user.pop("_id")),
+                "first_name": updated_user.get("first_name"),
+                "last_name": updated_user.get("last_name"),
+                "email": updated_user.get("email"),
+                "phone": updated_user.get("phone"),
+                "gender": updated_user.get("gender"),
+                "business_type": updated_vendor.get("business_type"),
+                "business_details": updated_vendor.get("business_details"),
+                "business_address": updated_vendor.get("business_address"),
+                "business_name": updated_vendor.get("business_name"),
+                "category_id": updated_vendor.get("category_id"),
+                "category_name": updated_vendor.get("category_name"),
+                "services": updated_vendor.get("services"),
+                "manage_plan": updated_vendor.get("manage_plan"),
+                "manage_fee_and_gst": updated_vendor.get("manage_fee_and_gst"),
+                "manage_offer": updated_vendor.get("manage_offer"),
+                "location": updated_vendor.get("location"),
+                "specialization": updated_vendor.get("specialization"),
+                "fees": updated_vendor.get("fees"),
+                "status": updated_vendor.get("status"),
             }
 
         except Exception as ex:
