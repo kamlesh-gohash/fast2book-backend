@@ -25,7 +25,7 @@ def validate_request_data(schema: Type[BaseModel]) -> Callable:
             # Extract field errors
             errors = [{"field": err["loc"][-1], "message": err["msg"]} for err in e.errors()]
             missing_fields = [err["field"] for err in errors if err["message"] == "field required"]
-            return HTTPException(
+            raise HTTPException(
                 status_code=400,
                 detail={
                     "message": "Invalid Data, Validation Failed",
@@ -56,6 +56,7 @@ async def create_vendor(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_409_CONFLICT)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -133,6 +134,9 @@ async def update_vendor(
         or update_vendor_request.category_id
         or update_vendor_request.category_name
         or update_vendor_request.services
+        or update_vendor_request.location
+        or update_vendor_request.specialization
+        or update_vendor_request.fees
         or update_vendor_request.manage_plan
         or update_vendor_request.manage_fee_and_gst
         or update_vendor_request.manage_offer
