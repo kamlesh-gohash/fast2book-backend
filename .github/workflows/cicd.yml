@@ -19,11 +19,12 @@ jobs:
           echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
           echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}" >> $GITHUB_ENV
-          echo "AWS_REGION=${{ secrets.AWS_REGION_ECR }}" >> $GITHUB_ENV
-          echo "AWS_ECR=${{ secrets.AWS_ECR }}" >> $GITHUB_ENV
+          echo "AWS_REGION=ap-south-1" >> $GITHUB_ENV
+          echo "AWS_ECR=fast2book-backend" >> $GITHUB_ENV
 
       - name: Debug Environment Variables
         run: |
+          echo "AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID"
           echo "AWS_REGION: $AWS_REGION"
           echo "AWS_ECR: $AWS_ECR"
 
@@ -35,16 +36,14 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION_ECR }}
+          aws-region: ap-south-1
 
       - name: Build Docker image
         run: |
           docker buildx build --no-cache \
             --build-arg AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
             --build-arg AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}" \
-            --build-arg AWS_ECR="${{ secrets.AWS_ECR }}" \
-            --build-arg AWS_REGION="${{ secrets.AWS_REGION }}" \
-            --build-arg AWS_REGION_ECR="${{ secrets.AWS_REGION_ECR }}" \
+            --build-arg AWS_REGION="ap-south-1" \
             --build-arg AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
             --build-arg DATABASE_NAME="${{ secrets.DATABASE_NAME }}" \
             --build-arg DATABASE_URL="${{ secrets.DATABASE_URL }}" \
@@ -62,11 +61,15 @@ jobs:
             --build-arg PORT="${{ vars.PORT }}" \
             --build-arg RAZOR_PAY_KEY_ID="${{ secrets.RAZOR_PAY_KEY_ID }}" \
             --build-arg RAZOR_PAY_KEY_SECRET="${{ secrets.RAZOR_PAY_KEY_SECRET }}" \
-            -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest .
+            -t $AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/fast2book-backend:latest \
+            --load .
 
+      - name: List Docker images
+        run: docker images
+        
       - name: Push Docker image to AWS ECR
         run: |
-          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest
+          docker push $AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/fast2book-backend:latest
 
       - name: Create Docker Network
         run: |
@@ -81,7 +84,7 @@ jobs:
           fi
 
           # Pull the latest image from ECR
-          docker pull $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest
+          docker pull $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/fast2book-backend:latest
 
           # Run the new container
           docker run -d \
@@ -90,9 +93,7 @@ jobs:
             -p 5000:5000 \
             -e AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
             -e AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}" \
-            -e AWS_ECR="${{ secrets.AWS_ECR }}" \
             -e AWS_REGION="${{ secrets.AWS_REGION }}" \
-            -e AWS_REGION_ECR="${{ secrets.AWS_REGION_ECR }}" \
             -e AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
             -e DATABASE_NAME="${{ secrets.DATABASE_NAME }}" \
             -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
@@ -110,4 +111,4 @@ jobs:
             -e PORT="${{ vars.PORT }}" \
             -e RAZOR_PAY_KEY_ID="${{ secrets.RAZOR_PAY_KEY_ID }}" \
             -e RAZOR_PAY_KEY_SECRET="${{ secrets.RAZOR_PAY_KEY_SECRET }}" \
-            $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR:latest
+            $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/fast2book-backend:latest
