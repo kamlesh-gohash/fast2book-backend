@@ -97,7 +97,7 @@ class CostumerManager:
                 )
 
             skip = max((page - 1) * limit, 0)
-            query = {"roles": {"$regex": "^user$", "$options": "i"}}
+            query = {"roles": {"$regex": "^user$", "$options": "i"}, "user_role": {"$ne": 2}}
 
             if search:
                 search = search.strip()
