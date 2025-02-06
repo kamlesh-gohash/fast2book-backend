@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import bcrypt
 import zon
@@ -8,6 +8,7 @@ import zon
 from pydantic import BaseModel, EmailStr, Field, validator
 
 from app.v1.models.user import *
+from app.v1.models.vendor import *
 from app.v1.utils.response.response_format import validation_error
 
 
@@ -159,11 +160,13 @@ class UpdateVendorRequest(BaseModel):
     category_name: Optional[str] = Field(None, description="Name of the selected category")
     services: Optional[List[Service]] = Field(None, description="List of selected services with their IDs and names")
     service_details: Optional[str] = None
-
+    fees: float = Field(default=0.0)
     # Additional Fields
     manage_plan: Optional[str] = None
     manage_fee_and_gst: Optional[str] = None
     manage_offer: Optional[str] = None
+    location: Optional[Location] = Field(None, description="Location details of the vendor")
+    specialization: Optional[str] = Field(None, description="specialization of the vendor")
     status: StatusEnum = Field(default=StatusEnum.Active)
 
     def validate(self):
@@ -247,16 +250,19 @@ class SignUpVendorRequest(BaseModel):
     service_details: Optional[str] = None
     # manage_plan: Optional[str] = None
     manage_plan: Optional[str] = Field(None, description="PLan ID for the manage plan")
-
+    is_subscription: bool = Field(default=False)
     manage_fee_and_gst: Optional[str] = None
     manage_offer: Optional[str] = None
     is_payment_verified: bool = Field(default=False)
     is_dashboard_created: bool = Field(default=False)
     # availability_slots: List[DaySlot] = Field(default_factory=default_availability_slots)
     fees: float = Field(default=0.0)
-    location: Optional[List[float]] = Field(None, description="Location of the vendor as [latitude, longitude]")
+    location: Optional[Location] = Field(None, description="Location details of the vendor")
     specialization: Optional[str] = Field(None, description="specialization of the vendor")
     status: StatusEnum = Field(default=StatusEnum.Active)
+    bank_account_number: Optional[int] = None
+    ifsc: Optional[str] = None
+    account_type: Optional[str] = None
     password: str
 
     @validator("roles", pre=True, always=True)
