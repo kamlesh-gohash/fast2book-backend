@@ -108,9 +108,12 @@ async def forgot_password(
         # Forgot password logic (e.g., send reset link)
         await user_manager.forgot_password(email=forgot_password_request.email, phone=forgot_password_request.phone)
         return success({"message": "Password reset link sent"})
+    except HTTPException as http_ex:
+        return failure({"message": str(http_ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -168,11 +171,13 @@ async def validate_otp(validate_otp_request: ValidateOtpRequest, user_manager: U
         )
 
 
-@router.get("/profile/{user_id}")
-async def get_profile(user_id: str, user_manager: UserManager = Depends(get_user_manager)):
+@router.get("/profile")
+async def get_profile(
+    request: Request, token: str = Depends(get_token_from_header), user_manager: UserManager = Depends(get_user_manager)
+):
     try:
         # Get profile logic
-        result = await user_manager.get_profile(user_id)
+        result = await user_manager.get_profile(request=request, token=token)
         return success({"message": "Profile fetched successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -186,13 +191,21 @@ async def get_profile(user_id: str, user_manager: UserManager = Depends(get_user
         )
 
 
-@router.put("/update-profile/{user_id}")
+@router.put("/update-profile")
 async def update_profile(
-    user_id: str, update_profile_request: User, user_manager: UserManager = Depends(get_user_manager)
+    request: Request,
+    profile_update_request: UpdateProfileRequest,
+    token: str = Depends(get_token_from_header),
+    user_manager: UserManager = Depends(get_user_manager),
 ):
+    # validation_result = profile_update_request.validate()
+    # if validation_result:
+    #     return validation_result
     try:
         # Update profile logic
-        result = await user_manager.update_profile(user_id, update_profile_request)
+        result = await user_manager.update_profile(
+            request=request, token=token, profile_update_request=profile_update_request
+        )
         return success({"message": "Profile updated successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -200,6 +213,7 @@ async def update_profile(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -298,17 +312,19 @@ async def get_service_list_for_category(category_slug: str, user_manager: UserMa
 async def get_vendor_list_for_category(
     category_slug: str,
     service_id: str = None,  # Optional query parameter
+    address: str = None,  # New optional query parameter
     user_manager: UserManager = Depends(get_user_manager),
 ):
     try:
         # Pass service_id to the user manager
-        result = await user_manager.get_vendor_list_for_category(category_slug, service_id=service_id)
+        result = await user_manager.get_vendor_list_for_category(category_slug, service_id=service_id, address=address)
         return success({"message": "Vendor list fetched successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
         )

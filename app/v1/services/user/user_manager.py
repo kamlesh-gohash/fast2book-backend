@@ -29,9 +29,10 @@ from app.v1.models import (
 from app.v1.models.category import Category
 from app.v1.models.services import Service
 from app.v1.models.support import Support
-from app.v1.models.user import Role
+from app.v1.models.user import *
 from app.v1.models.vendor import Vendor
-from app.v1.utils.email import generate_otp, send_email
+from app.v1.schemas.user.auth import *
+from app.v1.utils.email import generate_otp, send_email, send_sms_on_phone
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
@@ -42,59 +43,77 @@ class UserManager:
 
     async def create_user(self, user: User) -> dict:
         """Create a new user in the database."""
-        existing_user = await user_collection.find_one(
-            {
-                "$or": [
-                    {"email": {"$eq": user.email, "$nin": [None, ""]}},
-                    {"phone": {"$eq": user.phone, "$nin": [None, ""]}},
-                ]
-            }
-        )
+        try:
+            existing_user = await user_collection.find_one(
+                {
+                    "$or": [
+                        {"email": {"$eq": user.email, "$nin": [None, ""]}},
+                        {"phone": {"$eq": user.phone, "$nin": [None, ""]}},
+                    ]
+                }
+            )
 
-        if existing_user:
-            raise HTTPException(status_code=404, detail="User with this email or phone already exists in the database.")
+            if existing_user:
+                raise HTTPException(
+                    status_code=404, detail="User with this email or phone already exists in the database."
+                )
 
-        otp = generate_otp()
+            otp = generate_otp()
+            expiry_time = datetime.utcnow() + timedelta(minutes=10)
+            expiry_time = datetime.utcnow() + timedelta(minutes=10)
+            expiry_minutes = 10
+            if user.email:
+                source = "Activation_code"
+                context = {"otp": otp, "to_email": user.email}
+                to_email = user.email
+                await send_email(to_email, source, context)
+            if user.phone:
+                to_phone = user.phone
 
-        if user.email:
-            source = "Activation_code"
-            context = {"otp": otp, "to_email": user.email}
-            to_email = user.email
-            print(context, source, "context,source")
-            await send_email(to_email, source, context)
-        if user.phone:
-            print(user.phone)
-            to_phone = user.phone
-            print(to_phone)
-            # await send_sms(to_phone, otp)  # Uncomment this line when implementing SMS functionality
-        otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-        user.otp = otp
-        user.otp_expires = otp_expiration_time
-        user.password = hashpw(user.password.encode("utf-8"), gensalt()).decode("utf-8")
-        if not user.roles:
-            user.roles = [Role.user]
-        # user.otp_expires = otp_expiration_time
-        user_dict = user.dict()
-        result = await user_collection.insert_one(user_dict)
-        user_dict["_id"] = str(result.inserted_id)
-        return user_dict
+                await send_sms_on_phone(
+                    to_phone, otp, expiry_minutes
+                )  # Uncomment this line when implementing SMS functionality
 
-    async def get_profile(self, user_id: str) -> dict:
+            user.otp = otp
+            user.otp_expires = expiry_time
+
+            user.password = hashpw(user.password.encode("utf-8"), gensalt()).decode("utf-8")
+            if not user.roles:
+                user.roles = [Role.user]
+            # user.otp_expires = otp_expiration_time
+            user.notification_settings = DEFAULT_NOTIFICATION_PREFERENCES
+            user_dict = user.dict()
+            result = await user_collection.insert_one(user_dict)
+            user_dict["_id"] = str(result.inserted_id)
+            return user_dict
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            print(ex)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
+
+    async def get_profile(self, request: Request, token: str) -> dict:
         """Retrieve user details by ID."""
         # Validate and convert the ID to ObjectId
-        if not ObjectId.is_valid(user_id):
-            raise ValueError(f"Invalid user ID: '{user_id}'")
+        current_user = await get_current_user(request=request, token=token)
+        if not current_user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-        user = await user_collection.find_one({"_id": ObjectId(user_id)})
+        user = await user_collection.find_one({"_id": ObjectId(current_user.id)})
         if not user:
-            raise ValueError(f"User with ID '{user_id}' does not exist")
+            raise ValueError(f"User with ID '{current_user.id}' does not exist")
 
         # Convert MongoDB's ObjectId to string
         user["_id"] = str(user["_id"])
+        user["id"] = str(user["_id"])
 
         # Optionally remove sensitive fields
         user.pop("password", None)  # Remove hashed password from response
         user.pop("otp", None)  # Remove OTP from response
+        user.pop("otp_expires", None)
+        user.pop("_id", None)
 
         return user
 
@@ -102,7 +121,7 @@ class UserManager:
         """List all users."""
         users = []
         async for user in user_collection.find():
-            user["_id"] = str(user["_id"])  # Convert ObjectId to string
+            user["_id"] = str(user["_id"])
             users.append(user)
         return users
 
@@ -113,7 +132,7 @@ class UserManager:
         )
         if not result:
             raise ValueError(f"User with email '{email}' does not exist")
-        result["_id"] = str(result["_id"])  # Convert ObjectId to string
+        result["_id"] = str(result["_id"])
         return result
 
     async def delete_user(self, email: str) -> dict:
@@ -121,62 +140,115 @@ class UserManager:
         result = await user_collection.find_one_and_delete({"email": email})
         if not result:
             raise ValueError(f"User with email '{email}' does not exist")
-        result["id"] = str(result["_id"])  # Convert ObjectId to string
+        result["id"] = str(result["_id"])
         return result
 
-    async def sign_in(self, email: str, password: str = None, is_login_with_otp: bool = False) -> dict:
+    async def sign_in(
+        self, email: str = None, phone: str = None, password: str = None, is_login_with_otp: bool = False
+    ) -> dict:
         """Sign in a user by email and password."""
         try:
-            result = await user_collection.find_one({"email": email})
-            if not result:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-            if is_login_with_otp:
-                print(result, "result")
-                print(is_login_with_otp, "is_login_with_otp")
-                otp = generate_otp()
-                await user_collection.update_one(
-                    {"email": email}, {"$set": {"otp": otp, "otp_expires": datetime.utcnow() + timedelta(minutes=10)}}
-                )
-                source = "Login With Otp"
-                context = {"otp": otp}
-                to_email = email
-                await send_email(to_email, source, context)
-                return {"message": "OTP sent to your email address"}
-            stored_password_hash = result.get("password")
-            if not stored_password_hash:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
-                )
-            # Check if the entered password matches the stored hashed password
-            if not bcrypt.checkpw(
-                password.encode("utf-8"),
-                stored_password_hash.encode("utf-8") if isinstance(stored_password_hash, str) else stored_password_hash,
-            ):
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Password")
-            user = await User.find_one(User.email == email)
-            if user is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if not user.is_active:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Please verify your email or phone to activate your account",
-                )
-            user_data = user.dict()
-            user_data["id"] = str(user.id)  # Add the id explicitly
+            if email:
+                result = await user_collection.find_one({"email": email})
+                if not result:
+                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email")
+                if is_login_with_otp:
+                    otp = generate_otp()
+                    await user_collection.update_one(
+                        {"email": email},
+                        {"$set": {"otp": otp, "otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
+                    )
+                    source = "Login With Otp"
+                    context = {"otp": otp}
+                    to_email = email
+                    await send_email(to_email, source, context)
+                    return {"message": "OTP sent to your email address"}
+                stored_password_hash = result.get("password")
+                if not stored_password_hash:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
+                    )
+                # Check if the entered password matches the stored hashed password
+                if not bcrypt.checkpw(
+                    password.encode("utf-8"),
+                    (
+                        stored_password_hash.encode("utf-8")
+                        if isinstance(stored_password_hash, str)
+                        else stored_password_hash
+                    ),
+                ):
+                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Password")
+                user = await User.find_one(User.email == email)
+                if user is None:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
+                if not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Please verify your email or phone to activate your account",
+                    )
+                user_data = user.dict()
+                user_data["id"] = str(user.id)  # Add the id explicitly
 
-            user_data.pop("password", None)
-            user_data.pop("otp", None)
+                user_data.pop("password", None)
+                user_data.pop("otp", None)
 
-            # Generate access and refresh tokens
-            access_token = create_access_token(data={"sub": user.email})
-            refresh_token = create_refresh_token(data={"sub": user.email})
-            # token = generate_jwt_token(user_id)
+                # Generate access and refresh tokens
+                access_token = create_access_token(data={"sub": user.email})
+                refresh_token = create_refresh_token(data={"sub": user.email})
+                # token = generate_jwt_token(user_id)
+            if phone:
+                result = await user_collection.find_one({"phone": phone})
+                if not result:
+                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid phone number")
+                if is_login_with_otp:
+                    otp = generate_otp()
+                    await user_collection.update_one(
+                        {"phone": phone},
+                        {"$set": {"otp": otp, "otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
+                    )
+                    to_phone = phone
+                    expiry_minutes = 10
+                    await send_sms_on_phone(to_phone, otp, expiry_minutes)
+
+                    return {"message": "OTP sent to your email address"}
+                stored_password_hash = result.get("password")
+                if not stored_password_hash:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
+                    )
+                # Check if the entered password matches the stored hashed password
+                if not bcrypt.checkpw(
+                    password.encode("utf-8"),
+                    (
+                        stored_password_hash.encode("utf-8")
+                        if isinstance(stored_password_hash, str)
+                        else stored_password_hash
+                    ),
+                ):
+                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Password")
+                user = await User.find_one(User.phone == phone)
+                if user is None:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
+                if not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Please verify your email or phone to activate your account",
+                    )
+                user_data = user.dict()
+                user_data["id"] = str(user.id)  # Add the id explicitly
+
+                user_data.pop("password", None)
+                user_data.pop("otp", None)
+
+                # Generate access and refresh tokens
+                access_token = create_access_token(data={"sub": user.phone})
+                refresh_token = create_refresh_token(data={"sub": user.phone})
+                # token = generate_jwt_token(user_id)
 
             return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex, "ex")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -189,7 +261,6 @@ class UserManager:
             try:
                 # Check if email exists in the database
                 user = await user_collection.find_one({"email": email})
-                print(user, "user")
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found")
 
@@ -199,8 +270,7 @@ class UserManager:
                 await send_email(email, source, context)
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
                 update_data = {"otp": otp, "otp_expires": otp_expiration_time}
-
-                await user_collection.update_one({"phone": phone}, {"$set": update_data})
+                await user_collection.update_one({"email": email}, {"$set": update_data})
                 return otp
 
             except Exception as ex:
@@ -212,9 +282,10 @@ class UserManager:
                 user = await user_collection.find_one({"phone": phone})
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
-
+                to_phone = phone
+                expiry_minutes = 10
                 # Send OTP to phone (SMS)
-                # await send_sms(phone, otp)  # Uncomment when implementing SMS
+                await send_sms_on_phone(to_phone, otp, expiry_minutes)
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
                 update_data = {"otp": otp, "otp_expires": otp_expiration_time}
 
@@ -238,6 +309,11 @@ class UserManager:
                 user = await User.find_one(User.email == email)
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found with the provided email.")
+
+                # if user.notification_settings and not user.notification_settings.get("forgot_password", False):
+                #     print("kkkkkkkkkkkkkkkkk")
+                #     raise HTTPException(status_code=403, detail="Forgot password notifications are disabled for this user.")
+
                 source = "Forgot Password"
                 context = {"otp": otp}
                 # Send OTP to the user's email
@@ -256,7 +332,9 @@ class UserManager:
                     raise HTTPException(status_code=404, detail="User not found with the provided phone.")
 
                 # Send OTP to the user's phone
-                # await send_sms(phone, otp)  # Uncomment when implementing SMS
+                to_phone = phone
+                expiry_minutes = 10
+                await send_sms_on_phone(to_phone, otp, expiry_minutes)
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
                 update_data = {"otp": otp, "otp_expires": otp_expiration_time}
 
@@ -268,6 +346,7 @@ class UserManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -277,7 +356,9 @@ class UserManager:
             user = await User.find_one(User.email == email)
             if user is None:
                 raise HTTPException(status_code=404, detail="User not found with the provided email.")
+            print(otp, "otp")
             if user.otp != otp:
+                print(user.otp, "user")
                 raise HTTPException(status_code=400, detail="Invalid OTP.")
             if datetime.utcnow() > user.otp_expires:
                 raise HTTPException(status_code=400, detail="OTP has expired.")
@@ -317,8 +398,11 @@ class UserManager:
                 vendor_data = await vendor_collection.find_one({"user_id": str(user_data["id"])})
                 vendor_data["id"] = str(vendor_data.pop("_id"))
                 user_data["is_subscription"] = vendor_data["is_subscription"]
-            access_token = create_access_token(data={"sub": user.email})
-            refresh_token = create_refresh_token(data={"sub": user.email})
+            # access_token = create_access_token(data={"sub": user.email})
+            # refresh_token = create_refresh_token(data={"sub": user.email})
+
+            access_token = create_access_token(data={"sub": user.get("phone")})
+            refresh_token = create_refresh_token(data={"sub": user.get("phone")})
             return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
 
         raise HTTPException(status_code=400, detail="Either email or phone must be provided.")
@@ -349,22 +433,34 @@ class UserManager:
 
         raise HTTPException(status_code=400, detail="Either email or phone must be provided.")
 
-    async def update_profile(self, user_id: str, profile_update_request: User):
-
+    async def update_profile(self, request: Request, token: str, profile_update_request: UpdateProfileRequest):
         try:
-            if not ObjectId.is_valid(user_id):
-                raise HTTPException(status_code=400, detail="Invalid user ID.")
-            user = await User.find_one(User.id == ObjectId(user_id))
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            user = await user_collection.find_one({"_id": ObjectId(current_user.id)})
             if user is None:
                 raise HTTPException(status_code=404, detail="User not found.")
             update_data = {}
+            if profile_update_request.phone is not None and profile_update_request.secondary_phone_number is not None:
+                if profile_update_request.phone == profile_update_request.secondary_phone_number:
+                    print()
+                    raise HTTPException(status_code=400, detail="Phone and secondary phone cannot be the same.")
             if profile_update_request.first_name is not None:
                 update_data["first_name"] = profile_update_request.first_name
             if profile_update_request.last_name is not None:
                 update_data["last_name"] = profile_update_request.last_name
             if profile_update_request.email is not None:
+                existing_email = await user_collection.find_one({"email": profile_update_request.email})
+                if existing_email and str(existing_email["_id"]) != str(user["_id"]):
+                    raise HTTPException(status_code=400, detail="Email is already in use by another user.")
                 update_data["email"] = profile_update_request.email
+
+            # Check if phone number already exists in the database (excluding the current user)
             if profile_update_request.phone is not None:
+                existing_phone = await user_collection.find_one({"phone": profile_update_request.phone})
+                if existing_phone and str(existing_phone["_id"]) != str(user["_id"]):
+                    raise HTTPException(status_code=400, detail="Phone number is already in use by another user.")
                 update_data["phone"] = profile_update_request.phone
             if profile_update_request.gender is not None:
                 update_data["gender"] = profile_update_request.gender
@@ -372,22 +468,35 @@ class UserManager:
                 update_data["dob"] = profile_update_request.dob
                 if datetime.strptime(update_data["dob"], "%Y-%m-%d").date() > datetime.now().date():
                     raise HTTPException(status_code=400, detail="Date of birth cannot be in the future.")
-            if profile_update_request.user_profile is not None:
-                update_data["user_profile"] = profile_update_request.user_profile
             if profile_update_request.blood_group is not None:
                 update_data["blood_group"] = profile_update_request.blood_group
+            if profile_update_request.address is not None:
+                update_data["address"] = profile_update_request.address.dict()
+            if profile_update_request.secondary_phone_number is not None:
+                existing_secondary_phone = await user_collection.find_one(
+                    {"secondary_phone_number": profile_update_request.secondary_phone_number}
+                )
+                if existing_secondary_phone and str(existing_secondary_phone["_id"]) != str(user["_id"]):
+                    raise HTTPException(
+                        status_code=400, detail="Secondary phone number is already in use by another user."
+                    )
+                update_data["secondary_phone_number"] = profile_update_request.secondary_phone_number
 
             if not update_data:
                 raise HTTPException(status_code=400, detail="No data provided to update.")
 
-            await user_collection.update_one({"_id": ObjectId(user_id)}, {"$set": update_data})
-            result = await user_collection.find_one({"_id": ObjectId(user_id)})
+            await user_collection.update_one({"_id": ObjectId(user["_id"])}, {"$set": update_data})
 
-            return {"message": "Profile updated successfully.", "user": result}
+            result = await user_collection.find_one({"_id": ObjectId(user["_id"])})
+            if result and "_id" in result:
+                result["_id"] = str(result["_id"])
+
+            return result
 
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -657,7 +766,9 @@ class UserManager:
     #         raise
     #     except Exception as e:
     #         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-    async def get_vendor_list_for_category(self, category_slug: str, service_id: Optional[str] = None) -> List[dict]:
+    async def get_vendor_list_for_category(
+        self, category_slug: str, service_id: Optional[str] = None, address: Optional[str] = None
+    ) -> List[dict]:
         try:
             if not category_slug:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
@@ -699,6 +810,12 @@ class UserManager:
                     )
 
                     if user:
+                        if address and vendor.get("location"):
+                            vendor_address = vendor["location"].get("formatted_address", "")
+                            # Skip this vendor if address doesn't match
+                            # You can modify this matching logic based on your requirements
+                            if not self._addresses_match(vendor_address, address):
+                                continue
                         if vendor["business_type"] == "business":
                             created_users = await user_collection.find(
                                 {
@@ -719,7 +836,7 @@ class UserManager:
                                         "phone": u.get("phone"),
                                         "status": u.get("status"),
                                         "roles": u.get("roles"),
-                                        "availability_slots": u.get("availability_slots", []),
+                                        "availability_slots": await self.get_availability_slots(u),
                                     }
 
                                     vendor_data.append(
@@ -745,7 +862,7 @@ class UserManager:
                                 "phone": user.get("phone"),
                                 "status": user.get("status"),
                                 "roles": user.get("roles"),
-                                "availability_slots": await self.get_availability_slots(vendor),
+                                "availability_slots": await self.get_availability_slots(user),
                             }
 
                             vendor_data.append(
@@ -773,6 +890,7 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as e:
+            print(e)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     async def get_booking_count_for_slot(self, vendor_id: str, day: str, time_slot: str) -> int:
@@ -795,6 +913,7 @@ class UserManager:
                     "vendor_id": vendor_id,
                     "booking_date": target_date.strftime("%Y-%m-%d"),
                     "time_slot": {"$regex": f"^{time_slot}"},
+                    "payment_status": "paid",
                 }
             )
             return booking_count
@@ -816,6 +935,7 @@ class UserManager:
                 {
                     "vendor_id": vendor_id,
                     "booking_date": target_date.strftime("%Y-%m-%d"),
+                    "payment_status": "paid",
                 }
             )
 
@@ -825,10 +945,10 @@ class UserManager:
 
     async def get_max_seat_count(self, vendor_id: str, day: str) -> int:
         try:
-            vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
-            if not vendor:
+            user = await user_collection.find_one({"_id": ObjectId(vendor_id)})  # Fetch from user collection
+            if not user:
                 return 0
-            availability_slots = vendor.get("availability_slots", [])
+            availability_slots = user.get("availability_slots", [])  # Fetch from user table
             max_seat_count = 0
 
             for slot in availability_slots:
@@ -842,10 +962,15 @@ class UserManager:
 
     async def get_availability_slots(self, vendor: dict) -> List[dict]:
         """
-        Helper function to get availability slots for a vendor.
+        Helper function to get availability slots for a vendor (now from user table).
         """
         availability_slots = []
-        for slot in vendor.get("availability_slots", []):
+
+        user = await user_collection.find_one({"_id": ObjectId(vendor["_id"])})  # Fetch from user collection
+        if not user:
+            return availability_slots  # Return empty if user not found
+
+        for slot in user.get("availability_slots", []):  # Fetch slots from user table
             slot_day = slot["day"]
             current_date = datetime.now().date()
             days = {
@@ -863,13 +988,14 @@ class UserManager:
             target_date = current_date + timedelta(days=days_ahead)
 
             day_slot = {"day": slot_day, "date": target_date.strftime("%Y-%m-%d"), "time_slots": []}
-            daily_booking_count = await self.get_daily_booking_count(str(vendor["_id"]), slot_day)
+            daily_booking_count = await self.get_daily_booking_count(str(user["_id"]), slot_day)
             day_slot["daily_booking_count"] = daily_booking_count
-            total_seat_count = await self.get_max_seat_count(str(vendor["_id"]), slot_day)
+            total_seat_count = await self.get_max_seat_count(str(user["_id"]), slot_day)
             day_slot["max_seat_count"] = total_seat_count
+
             for time_slot in slot.get("time_slots", []):
                 booking_count = await self.get_booking_count_for_slot(
-                    str(vendor["_id"]), slot_day, time_slot["start_time"]
+                    str(user["_id"]), slot_day, time_slot["start_time"]
                 )
 
                 day_slot["time_slots"].append(
@@ -884,6 +1010,27 @@ class UserManager:
             availability_slots.append(day_slot)
 
         return availability_slots
+
+    def _addresses_match(self, vendor_address: str, search_address: str) -> bool:
+        """
+        Helper method to determine if two addresses match.
+        You can customize this method based on your matching requirements.
+        """
+        if not vendor_address or not search_address:
+            return False
+
+        # Convert both addresses to lowercase for case-insensitive comparison
+        vendor_address = vendor_address.lower()
+        search_address = search_address.lower()
+
+        # Split addresses into components
+        vendor_components = set(vendor_address.split(","))
+        search_components = set(search_address.split(","))
+
+        # Check if there's any overlap in the address components
+        # You can adjust the matching threshold based on your needs
+        common_components = vendor_components.intersection(search_components)
+        return len(common_components) >= 2
 
     async def get_vendor_list_for_services(self, service_id: str) -> List[dict]:
         try:

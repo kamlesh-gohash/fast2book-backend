@@ -68,14 +68,12 @@ class CreateBookingRequest(BaseModel):
 
 cancel_booking_validator = zon.record(
     {
-        "booking_id": zon.string(),
         "reason": zon.string(),
     }
 )
 
 
 class CancelBookingRequest(BaseModel):
-    booking_id: str
     reason: str
 
     def validate(self):

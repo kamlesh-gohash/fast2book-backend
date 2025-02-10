@@ -40,11 +40,14 @@ class Bookings(BaseModel):
     booking_date: datetime
     status: StatusEnum = StatusEnum.Active
     booking_status: BookingStatusEnum = BookingStatusEnum.pending
+    booking_confirm: bool = Field(default=False)
     payment_status: PaymentStatusEnum = PaymentStatusEnum.unpaid
     created_at: datetime = Field(default_factory=datetime.utcnow)
     booking_order_id: Optional[str] = None
     amount: Optional[float] = None
     payment_method: Optional[str] = None
+    booking_cancel_reason: Optional[str] = None
+    payment_id: Optional[str] = None
 
     class Settings:
         name = "bookings"

@@ -10,9 +10,19 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
 from fastapi import Body, HTTPException, Path, Request, status
+from pymongo import ASCENDING, DESCENDING
 
 from app.v1.middleware.auth import get_current_user
-from app.v1.models import User, booking_collection, user_collection, vendor_collection
+from app.v1.models import (
+    User,
+    booking_collection,
+    category_collection,
+    plan_collection,
+    services_collection,
+    subscription_collection,
+    user_collection,
+    vendor_collection,
+)
 from app.v1.models.permission import *
 from app.v1.models.slots import *
 from app.v1.schemas.superuser.superuser_auth import *
@@ -104,8 +114,10 @@ class SuperUserManager:
             otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
             user.otp_expires = otp_expiration_time
             await user.save()
-            # Send email with OTP
-            await send_email(email, otp)
+            source = "Forgot Password"
+            context = {"otp": otp}
+            to_email = email
+            await send_email(to_email, source, context)
             return {"message": "OTP sent to email"}
         except HTTPException as e:
             raise e
@@ -459,19 +471,145 @@ class SuperUserManager:
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             total_users = await user_collection.count_documents({"roles": {"$in": ["user"]}, "user_role": {"$ne": 2}})
-            total_bookings = await booking_collection.count_documents({})
+            total_bookings = await booking_collection.count_documents({"booking_confirm": True})
 
             # Bookings that are canceled
             canceled_bookings = await booking_collection.count_documents({"booking_status": "cancelled"})
 
             # Bookings that are resulting
-            resulting_bookings = await booking_collection.count_documents({"booking_status": "rescheduled"})
+            reschedule_bookings = await booking_collection.count_documents({"booking_status": "rescheduled"})
 
             return {
                 "total_users": total_users,
                 "total_bookings": total_bookings,
                 "canceled_bookings": canceled_bookings,
-                "resulting_bookings": resulting_bookings,
+                "reschedule_bookings": reschedule_bookings,
             }
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_dashboard_booking_data(self, request: Request, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Fetch latest 10 bookings sorted by 'created_at' (or another timestamp field)
+            bookings_cursor = (
+                booking_collection.find({"booking_status": "panding", "booking_confirm": True})
+                .sort("created_at", DESCENDING)
+                .limit(10)
+            )
+
+            bookings = await bookings_cursor.to_list(length=10)  # Convert cursor to list
+
+            if not bookings:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No bookings found")
+
+            booking_data = []
+            for booking in bookings:
+                # Fetch related data
+                user = await user_collection.find_one({"_id": ObjectId(booking["user_id"])}, {"first_name": 1})
+                vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
+                vendor_user_name = await user_collection.find_one(
+                    {"_id": ObjectId(vendor["user_id"])}, {"first_name": 1}
+                )
+                category = await category_collection.find_one({"_id": ObjectId(booking["category_id"])}, {"name": 1})
+                service = await services_collection.find_one({"_id": ObjectId(booking["service_id"])}, {"name": 1})
+
+                booking_data.append(
+                    {
+                        "booking_id": str(booking["_id"]),
+                        "user_name": user["first_name"] if user else None,
+                        "vendor_name": vendor_user_name["first_name"] if vendor_user_name else None,
+                        "category_name": category["name"] if category else None,
+                        "service_name": service["name"] if service else None,
+                        "booking_status": booking["booking_status"],
+                        "booking_confirm": booking["booking_confirm"],
+                        "booking_date": booking["booking_date"],
+                        "time_slot": booking["time_slot"],
+                        "payment_status": booking["payment_status"],
+                        "payment_method": booking["payment_method"],
+                        "amount": booking["amount"],
+                        "booking_cancel_reason": (
+                            booking["booking_cancel_reason"] if "booking_cancel_reason" in booking else None
+                        ),
+                        "booking_order_id": booking["booking_order_id"],
+                        "payment_id": booking["payment_id"],
+                        "created_at": booking.get("created_at"),  # Include timestamp if needed
+                    }
+                )
+
+            return {
+                "total_bookings": len(booking_data),
+                "bookings": booking_data,
+            }
+
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_total_subscribers(self, request: Request, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Aggregate count of vendors for each plan
+            pipeline = [
+                {
+                    "$group": {
+                        "_id": "$razorpay_plan_id",
+                        "vendor_count": {"$sum": 1},
+                        "vendor_ids": {"$push": "$vendor_id"},
+                    }
+                },
+                {"$sort": {"vendor_count": ASCENDING}},
+            ]
+
+            plan_counts = await subscription_collection.aggregate(pipeline).to_list(None)
+
+            # Fetch plan details and vendor details
+            result = []
+            for plan in plan_counts:
+                plan_details = await plan_collection.find_one(
+                    {"razorpay_plan_id": plan["_id"]}, {"name": 1, "description": 1}
+                )
+
+                vendors = await vendor_collection.find(
+                    {"_id": {"$in": [ObjectId(v_id) for v_id in plan["vendor_ids"]]}},
+                    {"business_name": 1, "category_name": 1, "services": 1},
+                ).to_list(None)
+
+                vendor_data = [
+                    {
+                        "vendor_id": str(v["_id"]),
+                        "business_name": v["business_name"],
+                        "category_name": v.get("category_name", "Unknown"),
+                        "services": [s["name"] for s in v.get("services", [])],
+                    }
+                    for v in vendors
+                ]
+
+                result.append(
+                    {
+                        "plan_id": plan["_id"],
+                        "plan_name": plan_details["name"] if plan_details else "Unknown",
+                        "description": plan_details["description"] if plan_details else "No description",
+                        "vendor_count": plan["vendor_count"],
+                        "vendors": vendor_data,
+                    }
+                )
+
+            return {
+                "total_plans": len(result),
+                "plans": result,
+            }
+
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))

@@ -180,6 +180,8 @@ class VendorManager:
                 # "otp": otp,
                 # "otp_expiration_time": otp_expiration_time,
             }
+            if create_vendor_request.business_type.lower() == "individual":
+                user_data["availability_slots"] = default_availability_slots()
             user_result = await user_collection.insert_one(user_data)
             # image_name = create_vendor_request.vendor_image
             # bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
@@ -218,8 +220,7 @@ class VendorManager:
                 ),  # Add location
                 "specialization": create_vendor_request.specialization,
             }
-            if create_vendor_request.business_type.lower() == "individual":
-                vendor_data["availability_slots"] = default_availability_slots()
+
             # razorpay_response = create_razorpay_subaccount(vendor_data, user_data)
             # vendor_data["razorpay_account_id"] = razorpay_response["id"]
             # Insert vendor data into the database
@@ -923,6 +924,8 @@ class VendorManager:
                 "password": hashed_password,
                 "is_dashboard_created": vendor_request.is_dashboard_created,
             }
+            if vendor_request.business_type.lower() == "individual":
+                new_vendor_user["availability_slots"] = default_availability_slots()
             result = await user_collection.insert_one(new_vendor_user)
 
             user_id = str(result.inserted_id)
@@ -935,8 +938,6 @@ class VendorManager:
                 "is_subscription": False,
                 "created_at": datetime.utcnow(),
             }
-            if vendor_request.business_type.lower() == "individual":
-                vendor_data["availability_slots"] = default_availability_slots()
 
             vendor_result = await vendor_collection.insert_one(vendor_data)
 
@@ -1223,7 +1224,14 @@ class VendorManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def vendor_users_list(self, request: Request, token: str):
+    async def vendor_users_list(
+        self,
+        request: Request,
+        token: str,
+        page: int,
+        limit: int,
+        search: str = None,
+    ):
         try:
             # Get the current user
             current_user = await get_current_user(request=request, token=token)
@@ -1235,24 +1243,40 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
             # Query to filter users with the "vendor_user" role and created by the current user
+            skip = max((page - 1) * limit, 0)
             query = {
                 "roles": {"$in": ["vendor_user"]},
                 "created_by": str(current_user.id),  # Match created_by with the current user's ID
             }
+            if search:
+                search = search.strip()
+                if not search:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Search term cannot be empty")
+                search_regex = {"$regex": search, "$options": "i"}
+                query["$or"] = [
+                    {"first_name": search_regex},
+                    {"last_name": search_regex},
+                    {"email": search_regex},
+                    {"phone": search_regex},
+                ]
 
             # Find users matching the query
-            vendor_users = await user_collection.find(query).to_list(None)
+            vendor_users = await user_collection.find(query).skip(skip).limit(limit).to_list(length=limit)
             if not vendor_users:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor users found")
             formatted_users = []
             for user in vendor_users:
                 user["id"] = str(user.pop("_id", ""))
                 formatted_users.append(user)
-            return {"data": formatted_users}
+            total_users = await user_collection.count_documents(query)
+            total_pages = (total_users + limit - 1) // limit
+            return {"data": formatted_users, "total_items": total_users, "total_pages": total_pages}
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def set_individual_vendor_availability(self, request: Request, token: str, slots: List[DaySlot]):
+    async def set_individual_vendor_availability(
+        self, request: Request, token: str, slots: List[DaySlot], vendor_user_id: Optional[str] = None
+    ):
         try:
             # Get current user
             current_user = await get_current_user(request=request, token=token)
@@ -1265,57 +1289,111 @@ class VendorManager:
             vendor = await vendor_collection.find_one({"user_id": str(current_user.id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            if vendor_user_id:
+                vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
+                if not vendor_user:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+                if vendor_user["created_by"] != str(current_user.id):
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                new_availability_slots = []
+                for day_slot in slots:
+                    day_slot_data = day_slot.dict()
+                    for time_slot in day_slot_data.get("time_slots", []):
+                        # Ensure max_seat is included
+                        if "max_seat" not in time_slot:
+                            time_slot["max_seat"] = 10
+                        time_slot["max_seat"] = int(time_slot["max_seat"])
+                        # Convert time objects to strings if necessary
+                        if isinstance(time_slot["start_time"], time):
+                            time_slot["start_time"] = time_slot["start_time"].strftime("%H:%M")
+                        if isinstance(time_slot["end_time"], time):
+                            time_slot["end_time"] = time_slot["end_time"].strftime("%H:%M")
+                    new_availability_slots.append(day_slot_data)
+
+                await user_collection.update_one(
+                    {"_id": ObjectId(vendor_user_id)}, {"$set": {"availability_slots": new_availability_slots}}
+                )
+
+                # Return updated data
+                updated_vendor = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
+                if not updated_vendor:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+                updated_vendor["id"] = str(updated_vendor.pop("_id", ""))
+
+                return updated_vendor
 
             # Prepare the new availability slots
             new_availability_slots = []
+            # for day_slot in slots:
+            #     day_slot_data = day_slot.dict()
+            # for time_slot in day_slot_data.get("time_slots", []):
+            #     # Format start_time and end_time
+            #     time_slot["start_time"] = (
+            #         time_slot["start_time"].strftime("%H:%M")
+            #         if isinstance(time_slot["start_time"], time)
+            #         else time_slot["start_time"]
+            #     )
+            #     time_slot["end_time"] = (
+            #         time_slot["end_time"].strftime("%H:%M")
+            #         if isinstance(time_slot["end_time"], time)
+            #         else time_slot["end_time"]
+            #     )
+
+            # Calculate duration
+            # ts = TimeSlot(**time_slot)
+            # ts.calculate_duration()
+            # time_slot["duration"] = ts.duration
             for day_slot in slots:
                 day_slot_data = day_slot.dict()
                 for time_slot in day_slot_data.get("time_slots", []):
-                    # Format start_time and end_time
-                    time_slot["start_time"] = (
-                        time_slot["start_time"].strftime("%H:%M")
-                        if isinstance(time_slot["start_time"], time)
-                        else time_slot["start_time"]
-                    )
-                    time_slot["end_time"] = (
-                        time_slot["end_time"].strftime("%H:%M")
-                        if isinstance(time_slot["end_time"], time)
-                        else time_slot["end_time"]
-                    )
-
-                    # Calculate duration
-                    ts = TimeSlot(**time_slot)
-                    ts.calculate_duration()
-                    time_slot["duration"] = ts.duration
-
+                    # Ensure max_seat is included
+                    if "max_seat" not in time_slot:
+                        time_slot["max_seat"] = 10
+                    time_slot["max_seat"] = int(time_slot["max_seat"])
+                    # Convert time objects to strings if necessary
+                    if isinstance(time_slot["start_time"], time):
+                        time_slot["start_time"] = time_slot["start_time"].strftime("%H:%M")
+                    if isinstance(time_slot["end_time"], time):
+                        time_slot["end_time"] = time_slot["end_time"].strftime("%H:%M")
                 new_availability_slots.append(day_slot_data)
 
             # Replace old availability slots with new ones
-            await vendor_collection.update_one(
-                {"_id": vendor["_id"]}, {"$set": {"availability_slots": new_availability_slots}}
+            await user_collection.update_one(
+                {"_id": ObjectId(vendor["user_id"])}, {"$set": {"availability_slots": new_availability_slots}}
             )
 
             # Return updated data
-            updated_vendor = await vendor_collection.find_one({"_id": vendor["_id"]})
-            if updated_vendor:
-                updated_vendor = serialize_mongo_document(updated_vendor)
+
+            updated_vendor = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
+            if not updated_vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            updated_vendor["id"] = str(updated_vendor.pop("_id", ""))
 
             return updated_vendor
 
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def get_vendor_availability(self, request: Request, token: str):
+    async def get_vendor_availability(self, request: Request, token: str, vendor_user_id: str = None):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            if vendor_user_id:
+                vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
+                if not vendor_user:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+                availability_slots = vendor_user.get("availability_slots", [])
+                return availability_slots
             vendor = await vendor_collection.find_one({"user_id": str(current_user.id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-            availability_slots = vendor.get("availability_slots", [])
+            vendor_user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
+            if not vendor_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+            availability_slots = vendor_user.get("availability_slots", [])
             return availability_slots
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
@@ -1603,9 +1681,11 @@ class VendorManager:
                 user = await user_collection.find_one({"_id": ObjectId(vendor_id), "roles": "vendor_user"})
                 if not user:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-                user_data = await vendor_collection.find_one({"user_id": user["created_by"]})
+
+                # Get the parent vendor
+                vendor = await vendor_collection.find_one({"user_id": user["created_by"]})
                 if not vendor:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent vendor not found")
 
             availability_slots = user_data.get("availability_slots", [])
             business_type = vendor.get("business_type", "individual")
@@ -2068,3 +2148,33 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
+
+    async def vendor_users_list_for_slot(self, request: Request, token: str):
+        try:
+            # Get the current user
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            # Check if the current user has the "vendor" role
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Query to filter users with the "vendor_user" role and created by the current user
+            query = {
+                "roles": {"$in": ["vendor_user"]},
+                "created_by": str(current_user.id),  # Match created_by with the current user's ID
+            }
+
+            # Find users matching the query
+            vendor_users = await user_collection.find(query).to_list(length=100)
+            if not vendor_users:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor users found")
+            formatted_users = []
+            for user in vendor_users:
+                user["id"] = str(user.pop("_id", ""))
+                formatted_users.append(user)
+
+            return {"data": formatted_users}
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
