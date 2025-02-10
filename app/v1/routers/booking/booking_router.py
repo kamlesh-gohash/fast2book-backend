@@ -74,14 +74,15 @@ async def book_appointment(
         )
 
 
-@router.get("/checkout", status_code=status.HTTP_200_OK)
+@router.get("/checkout/{id}", status_code=status.HTTP_200_OK)
 async def user_booking_checkout(
     request: Request,
     token: str = Depends(get_token_from_header),
+    id: str = Path(..., min_length=1, max_length=100),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.user_booking_checkout(request=request, token=token)
+        result = await booking_manager.user_booking_checkout(request=request, token=token, id=id)
         return success({"message": "boking detail found successfully", "data": result})
 
     except HTTPException as http_ex:
@@ -174,15 +175,22 @@ async def vendor_get_booking(
 async def user_booking_list(
     request: Request,
     token: str = Depends(get_token_from_header),
+    status_filter: str = Query(None, description="Filter past bookings by status (completed/cancelled)"),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.user_booking_list(request=request, token=token)
+        # Validate status filter if provided
+        if status_filter and status_filter.lower() not in ["completed", "cancelled"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid status filter. Must be either 'completed' or 'cancelled'",
+            )
+
+        result = await booking_manager.user_booking_list(request=request, token=token, status_filter=status_filter)
 
         return success({"message": "User Booking List found successfully", "data": result})
 
     except HTTPException as http_ex:
-        # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
@@ -193,23 +201,27 @@ async def user_booking_list(
         )
 
 
-@router.delete("/delete-booking/{id}", status_code=status.HTTP_200_OK)
+@router.post("/cancel-booking/{id}", status_code=status.HTTP_200_OK)
 async def cancel_booking(
     request: Request,
+    cancel_request: CancelBookingRequest,
     token: str = Depends(get_token_from_header),
     id: str = Path(..., min_length=1, max_length=100),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.cancel_booking(request=request, token=token, id=id)
+        result = await booking_manager.cancel_booking(
+            request=request, token=token, id=id, cancel_request=cancel_request
+        )
 
-        return success({"message": "User Booking deleted successfully", "data": result})
+        return success({"message": "User Booking cancelled successfully", "data": result})
 
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -317,7 +329,15 @@ async def verify_payment(request: Request, payload: dict):
 
         await booking_collection.update_one(
             {"_id": ObjectId(order_id)},
-            {"$set": {"payment_status": "paid", "booking_status": "completed", "payment_method": payment_method}},
+            {
+                "$set": {
+                    "payment_status": "paid",
+                    "booking_status": "panding",
+                    "booking_confirm": True,
+                    "payment_method": payment_method,
+                    "payment_id": razorpay_payment_id,
+                }
+            },
         )
 
         return success({"message": "Payment verification successful"})
@@ -341,6 +361,51 @@ async def user_booking_view(
 
         return success({"message": "User Booking found successfully", "data": result})
 
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/user-booking-rescheduled/{booking_id}", status_code=status.HTTP_200_OK)
+async def user_booking_reschedule(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    booking_id: str = Path(..., min_length=1, max_length=100),
+    booking_manager: BookingManager = Depends(get_booking_manager),
+):
+    try:
+        result = await booking_manager.user_booking_resulding(request=request, token=token, booking_id=booking_id)
+        return success({"message": "User Booking update successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/user-booking-update-request/{booking_id}", status_code=status.HTTP_200_OK)
+async def user_booking_update_request(
+    request: Request,
+    booking_id: str = Path(..., min_length=1, max_length=100),
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    token: str = Depends(get_token_from_header),
+    booking_manager: BookingManager = Depends(get_booking_manager),
+):
+    try:
+        result = await booking_manager.user_booking_update_request(
+            request=request, token=token, booking_id=booking_id, date=date
+        )
+        return success({"message": "Vendor slots retrieved successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:

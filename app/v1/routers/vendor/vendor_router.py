@@ -332,10 +332,15 @@ async def create_vendor_user(
 async def vendor_users_list(
     request: Request,
     token: str = Depends(get_token_from_header),
+    page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    search: Optional[str] = Query(None, description="Search query"),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.vendor_users_list(request=request, token=token)
+        result = await vendor_manager.vendor_users_list(
+            request=request, token=token, page=page, limit=limit, search=search
+        )
         return success({"message": "Vendor users list found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -354,11 +359,12 @@ async def add_slot_time(
     request: Request,
     slot_request: SlotRequest,  # Updated to use the new model
     token: str = Depends(get_token_from_header),
+    vendor_user_id: Optional[str] = None,
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         result = await vendor_manager.set_individual_vendor_availability(
-            request=request, token=token, slots=slot_request.slots  # Pass the list of slots
+            request=request, token=token, slots=slot_request.slots, vendor_user_id=vendor_user_id
         )
         return success({"message": "Slot time added successfully", "data": result})
     except HTTPException as http_ex:
@@ -376,10 +382,13 @@ async def add_slot_time(
 async def get_vendor_availability(
     request: Request,
     token: str = Depends(get_token_from_header),
+    vendor_user_id: str = None,  # New optional parameter
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.get_vendor_availability(request=request, token=token)
+        result = await vendor_manager.get_vendor_availability(
+            request=request, token=token, vendor_user_id=vendor_user_id
+        )
         return success({"message": "Vendor availability found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -753,6 +762,27 @@ async def get_plan(
         result = await vendor_manager.get_plan(request=request, token=token, plan_id=plan_id)
         return success({"message": "plan found successfully", "data": result})
     except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vendor-users-list-for-slot", status_code=status.HTTP_200_OK)
+async def vendor_users_list_for_slot(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.vendor_users_list_for_slot(request=request, token=token)
+        return success({"message": "Vendor users list found successfully", "data": result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)

@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from beanie import Document, Link
 from pydantic import BaseModel, Field
 
-from app.v1.models.user import StatusEnum, User
+from app.v1.models.user import Location, StatusEnum, User
 
 
 class BusinessType(str, Enum):
@@ -41,24 +41,16 @@ class Service(BaseModel):
     name: Optional[str] = None
 
 
-def default_availability_slots():
-    time_slots = [
-        {"start_time": f"{hour:02}:00", "end_time": f"{hour+1:02}:00", "max_seat": 10} for hour in range(9, 17)
-    ]
-    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    return [{"day": day, "time_slots": time_slots} for day in days]
-
-
-class Location(BaseModel):
-    address_components: Optional[List[Dict]] = Field(None, description="Address components of the location")
-    formatted_address: Optional[str] = Field(None, description="Formatted address of the location")
-    geometry: Optional[Dict] = Field(None, description="Geometry details of the location")
-    place_id: Optional[str] = Field(None, description="Place ID of the location")
-    types: Optional[List[str]] = Field(None, description="Types of the location")
-    url: Optional[str] = Field(None, description="URL of the location")
-    utc_offset_minutes: Optional[int] = Field(None, description="UTC offset in minutes")
-    vicinity: Optional[str] = Field(None, description="Vicinity of the location")
-    website: Optional[str] = Field(None, description="Website of the location")
+# class Location(BaseModel):
+#     address_components: Optional[List[Dict]] = Field(None, description="Address components of the location")
+#     formatted_address: Optional[str] = Field(None, description="Formatted address of the location")
+#     geometry: Optional[Dict] = Field(None, description="Geometry details of the location")
+#     place_id: Optional[str] = Field(None, description="Place ID of the location")
+#     types: Optional[List[str]] = Field(None, description="Types of the location")
+#     url: Optional[str] = Field(None, description="URL of the location")
+#     utc_offset_minutes: Optional[int] = Field(None, description="UTC offset in minutes")
+#     vicinity: Optional[str] = Field(None, description="Vicinity of the location")
+#     website: Optional[str] = Field(None, description="Website of the location")
 
 
 class Vendor(Document):
@@ -77,7 +69,6 @@ class Vendor(Document):
     service_details: Optional[str] = None
     status: StatusEnum = Field(default=StatusEnum.Active)
     # availability_slots: Optional[Link["SlotRequest"]] = None
-    availability_slots: List[DaySlot] = Field(default_factory=default_availability_slots)
     fees: float = Field(default=0.0)
     location: Optional[Location] = Field(None, description="Location details of the vendor")
     specialization: Optional[str] = None

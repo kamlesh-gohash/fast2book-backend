@@ -370,3 +370,45 @@ async def get_dashboard_data(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.get("/dashboard-booking", status_code=status.HTTP_200_OK)
+async def get_dashboard_booking_data(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        result = await user_manager.get_dashboard_booking_data(request=request, token=token)
+        return success({"message": "Booking list", "data": result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/total-subscribers", status_code=status.HTTP_200_OK)
+async def get_total_subscribers(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        result = await user_manager.get_total_subscribers(request=request, token=token)
+        return success({"message": "Total subscribers count", "data": result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
