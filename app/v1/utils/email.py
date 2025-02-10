@@ -9,6 +9,10 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from string import Template
 
+import boto3
+
+from fastapi import HTTPException
+
 
 def generate_otp() -> str:
     return f"{random.randint(100000, 999999)}"
@@ -255,3 +259,30 @@ async def send_email(to_email: str, source: str, context: dict = None):
     except Exception as e:
         logger.error(f"Failed to send email to {to_email}: {e}")
         return {"status": "FAILURE", "message": str(e)}
+
+
+# AWS SNS Configuration (Set your credentials in environment variables or AWS config)
+AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID", "your-access-key")
+AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "your-secret-key")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+
+# Initialize SNS client
+sns_client = boto3.client(
+    "sns", aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY, region_name=AWS_REGION
+)
+
+
+async def send_sms_on_phone(to_phone: str, otp: str, expiry_minutes: int = 10):
+    try:
+        formatted_phone = f"+91{to_phone}"
+        print(formatted_phone, "formatted phone")
+        message = f"Your OTP for login to Fast2Book is {otp}. This OTP is valid for {expiry_minutes} minutes. Do not share this with anyone. - Fast2Book"
+        print(message, "message")
+        # Send SMS
+        response = sns_client.publish(PhoneNumber=formatted_phone, Message=message)
+
+        print(response, "response")
+        return {"message": "OTP sent successfully", "otp": otp, "sns_response": response}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

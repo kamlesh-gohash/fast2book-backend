@@ -6,6 +6,7 @@ import zon
 
 from pydantic import BaseModel, EmailStr
 
+from app.v1.models.user import *
 from app.v1.utils.response.response_format import validation_error
 
 
@@ -40,6 +41,7 @@ class SignUpRequest(BaseModel):
     password: str
     otp: Optional[str] = None  # Make OTP optional
     otp_expires: Optional[datetime] = None
+    notification_settings: Dict[str, bool] = Field(default_factory=dict)
 
     def validate(self):
         try:
@@ -286,6 +288,40 @@ class ChangePasswordRequest(BaseModel):
     def validate(self):
         try:
             change_password_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
+
+
+update_profile_validator = zon.record(
+    {
+        "first_name": zon.string().min(1).max(50).optional(),
+        "last_name": zon.string().min(1).max(50).optional(),
+        "email": zon.string().email().optional(),
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),
+        "gender": zon.string().min(1).max(50).optional(),
+        "blood_group": zon.string().min(1).max(50).optional(),
+        "dob": zon.string().min(1).max(50).optional(),
+    }
+)
+
+
+class UpdateProfileRequest(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[int] = None
+    gender: Optional[str] = None
+    blood_group: Optional[str] = None
+    dob: Optional[str] = None
+    address: Optional[Location] = Field(None, description="Location details of the vendor")
+    secondary_phone_number: Optional[int] = None
+
+    def validate(self):
+        try:
+            data = self.dict(exclude_none=True)
+            change_password_validator.validate(data)
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
