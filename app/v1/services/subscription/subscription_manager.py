@@ -320,7 +320,6 @@ class SubscriptionManager:
             skip = (page - 1) * limit
 
             plans = await plan_collection.find(query).skip(skip).limit(limit).to_list(length=None)
-            print(plans, "plans")
             plan_data = []
             for plan in plans:
                 plan_data.append(

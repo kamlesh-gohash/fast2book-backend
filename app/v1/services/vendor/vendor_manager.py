@@ -29,7 +29,7 @@ from app.v1.models import (
 from app.v1.models.slots import *
 from app.v1.models.vendor import Vendor
 from app.v1.schemas.vendor.vendor_auth import *
-from app.v1.utils.email import generate_otp, send_email, send_vendor_email
+from app.v1.utils.email import *
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
@@ -841,46 +841,59 @@ class VendorManager:
 
     async def vendor_sign_in(self, vendor_request: SignInVendorRequest):
         try:
-            vendor = await user_collection.find_one({"email": vendor_request.email})
+            # Search user by email or phone
+            query = {"$or": [{"email": vendor_request.email}, {"phone": vendor_request.phone}]}
+            vendor = await user_collection.find_one(query)
+
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
             if "roles" not in vendor or "vendor" not in vendor["roles"]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not a vendor")
-            if vendor_request.is_login_with_otp:  # Check the flag from the frontend
-                # Generate a 6-digit OTP
+
+            if vendor_request.is_login_with_otp:
                 otp = generate_otp()
+                otp_expires = datetime.utcnow() + timedelta(minutes=10)
+                await user_collection.update_one(
+                    {"_id": vendor["_id"]}, {"$set": {"otp": otp, "otp_expires": otp_expires}}
+                )
 
-                # Update the vendor document with the OTP
-                await user_collection.update_one({"_id": vendor["_id"]}, {"$set": {"otp": otp}})
+                if vendor.get("email"):
+                    # Send OTP to email
+                    source = "Login with OTP"
+                    context = {"otp": otp}
+                    to_email = vendor["email"]
+                    await send_email(to_email, source, context)
+                elif vendor.get("phone"):
+                    to_phone = vendor["phone"]
+                    expiry_minutes = 10
+                    await send_sms_on_phone(to_phone, otp, expiry_minutes)
+                return {"message": "OTP sent to registered email/phone"}
 
-                source = "Login With Otp"
-                context = {"otp": otp}
-                to_email = vendor["email"]
-                await send_email(to_email, source, context)
-
-                # Return a response indicating OTP has been sent
-                return {"message": "OTP sent to registered email"}
             stored_password_hash = vendor.get("password")
             if not stored_password_hash:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
                 )
+
             if not bcrypt.checkpw(
                 vendor_request.password.encode("utf-8"),
                 stored_password_hash.encode("utf-8") if isinstance(stored_password_hash, str) else stored_password_hash,
             ):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Password")
+
             vendor_data = await vendor_collection.find_one({"user_id": str(vendor["_id"])})
             if not vendor_data:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor details not found")
+
             subscription = vendor_data.get("is_subscription")
-            access_token = create_access_token(data={"sub": vendor["email"]})
-            refresh_token = create_refresh_token(data={"sub": vendor["email"]})
+            access_token = create_access_token(data={"sub": vendor["email"] or vendor["phone"]})
+            refresh_token = create_refresh_token(data={"sub": vendor["email"] or vendor["phone"]})
+
             vendor_response = {key: str(value) if key == "_id" else value for key, value in vendor.items()}
             vendor_response["id"] = vendor_response.pop("_id")
             vendor_response.pop("password", None)
-            vendor_response.pop("otp", None),
+            vendor_response.pop("otp", None)
             vendor_response["is_subscription"] = subscription
             vendor_response["access_token"] = access_token
             vendor_response["refresh_token"] = refresh_token
@@ -904,9 +917,71 @@ class VendorManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
+    # async def vendor_sign_up(self, vendor_request: SignUpVendorRequest):
+    #     try:
+    #         existing_vendor = await user_collection.find_one({"email": vendor_request.email})
+    #         if existing_vendor:
+    #             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Vendor already exists")
+
+    #         hashed_password = bcrypt.hashpw(vendor_request.password.encode("utf-8"), bcrypt.gensalt())
+    #         vendor_request.is_dashboard_created = True
+    #         otp = generate_otp()
+
+    #         new_vendor_user = {
+    #             "first_name": vendor_request.first_name,
+    #             "last_name": vendor_request.last_name,
+    #             "email": vendor_request.email,
+    #             "otp": otp,
+    #             "otp_expires": datetime.utcnow() + timedelta(minutes=10),
+    #             "roles": vendor_request.roles,
+    #             "password": hashed_password,
+    #             "is_dashboard_created": vendor_request.is_dashboard_created,
+    #         }
+    #         if vendor_request.business_type.lower() == "individual":
+    #             new_vendor_user["availability_slots"] = default_availability_slots()
+    #         result = await user_collection.insert_one(new_vendor_user)
+
+    #         user_id = str(result.inserted_id)
+
+    #         vendor_data = {
+    #             "user_id": user_id,
+    #             "business_name": vendor_request.business_name,
+    #             "business_type": vendor_request.business_type,
+    #             "status": vendor_request.status,
+    #             "is_subscription": False,
+    #             "created_at": datetime.utcnow(),
+    #         }
+
+    #         vendor_result = await vendor_collection.insert_one(vendor_data)
+
+    #         new_vendor_user["id"] = user_id
+    #         new_vendor_user.pop("_id", None)
+    #         new_vendor_user.pop("password", None)
+    #         new_vendor_user.pop("otp", None)
+    #         new_vendor_user["vendor_details"] = {
+    #             "id": str(vendor_result.inserted_id),
+    #             "business_name": vendor_request.business_name,
+    #             "business_type": vendor_request.business_type,
+    #             "status": vendor_request.status,
+    #         }
+    #         source = "Activation_code"
+    #         context = {"otp": otp}
+    #         to_email = vendor_request.email
+    #         await send_email(to_email, source, context)
+
+    #         return new_vendor_user
+    #     except Exception as ex:
+    #         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
     async def vendor_sign_up(self, vendor_request: SignUpVendorRequest):
         try:
-            existing_vendor = await user_collection.find_one({"email": vendor_request.email})
+            existing_vendor = None
+
+            # Check if user exists based on email or phone
+            if vendor_request.email:
+                existing_vendor = await user_collection.find_one({"email": vendor_request.email})
+            elif vendor_request.phone:
+                existing_vendor = await user_collection.find_one({"phone": vendor_request.phone})
+
             if existing_vendor:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Vendor already exists")
 
@@ -917,17 +992,19 @@ class VendorManager:
             new_vendor_user = {
                 "first_name": vendor_request.first_name,
                 "last_name": vendor_request.last_name,
-                "email": vendor_request.email,
+                "email": vendor_request.email,  # May be None
+                "phone": vendor_request.phone,  # May be None
                 "otp": otp,
                 "otp_expires": datetime.utcnow() + timedelta(minutes=10),
                 "roles": vendor_request.roles,
                 "password": hashed_password,
                 "is_dashboard_created": vendor_request.is_dashboard_created,
             }
+
             if vendor_request.business_type.lower() == "individual":
                 new_vendor_user["availability_slots"] = default_availability_slots()
-            result = await user_collection.insert_one(new_vendor_user)
 
+            result = await user_collection.insert_one(new_vendor_user)
             user_id = str(result.inserted_id)
 
             vendor_data = {
@@ -951,10 +1028,17 @@ class VendorManager:
                 "business_type": vendor_request.business_type,
                 "status": vendor_request.status,
             }
-            source = "Activation_code"
-            context = {"otp": otp}
-            to_email = vendor_request.email
-            await send_email(to_email, source, context)
+
+            # Send OTP based on whether user signed up with email or phone
+            if vendor_request.email:
+                source = "Activation_code"
+                context = {"otp": otp}
+                to_email = vendor_request.email
+                await send_email(to_email, source, context)
+            elif vendor_request.phone:
+                to_phone = vendor_request.phone
+                expiry_minutes = 10
+                await send_sms_on_phone(to_phone, otp, expiry_minutes)  # Implement send_sms function
 
             return new_vendor_user
         except Exception as ex:
@@ -981,7 +1065,11 @@ class VendorManager:
             vendor.pop("otp", None)
             vendor["first_name"] = vendor["first_name"].capitalize()
             vendor["last_name"] = vendor["last_name"].capitalize()
-            vendor["email"] = vendor["email"]
+            if vendor["phone"]:
+                vendor["phone"] = vendor["phone"] or ""
+            if vendor["email"]:
+                vendor["email"] = vendor["email"] or ""
+
             vendor["created_by"] = vendor.get("created_by", "Unknown")
             if vendor_data:
                 vendor_data["id"] = str(vendor_data.pop("_id"))

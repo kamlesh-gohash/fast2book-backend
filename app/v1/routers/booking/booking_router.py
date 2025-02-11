@@ -56,7 +56,6 @@ async def book_appointment(
         if validation_result:
             return validation_result
 
-        print(booking_request, "booking_request")
         result = await booking_manager.book_appointment(request=request, token=token, booking_request=booking_request)
 
         return success({"message": "Booking Created Successfully", "data": result})
@@ -67,7 +66,6 @@ async def book_appointment(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -221,7 +219,6 @@ async def cancel_booking(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

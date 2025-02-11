@@ -151,9 +151,7 @@ class BookingManager:
         """
         Checks if the requested slot matches any available slots.
         """
-        print(available_slots, "available_slots")
         for slot in available_slots:
-            print(slot, "slot")
             if (
                 slot["start_time"] == requested_slot["start_time"]
                 and slot["end_time"] == requested_slot["end_time"]
@@ -345,7 +343,6 @@ class BookingManager:
         except HTTPException:
             raise
         except Exception as ex:
-            print(ex, "ex")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def vendor_get_booking(self, request: Request, token: str, id: str):
@@ -481,7 +478,6 @@ class BookingManager:
                         past_bookings.append(booking)
                 else:
                     if booking_datetime >= current_datetime:
-                        print(booking_status, "booking_status")
                         if booking_status == "panding":
                             upcoming_bookings.append(booking)
                     else:
@@ -512,7 +508,6 @@ class BookingManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
             booking = await booking_collection.find_one({"_id": ObjectId(id)})
-            print(booking, "booking")
             if not booking:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
             cancellation_data = {
@@ -520,9 +515,7 @@ class BookingManager:
                 "booking_cancel_reason": cancel_request.reason,
                 "cancelled_at": datetime.utcnow(),
             }
-            print(cancellation_data, "cancellation_data")
             update_result = await booking_collection.update_one({"_id": ObjectId(id)}, {"$set": cancellation_data})
-            print(update_result, "update_result")
             # if update_result.modified_count == 0:
             #     raise HTTPException(
             #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to cancel booking"
@@ -533,7 +526,6 @@ class BookingManager:
         except HTTPException:
             raise
         except Exception as ex:
-            print(ex, "ex")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def user_booking_list_for_admin(
@@ -585,7 +577,6 @@ class BookingManager:
 
                 if date_filter:
                     query["booking_date"] = date_filter
-                    print(query, "query")
             if search:
                 search = search.strip()
                 if not search:
@@ -599,7 +590,6 @@ class BookingManager:
                 ]
 
             bookings = await booking_collection.find(query).to_list(None)
-            print(bookings, "bookings")
 
             for booking in bookings:
                 booking["id"] = str(booking["_id"])
@@ -809,7 +799,6 @@ class BookingManager:
                     "date": requested_date,
                 }
             ).to_list(length=None)
-            print(vendor_slots, "vendor_slots")
             if not vendor_slots:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="No available slots found for the vendor on this date"
