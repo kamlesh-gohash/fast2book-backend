@@ -107,14 +107,23 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         else:
             # Handle JWT token
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            email = payload.get("sub")  # Ensure the token contains a 'sub' claim for email
-            if not email:
-                raise HTTPException(status_code=401, detail="Invalid token: Missing 'sub' claim.")
+            sub = payload.get("sub")
 
-            # Fetch the user from the database
-            user = await User.get_user_by_email(email)
-            if not user:
-                raise HTTPException(status_code=404, detail="User not found.")
+            if not sub:
+                raise HTTPException(status_code=401, detail="Invalid token: Missing 'sub' claim.")
+            sub = str(sub).strip()
+            # Try to fetch user by email or phone
+            user = None
+            if "@" in sub:
+                user = await User.get_user_by_email(sub)
+                if not user:
+                    raise HTTPException(status_code=404, detail="User not found by email.")
+            elif sub.isdigit():
+                user = await User.get_user_by_phone(sub)
+                if not user:
+                    raise HTTPException(status_code=404, detail="User not found by phone.")
+            else:
+                raise HTTPException(status_code=401, detail="Invalid token: 'sub' is neither email nor phone.")
 
             return user
 

@@ -46,7 +46,6 @@ class SignUpRequest(BaseModel):
     def validate(self):
         try:
             data = self.dict()
-            print("Validating data:", data)  # Debugging output
             signup_validator.validate(data)
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
@@ -56,7 +55,8 @@ class SignUpRequest(BaseModel):
 
 sign_in_validator = zon.record(
     {
-        "email": zon.string().email(),
+        "email": zon.string().email().optional(),  # Optional email validation
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional phone validation
         "password": zon.string().min(6).max(20).optional(),
         "is_login_with_otp": zon.boolean().optional(),
     }
@@ -64,7 +64,8 @@ sign_in_validator = zon.record(
 
 
 class SignInRequest(BaseModel):
-    email: str
+    email: Optional[EmailStr] = None
+    phone: Optional[int] = None
     password: Optional[str] = None
     is_login_with_otp: Optional[bool] = False
 
@@ -125,7 +126,7 @@ class ResendOtpRequest(BaseModel):
 forgot_password_validator = zon.record(
     {
         "email": zon.string().email().optional(),  # Optional email validation
-        "phone": zon.string().min(10).max(10).optional(),  # Optional phone validation
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional phone validation
     }
 ).refine(
     lambda data: data.get("email") or data.get("phone"),  # At least one required
@@ -135,7 +136,7 @@ forgot_password_validator = zon.record(
 
 class ForgotPasswordRequest(BaseModel):
     email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    phone: Optional[int] = None
 
     def validate(self):
         # Ensure either email or phone is provided, but not both
@@ -218,7 +219,7 @@ class ValidateOtpRequest(BaseModel):
 reset_password_validator = zon.record(
     {
         "email": zon.string().email().optional(),  # Optional email validation
-        "phone": zon.string().min(10).max(10).optional(),  # Optional phone validation
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional phone validation
         "password": zon.string().min(6).max(20),  # Password length validation
     }
 )
@@ -227,7 +228,7 @@ reset_password_validator = zon.record(
 class ResetPasswordRequest(BaseModel):
     password: str
     email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    phone: Optional[int] = None
 
     def validate(self):
         if not self.password:

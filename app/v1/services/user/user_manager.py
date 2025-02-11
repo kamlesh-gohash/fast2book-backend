@@ -89,7 +89,6 @@ class UserManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -144,7 +143,7 @@ class UserManager:
         return result
 
     async def sign_in(
-        self, email: str = None, phone: str = None, password: str = None, is_login_with_otp: bool = False
+        self, email: str = None, phone: int = None, password: str = None, is_login_with_otp: bool = False
     ) -> dict:
         """Sign in a user by email and password."""
         try:
@@ -294,7 +293,6 @@ class UserManager:
                 return otp
 
             except Exception as ex:
-                print(ex, "ex")
                 raise HTTPException(status_code=500, detail="Internal Server Error")
 
         raise ValueError("Either email or phone must be provided to send OTP.")
@@ -346,7 +344,6 @@ class UserManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -356,9 +353,7 @@ class UserManager:
             user = await User.find_one(User.email == email)
             if user is None:
                 raise HTTPException(status_code=404, detail="User not found with the provided email.")
-            print(otp, "otp")
             if user.otp != otp:
-                print(user.otp, "user")
                 raise HTTPException(status_code=400, detail="Invalid OTP.")
             if datetime.utcnow() > user.otp_expires:
                 raise HTTPException(status_code=400, detail="OTP has expired.")
@@ -385,11 +380,11 @@ class UserManager:
 
             if user.get("otp") != otp:
                 raise HTTPException(status_code=400, detail="Invalid OTP.")
-            if datetime.utcnow() > user.otp_expires:
+            if datetime.utcnow() > user.get("otp_expires"):
                 raise HTTPException(status_code=400, detail="OTP has expired.")
             user.get("is_active") == True
-            await user.save()
-            user_data = user.dict(by_alias=True)
+            await user_collection.update_one({"phone": phone}, {"$set": {"is_active": True}})
+            user_data = user.copy()  # Since `user` is a dictionary, use `copy()`
             user_data["id"] = str(user_data.pop("_id"))
             user_data.pop("password", None)
             user_data.pop("otp", None)
@@ -408,7 +403,7 @@ class UserManager:
         raise HTTPException(status_code=400, detail="Either email or phone must be provided.")
 
     async def reset_password(
-        self, email: Optional[str] = None, phone: Optional[str] = None, password: str = None
+        self, email: Optional[str] = None, phone: Optional[int] = None, password: str = None
     ) -> dict:
         if not password:
             raise HTTPException(status_code=400, detail="Password is required.")
@@ -444,7 +439,6 @@ class UserManager:
             update_data = {}
             if profile_update_request.phone is not None and profile_update_request.secondary_phone_number is not None:
                 if profile_update_request.phone == profile_update_request.secondary_phone_number:
-                    print()
                     raise HTTPException(status_code=400, detail="Phone and secondary phone cannot be the same.")
             if profile_update_request.first_name is not None:
                 update_data["first_name"] = profile_update_request.first_name
@@ -496,7 +490,6 @@ class UserManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -519,7 +512,6 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -890,7 +882,6 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as e:
-            print(e)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     async def get_booking_count_for_slot(self, vendor_id: str, day: str, time_slot: str) -> int:
@@ -955,7 +946,6 @@ class UserManager:
                 if slot["day"] == day:
                     for time_slot in slot.get("time_slots", []):
                         max_seat_count += time_slot.get("max_seat", 0)
-
             return max_seat_count
         except Exception as e:
             return 0
@@ -1337,17 +1327,14 @@ class UserManager:
 
     async def google_login(self, request: Request, token: str):
         try:
-            print(token, "token")
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             return current_user
 
         except HTTPException as ex:
-            print(ex, "ex")
             raise
         except Exception as ex:
-            print(ex, "ex")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
