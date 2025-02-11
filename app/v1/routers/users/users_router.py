@@ -27,7 +27,6 @@ class GoogleLoginRequest(BaseModel):
 async def register_user(sign_up_request: SignUpRequest, user_manager: UserManager = Depends(get_user_manager)):
     validation_result = sign_up_request.validate()
     if validation_result:
-        print(validation_result)
         return validation_result
     try:
         # User registration logic
@@ -39,7 +38,6 @@ async def register_user(sign_up_request: SignUpRequest, user_manager: UserManage
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_409_CONFLICT)
     except Exception as ex:
-        print(ex, "ex")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -55,7 +53,7 @@ async def sign_in_user(sign_in_request: SignInRequest, user_manager: UserManager
     try:
         # Proceed with the sign-in logic after Zon validation
         data = await user_manager.sign_in(
-            sign_in_request.email, sign_in_request.password, sign_in_request.is_login_with_otp
+            sign_in_request.email, sign_in_request.phone, sign_in_request.password, sign_in_request.is_login_with_otp
         )
         if "OTP sent successfully" in data.get("message", ""):
             return data
@@ -84,7 +82,6 @@ async def resend_otp(resend_otp_request: ResendOtpRequest, user_manager: UserMan
         otp = await user_manager.resend_otp(email=resend_otp_request.email, phone=resend_otp_request.phone)
         return success({"message": "OTP resent", "data": None})
     except HTTPException as http_ex:
-        print(http_ex)
         # Explicitly handle HTTPException and return its response
         return failure({"message": "user not found", "data": None})
     except ValueError as ex:
@@ -113,7 +110,6 @@ async def forgot_password(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -164,7 +160,6 @@ async def validate_otp(validate_otp_request: ValidateOtpRequest, user_manager: U
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -213,7 +208,6 @@ async def update_profile(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -273,7 +267,6 @@ async def get_category_list_for_users(user_manager: UserManager = Depends(get_us
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -324,7 +317,6 @@ async def get_vendor_list_for_category(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
         )
@@ -457,14 +449,12 @@ async def change_password(
 async def google_login(request: Request, user_manager: UserManager = Depends(get_user_manager)):
     try:
         result = await user_manager.google_login(request=request)
-        print(result, "result")
         return success({"message": "Google login successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex, "kkkkkkkkkkkkk")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

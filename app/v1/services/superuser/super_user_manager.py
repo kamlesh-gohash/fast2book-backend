@@ -276,10 +276,8 @@ class SuperUserManager:
             user = await User.find_one(User.email == super_user_create_request.email)
             if user is not None:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists")
-            print(super_user_create_request.password, "super_user_create_request.password")
             # Hash the password
             hashed_password = bcrypt.hashpw(super_user_create_request.password.encode("utf-8"), bcrypt.gensalt())
-            print(hashed_password, "hashed_password")
             # Create the user object
             user = User(
                 first_name=super_user_create_request.first_name,

@@ -124,7 +124,7 @@ class User(Document, BaseModel):
     id: Optional[PydanticObjectId] = Field(default=None, alias="_id")  # Explicitly include id
     first_name: str = Field(..., min_length=1, max_length=50)
     last_name: str = Field(default="")
-    email: EmailStr = Indexed(str)
+    email: Optional[EmailStr] = Indexed(str, default=None)  # Make email optional
     otp: Optional[str] = None  # OTP field
     otp_expires: Optional[datetime] = None
     password: str
@@ -155,10 +155,22 @@ class User(Document, BaseModel):
         name = "users"
 
     @staticmethod
-    async def get_user_by_email(email: str):
+    async def get_user_by_email(sub: str):
         # Mock database lookup (replace with your actual DB query)
         try:
-            user = await User.find_one({"email": email})
+            user = await User.find_one({"email": sub})
+            if user:
+                return user
+            else:
+                return None
+        except Exception as e:
+            return None
+
+    @staticmethod
+    async def get_user_by_phone(sub: int):
+        # Mock database lookup (replace with your actual DB query)
+        try:
+            user = await User.find_one({"phone": int(sub)})
             if user:
                 return user
             else:

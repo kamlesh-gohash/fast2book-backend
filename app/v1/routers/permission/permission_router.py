@@ -122,7 +122,6 @@ async def update_permission(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

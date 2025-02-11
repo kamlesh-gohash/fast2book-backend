@@ -199,15 +199,18 @@ class DeleteVendorRequest(BaseModel):
 
 sign_in_vendor_validator = zon.record(
     {
-        "email": zon.string().email(),
-        "password": zon.string().min(6),
+        "email": zon.string().email().optional(),  # Optional email validation
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional phone validation
+        "password": zon.string().min(6).max(20).optional(),
+        "is_login_with_otp": zon.boolean().optional(),
     }
 )
 
 
 class SignInVendorRequest(BaseModel):
-    email: str
-    password: str
+    email: Optional[EmailStr] = None
+    phone: Optional[int] = None
+    password: Optional[str] = None
     is_login_with_otp: bool = False
 
     def validate(self):
@@ -223,7 +226,8 @@ sign_up_vendor_validator = zon.record(
     {
         "first_name": zon.string().min(1).max(50),
         "last_name": zon.string().min(1).max(50),
-        "email": zon.string().email(),
+        "email": zon.string().email().optional(),  # Optional email validation
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional phone validation
         "business_name": zon.string().min(1).max(50),
         "password": zon.string().min(6).max(20),
     }
@@ -233,11 +237,12 @@ sign_up_vendor_validator = zon.record(
 class SignUpVendorRequest(BaseModel):
     first_name: str
     last_name: str
-    email: EmailStr
+    email: Optional[EmailStr] = None  # Make email optional
+    phone: Optional[int] = Field(None)
     # vendor_images: Optional[List[str]] = Field(None, description="Array of vendor image URLs")
     vendor_image: Optional[str] = None
     image_url: Optional[str] = None
-    phone: Optional[str] = Field(None, min_length=10, max_length=10)
+    # phone: Optional[str] = Field(None, min_length=10, max_length=10)
     gender: Gender = Field(default=Gender.male)
     roles: list[Role] = [Role.vendor]
     business_type: BusinessType = Field(default=BusinessType.individual)
