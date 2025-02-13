@@ -61,6 +61,7 @@ jobs:
             --build-arg PORT="${{ vars.PORT }}" \
             --build-arg RAZOR_PAY_KEY_ID="${{ secrets.RAZOR_PAY_KEY_ID }}" \
             --build-arg RAZOR_PAY_KEY_SECRET="${{ secrets.RAZOR_PAY_KEY_SECRET }}" \
+            --build-arg AWS_S3_REGION="${{ secrets.AWS_S3_REGION }}" \
             -t $AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/fast2book-backend:latest \
             --load .
 
@@ -111,4 +112,5 @@ jobs:
             -e PORT="${{ vars.PORT }}" \
             -e RAZOR_PAY_KEY_ID="${{ secrets.RAZOR_PAY_KEY_ID }}" \
             -e RAZOR_PAY_KEY_SECRET="${{ secrets.RAZOR_PAY_KEY_SECRET }}" \
+            -e AWS_S3_REGION="${{ secrets.AWS_S3_REGION }}" \
             $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/fast2book-backend:latest
