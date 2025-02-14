@@ -723,7 +723,7 @@ class BookingManager:
             )
 
             await booking_collection.update_one(
-                {"_id": ObjectId(id)}, {"$set": {"booking_order_id": razorpay_order["id"],"amount":total_charges}}
+                {"_id": ObjectId(id)}, {"$set": {"booking_order_id": razorpay_order["id"], "amount": total_charges}}
             )
 
             return {

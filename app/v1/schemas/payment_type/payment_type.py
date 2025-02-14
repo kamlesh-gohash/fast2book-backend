@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Literal
+from typing import Literal, Optional
 
 import bcrypt
 import zon
