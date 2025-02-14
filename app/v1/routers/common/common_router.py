@@ -24,6 +24,7 @@ async def upload_file(
             "1": "services",
             "2": "vendors",
             "3": "blog",
+            "4": "costumers",
         }
 
         folder_name = folder_mapping.get(type, "other")

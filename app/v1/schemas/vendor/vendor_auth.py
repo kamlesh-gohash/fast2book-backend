@@ -138,7 +138,7 @@ update_vendor_validator = zon.record(
         "first_name": zon.string().min(1).max(50).optional(),
         "last_name": zon.string().min(1).max(50).optional(),
         "email": zon.string().email().optional(),
-        "phone": zon.string().min(10).max(10).optional(),
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),
         "vendor_address": zon.string().optional(),
         "vendor_details": zon.string().optional(),
     }
@@ -149,9 +149,11 @@ class UpdateVendorRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    phone: Optional[int] = None
     gender: Gender = Field(default=Gender.male)
     roles: list[Role] = [Role.vendor]
+    user_image: Optional[str] = None
+    user_image_url: Optional[str] = None
     business_type: Optional[BusinessType] = Field(default=BusinessType.individual)
     business_name: Optional[str] = Field(None, max_length=100)
     business_address: Optional[str] = Field(None, max_length=255)
@@ -240,8 +242,8 @@ class SignUpVendorRequest(BaseModel):
     email: Optional[EmailStr] = None  # Make email optional
     phone: Optional[int] = Field(None)
     # vendor_images: Optional[List[str]] = Field(None, description="Array of vendor image URLs")
-    vendor_image: Optional[str] = None
-    image_url: Optional[str] = None
+    user_image: Optional[str] = None
+    user_image_url: Optional[str] = None
     # phone: Optional[str] = Field(None, min_length=10, max_length=10)
     gender: Gender = Field(default=Gender.male)
     roles: list[Role] = [Role.vendor]
@@ -374,7 +376,12 @@ class VendorUserUpdateRequest(BaseModel):
         return None
 
 
-vendor_subscription_validator = zon.record({"subscription_id": zon.string(), "subscription_status": zon.string()})
+vendor_subscription_validator = zon.record(
+    {
+        "plan_id": zon.string(),
+        "vendor_id": zon.string().optional(),
+    }
+)
 
 
 class VendorSubscriptionRequest(BaseModel):

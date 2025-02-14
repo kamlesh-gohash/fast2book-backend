@@ -31,6 +31,8 @@ class PaymentManager:
                         "name": payment["name"],
                         "status": payment["status"],
                         "created_at": payment["created_at"],
+                        "charge_type": payment["charge_type"],
+                        "charge_value": payment["charge_value"],
                     }
                 )
             total_count = await payment_collection.count_documents(query)
@@ -60,6 +62,15 @@ class PaymentManager:
             update_data = {}
             if update_payment_request.status is not None:
                 update_data["status"] = update_payment_request.status
+            if update_payment_request.charge_type not in ["percentage", "fixed"]:
+                raise HTTPException(status_code=400, detail="Invalid charge type")
+            if update_payment_request.charge_value <= 0:
+                raise HTTPException(status_code=400, detail="Charge value must be greater than 0")
+            if update_payment_request.charge_type is not None:
+                update_data["charge_type"] = update_payment_request.charge_type
+            if update_payment_request.charge_value is not None:
+                update_data["charge_value"] = update_payment_request.charge_value
+
             if not update_data:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields provided for update"
@@ -73,6 +84,8 @@ class PaymentManager:
                 "id": str(update_payment["_id"]),
                 "name": update_payment.get("name"),
                 "status": update_payment.get("status"),
+                "charge_type": update_payment.get("charge_type"),
+                "charge_value": update_payment.get("charge_value"),
             }
 
         except HTTPException as e:

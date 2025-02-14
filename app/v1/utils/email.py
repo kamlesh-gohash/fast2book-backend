@@ -275,13 +275,11 @@ sns_client = boto3.client(
 async def send_sms_on_phone(to_phone: str, otp: str, expiry_minutes: int = 10):
     try:
         formatted_phone = f"+91{to_phone}"
-        print(formatted_phone, "formatted phone")
         message = f"Your OTP for login to Fast2Book is {otp}. This OTP is valid for {expiry_minutes} minutes. Do not share this with anyone. - Fast2Book"
         print(message, "message")
         # Send SMS
         response = sns_client.publish(PhoneNumber=formatted_phone, Message=message)
 
-        print(response, "response")
         return {"message": "OTP sent successfully", "otp": otp, "sns_response": response}
 
     except Exception as e:

@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 
 from app.v1.dependencies import get_support_manager, get_user_manager
 from app.v1.middleware.auth import get_token_from_header
@@ -306,11 +306,15 @@ async def get_vendor_list_for_category(
     category_slug: str,
     service_id: str = None,  # Optional query parameter
     address: str = None,  # New optional query parameter
+    page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     user_manager: UserManager = Depends(get_user_manager),
 ):
     try:
         # Pass service_id to the user manager
-        result = await user_manager.get_vendor_list_for_category(category_slug, service_id=service_id, address=address)
+        result = await user_manager.get_vendor_list_for_category(
+            category_slug, service_id=service_id, address=address, page=page, limit=limit
+        )
         return success({"message": "Vendor list fetched successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -454,6 +458,79 @@ async def google_login(request: Request, user_manager: UserManager = Depends(get
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vendor-list-for-category-id/{category_slug}", status_code=status.HTTP_200_OK)
+async def get_vendor_list_for_category_id(
+    category_slug: str,
+    service_id: str = None,  # Optional query parameter
+    address: str = None,  # New optional query parameter
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    try:
+        # Pass service_id to the user manager
+        result = await user_manager.get_vendor_list_for_category_id(
+            category_slug, service_id=service_id, address=address
+        )
+        return success({"message": "Vendor list fetched successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+        )
+
+
+@router.get("/blog-list", status_code=status.HTTP_200_OK)
+async def blog_list(
+    page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    search: str = Query(None, description="Search term to filter categories by name or category name"),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    # validation_result = category_list_request.validate()
+    # if validation_result:
+    #     return validation_result
+    try:
+        result = await user_manager.blog_list(page, limit, search)
+        return success({"message": "Blog List found successfully", "data": result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-blog/{id}", status_code=status.HTTP_200_OK)
+async def get_blog(
+    id: str = Path(..., title="The ID of the blog to retrieve"),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    try:
+        # Call the BlogManager to retrieve the blog by id
+        result = await user_manager.get_blog_by_id(id)
+
+        if not result:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blog not found")
+
+        return success({"message": "Blog found successfully", "data": result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=validation_error(str(e)))
     except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},

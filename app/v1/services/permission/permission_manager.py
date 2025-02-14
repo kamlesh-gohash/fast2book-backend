@@ -250,7 +250,6 @@ class PermissionManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex, "ex")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",

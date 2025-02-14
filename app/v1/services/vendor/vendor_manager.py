@@ -112,14 +112,11 @@ class VendorManager:
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-            existing_user = await user_collection.find_one(
-                {
-                    "$or": [
-                        {"email": {"$eq": create_vendor_request.email, "$nin": [None, ""]}},
-                        {"phone": {"$eq": create_vendor_request.phone, "$nin": [None, ""]}},
-                    ]
-                }
-            )
+            if create_vendor_request.email:
+                existing_user = await user_collection.find_one({"email": create_vendor_request.email})
+
+            if create_vendor_request.phone:
+                existing_user = await user_collection.find_one({"phone": create_vendor_request.phone})
 
             if existing_user:
                 raise HTTPException(
@@ -167,13 +164,18 @@ class VendorManager:
                 }
                 for service in valid_services
             ]
+            image_name = create_vendor_request.user_image
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
             user_data = {
                 "first_name": create_vendor_request.first_name,
                 "last_name": create_vendor_request.last_name,
                 "email": create_vendor_request.email,
-                "phone": create_vendor_request.phone,
+                "phone": int(create_vendor_request.phone) if create_vendor_request.phone else None,
                 "gender": create_vendor_request.gender,
                 "roles": create_vendor_request.roles,
+                "user_image": create_vendor_request.user_image,
+                "user_image_url": file_url,
                 "password": hashed_password,
                 "status": create_vendor_request.status,
                 "is_dashboard_created": create_vendor_request.is_dashboard_created,
@@ -186,7 +188,7 @@ class VendorManager:
             # image_name = create_vendor_request.vendor_image
             # bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
             # print(bucket_name, "bucket_name")
-            # file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
+            # file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
             # Prepare Vendor data
             vendor_data = {
                 "user_id": str(user_result.inserted_id),
@@ -214,6 +216,7 @@ class VendorManager:
                 "is_payment_verified": create_vendor_request.is_payment_verified,
                 "fees": create_vendor_request.fees,
                 "status": create_vendor_request.status,
+                "is_subscription": create_vendor_request.is_subscription,
                 "created_at": datetime.utcnow(),
                 "location": (
                     create_vendor_request.location.dict() if create_vendor_request.location else None
@@ -225,213 +228,6 @@ class VendorManager:
             # vendor_data["razorpay_account_id"] = razorpay_response["id"]
             # Insert vendor data into the database
             vendor_result = await vendor_collection.insert_one(vendor_data)
-            # razorpay_api_url = "https://api.razorpay.com/v1/contacts"
-            # api_key = "rzp_test_wQ89Kb3cFIAsHE"  # Replace with your Razorpay API key
-            # api_secret = "ycpwHlxyJPUYv8w2BZwIL4XF"  # Replace with your Razorpay API secret
-            # auth_string = f"{api_key}:{api_secret}"
-            # auth_bytes = auth_string.encode("ascii")
-            # base64_auth = base64.b64encode(auth_bytes).decode("ascii")
-
-            # headers = {
-            #     "Content-Type": "application/json",
-            #     "Authorization": f"Basic {base64_auth}"
-            # }
-
-            # contact_data = {
-            #     "name": create_vendor_request.first_name,
-            #     "email": create_vendor_request.email,
-            #     "contact": create_vendor_request.phone,
-            #     "type": "vendor",
-            #     "reference_id": str(vendor_result.inserted_id),
-            #     "notes": {
-            #         "vendor_id": str(vendor_result.inserted_id)
-            #     }
-            # }
-
-            # response = requests.post(razorpay_api_url, json=contact_data, headers=headers)
-            # print(response, 'response')
-            # if response.status_code != 201:
-            #     print(response.json(), 'response')
-            #     raise HTTPException(status_code=response.status_code, detail=response.json())
-
-            # contact = response.json()
-            # print(contact, 'contact')
-
-            # # Create a fund account using Razorpay Payouts API
-            # fund_account_url = "https://api.razorpay.com/v1/fund_accounts"
-            # fund_account_data = {
-            #     "contact_id": contact["id"],
-
-            #     "account_type": "bank_account",
-            #     "bank_account": {
-            #         "name": "Gaurav Kumar",
-            #         "ifsc": create_vendor_request.ifsc,
-            #         "account_number": create_vendor_request.bank_account_number
-            #     }
-            # }
-
-            # response = requests.post(fund_account_url, json=fund_account_data, headers=headers)
-            # if response.status_code != 201:
-            #     raise HTTPException(status_code=response.status_code, detail=response.json())
-
-            # fund_account = response.json()
-            # print(fund_account, 'fund_account')
-            #     sub_account = razorpay_client.account.create({
-            #     "email": create_vendor_request.email,
-            #     "phone": create_vendor_request.phone,
-            #     "legal_business_name":create_vendor_request.business_name,
-            #     "business_type":"partnership",
-            #     "profile": {
-            #     "category": "healthcare",
-            #     "subcategory": "clinic",
-            #     "addresses": {
-            #         "operation": {
-            #             "street1": "507, Koramangala 6th block",
-            #             "street2": "Kormanagala",
-            #             "city": "Bengaluru",
-            #             "state": "Karnataka",
-            #             "postal_code": 560047,
-            #             "country": "IN"
-            #         },
-            #         "registered": {
-            #             "street1": "507, Koramangala 1st block",
-            #             "street2": "MG Road",
-            #             "city": "Bengaluru",
-            #             "state": "Karnataka",
-            #             "postal_code": 560034,
-            #             "country": "IN"
-            #         }
-            #         },
-            #     },
-            #     "type": "route",  # Required for routing payments
-            #     "contact_name":create_vendor_request.first_name,
-
-            # })
-            #     print(sub_account, "sub_account")
-            #     vendor_data["razorpay_account_id"] = sub_account["id"]
-            #     await vendor_collection.update_one(
-            #         {"_id": vendor_result.inserted_id},
-            #         {"$set": {"razorpay_account_id": sub_account["id"]}},
-            #     )
-            #     stakeholder = razorpay_client.stakeholder.create(sub_account["id"], {
-            #         "name": create_vendor_request.first_name + " " + create_vendor_request.last_name,
-            #         "email": create_vendor_request.email,
-            #         "phone": {
-            #         "primary": create_vendor_request.phone,
-            #         "secondary": "9000090000"
-            #     },
-            #         "relationship": {
-            #             "director": True,
-            #             "executive": True
-            #         },
-            #         "notes": {
-            #             "role": "Vendor"
-            #         }
-            #     })
-
-            #     print(stakeholder, "stakeholder")
-
-            # Add bank account details for the sub-account
-            # bank_account = razorpay_client.bank_account.create(sub_account["id"], {
-            #     "account_number": create_vendor_request.bank_account_number,  # Pass bank account number from request
-            #     "ifsc_code": create_vendor_request.ifsc,  # Pass IFSC code from request
-            #     "name": create_vendor_request.first_name,  # Pass account holder name from request
-            #     "account_type": create_vendor_request.account_type,  # Can be "bank_account" or "current"
-            # })
-            # razorpay_api_url = f"https://api.razorpay.com/v1/accounts/{sub_account['id']}/stakeholders/{stakeholder['id']}/bank_accounts"
-            # print(razorpay_api_url, "razorpay_api_url")
-
-            # # Encode API key and secret for Basic Auth
-            # api_key = os.getenv("RAZOR_PAY_KEY_ID")  # Replace with your Razorpay API key
-            # api_secret = os.getenv("RAZOR_PAY_KEY_SECRET")  # Replace with your Razorpay API secret
-            # auth_string = f"{api_key}:{api_secret}"
-            # auth_bytes = auth_string.encode("ascii")
-            # base64_auth = base64.b64encode(auth_bytes).decode("ascii")
-
-            # headers = {
-            #     "Content-Type": "application/json",
-            #     "Authorization": f"Basic {base64_auth}"  # Use your Razorpay API key and secret
-            # }
-            # print(headers, 'headers')
-
-            # bank_account_data = {
-            #     "account_number": create_vendor_request.bank_account_number,  # Pass bank account number from request
-            #     "ifsc_code": create_vendor_request.ifsc,  # Pass IFSC code from request
-            #     "name": create_vendor_request.first_name,  # Pass account holder name from request
-            #     "account_type": create_vendor_request.account_type,  # Can be "bank_account" or "current"
-            # }
-            # print(bank_account_data, 'bank_account_data')
-
-            # response = requests.post(razorpay_api_url, json=bank_account_data, headers=headers)
-            # print(response, 'response')
-            # if response.status_code != 201:
-            #     print(response.json())
-            #     raise HTTPException(status_code=response.status_code, detail=response.json())
-
-            # bank_account = response.json()
-            # print(bank_account, "bank_account")
-
-            #     razorpay_api_url = f"https://api.razorpay.com/v1/accounts/{sub_account['id']}/bank_account"
-
-            #     # Get API credentials
-            #     api_key = os.getenv("RAZOR_PAY_KEY_ID")
-            #     api_secret = os.getenv("RAZOR_PAY_KEY_SECRET")
-
-            #     # Create Basic Auth header
-            #     auth_string = f"{api_key}:{api_secret}"
-            #     auth_bytes = auth_string.encode("ascii")
-            #     base64_auth = base64.b64encode(auth_bytes).decode("ascii")
-
-            #     headers = {
-            #         "Content-Type": "application/json",
-            #         "Authorization": f"Basic {base64_auth}"
-            #     }
-
-            #     bank_account_data = {
-            #         "account_number": create_vendor_request.bank_account_number,
-            #         "ifsc_code": create_vendor_request.ifsc,  # Note: changed from 'ifsc' to 'ifsc_code'
-            #         "name": create_vendor_request.first_name,
-            #         "account_type": create_vendor_request.account_type.lower(),
-            #     }
-
-            #     print("Bank Account Request Data:", bank_account_data)  # Debug print
-            #     print("Request URL:", razorpay_api_url)  # Debug print
-
-            #     response = requests.post(razorpay_api_url, json=bank_account_data, headers=headers)
-
-            #     if response.status_code not in [200, 201]:
-            #         print(f"Bank account creation failed: {response.text}")
-            #         raise HTTPException(
-            #             status_code=status.HTTP_400_BAD_REQUEST,
-            #             detail=f"Failed to create bank account: {response.text}"
-            #         )
-
-            #     bank_account = response.json()
-            #     print("Bank Account Response:", bank_account)
-
-            #     print(bank_account, "bank_account")
-            #     route = razorpay_client.route.create({
-            #     "account_id": sub_account["id"],
-            #     "bank_account_id": bank_account["id"],  # Link the bank account to the route
-            #     "payments": {
-            #         "criteria": [
-            #             {
-            #                 "payment_method": "all",
-            #                 "settlement_type": "instant",
-            #                 "split": {
-            #                     "unit": "percent",
-            #                     "value": 100 - float(create_vendor_request.fees)
-            #                 }
-            #             }
-            #         ]
-            #     },
-            #     "settlements": {
-            #         "auto": True,
-            #         "bank_account_id": bank_account["id"]
-            #     }
-            # })
-            #     print(route, "route")
-            # Prepare response data
             response_data = {
                 "first_name": create_vendor_request.first_name,
                 "last_name": create_vendor_request.last_name,
@@ -542,6 +338,8 @@ class VendorManager:
                 vendor["first_name"] = vendor["first_name"].capitalize()
                 vendor["last_name"] = vendor["last_name"].capitalize()
                 vendor["email"] = vendor["email"].lower()
+                vendor["user_image"] = vendor["user_image"]
+                vendor["user_image_url"] = vendor["user_image_url"]
 
                 # Fetch vendor-specific data
                 vendor_details = await vendor_collection.find_one({"user_id": vendor_id})
@@ -607,6 +405,8 @@ class VendorManager:
             result["last_name"] = result["last_name"].capitalize()
             result["email"] = result["email"]
             result["phone"] = result["phone"]
+            result["user_image"] = result["user_image"]
+            result["user_image_url"] = result["user_image_url"]
             if result["phone"]:
                 result["phone"] = result["phone"]
             else:
@@ -669,6 +469,17 @@ class VendorManager:
 
             # Prepare update data for user collection
             user_update_data = {}
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+
+            if update_vendor_request.user_image:
+                image_name = update_vendor_request.user_image
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+                user_update_data["user_image"] = image_name
+                user_update_data["user_image_url"] = file_url
+            else:
+                file_url = (
+                    f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{vendor.get('user_image')}"
+                )
             for field in ["first_name", "last_name", "email", "phone", "gender"]:
                 value = getattr(update_vendor_request, field, None)
                 if value is not None:
@@ -778,6 +589,8 @@ class VendorManager:
                 "email": updated_user.get("email"),
                 "phone": updated_user.get("phone"),
                 "gender": updated_user.get("gender"),
+                "user_image": updated_user.get("user_image"),
+                "user_image_url": updated_user.get("user_image_url"),
                 "business_type": updated_vendor.get("business_type"),
                 "business_details": updated_vendor.get("business_details"),
                 "business_address": updated_vendor.get("business_address"),
@@ -795,7 +608,6 @@ class VendorManager:
             }
 
         except Exception as ex:
-            print(ex, "ex")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def delete_vendor(self, request: Request, token: str, id: str):
@@ -839,16 +651,26 @@ class VendorManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def vendor_sign_in(self, vendor_request: SignInVendorRequest):
+    async def vendor_sign_in(
+        self,
+        vendor_request: SignInVendorRequest,
+    ):
         try:
             # Search user by email or phone
-            query = {"$or": [{"email": vendor_request.email}, {"phone": vendor_request.phone}]}
+            # query = {"$or": [{"email": vendor_request.email}, {"phone": vendor_request.phone}]}
+            if vendor_request.email:
+                query = {"email": vendor_request.email}
+            elif vendor_request.phone:
+                query = {"phone": vendor_request.phone}
+            else:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email or phone is required")
             vendor = await user_collection.find_one(query)
 
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            if "roles" not in vendor or "vendor" not in vendor["roles"]:
+            if "vendor" not in vendor["roles"]:
+
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not a vendor")
 
             if vendor_request.is_login_with_otp:
@@ -860,7 +682,7 @@ class VendorManager:
 
                 if vendor.get("email"):
                     # Send OTP to email
-                    source = "Login with OTP"
+                    source = "Login With Otp"
                     context = {"otp": otp}
                     to_email = vendor["email"]
                     await send_email(to_email, source, context)
@@ -993,7 +815,7 @@ class VendorManager:
                 "first_name": vendor_request.first_name,
                 "last_name": vendor_request.last_name,
                 "email": vendor_request.email,  # May be None
-                "phone": vendor_request.phone,  # May be None
+                "phone": int(vendor_request.phone) if vendor_request.phone else None,
                 "otp": otp,
                 "otp_expires": datetime.utcnow() + timedelta(minutes=10),
                 "roles": vendor_request.roles,
@@ -1071,6 +893,8 @@ class VendorManager:
                 vendor["email"] = vendor["email"] or ""
 
             vendor["created_by"] = vendor.get("created_by", "Unknown")
+            vendor["user_image"] = vendor.get("user_image", "")
+            vendor["user_image_url"] = vendor.get("user_image_url", "")
             if vendor_data:
                 vendor_data["id"] = str(vendor_data.pop("_id"))
                 vendor.update(vendor_data)
@@ -1091,6 +915,7 @@ class VendorManager:
             # Update user profile in user_collection
             user_query = {"_id": ObjectId(current_user.id)}
             user_data = {}
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
 
             if update_vendor_request.first_name is not None:
                 user_data["first_name"] = update_vendor_request.first_name
@@ -1100,7 +925,13 @@ class VendorManager:
                 user_data["email"] = update_vendor_request.email
             if update_vendor_request.phone is not None:
                 user_data["phone"] = update_vendor_request.phone
-
+            if update_vendor_request.user_image:
+                image_name = update_vendor_request.user_image
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+                user_data["user_image"] = image_name
+                user_data["user_image_url"] = file_url
+            else:
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{current_user.get('user_image')}"
             # If there are updates to user data, update user_collection
             if user_data:
                 await user_collection.update_one(user_query, {"$set": user_data})
@@ -1208,6 +1039,8 @@ class VendorManager:
                 "last_name": updated_user.get("last_name"),
                 "email": updated_user.get("email"),
                 "phone": updated_user.get("phone"),
+                "user_image": updated_user.get("user_image"),
+                "user_image_url": updated_user.get("user_image_url"),
                 "vendor_details": {
                     "business_details": updated_vendor.get("business_details"),
                     "business_name": updated_vendor.get("business_name"),
@@ -2059,42 +1892,50 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
+            # Check if the user has the "vendor" role
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Fetch the vendor details
             current_user_id = str(current_user.id)
             vendor = await vendor_collection.find_one({"user_id": current_user_id})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
+            # Fetch the plan details from Razorpay
             plan_details = razorpay_client.plan.fetch(vendor_subscription_request.plan_id)
-            interval_count = plan_details.get("interval", 1)
-            period = plan_details.get("period", "monthly")
-            period_to_relativedelta = {
-                "daily": "days",
-                "weekly": "weeks",
-                "monthly": "months",
-                "yearly": "years",
-            }
-            if period not in period_to_relativedelta:
+
+            # Extract interval and period from the plan
+            interval = plan_details.get("interval", 1)  # Default to 1 if not specified
+            period = plan_details.get("period", "monthly").lower()
+
+            # Validate the period
+            if period not in ["daily", "weekly", "monthly", "yearly"]:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
                 )
 
-            start_at = datetime.now()
-            relativedelta_key = period_to_relativedelta[period]
-            expire_at = start_at + relativedelta(
-                **{relativedelta_key: interval_count * vendor_subscription_request.total_count}
-            )
-            expire_by_unix = int(expire_at.timestamp())
-            customer_id = vendor["razorpay_customer_id"]
+            # Calculate the total_count based on the subscription duration
+            # For example, if the user wants a 1-year subscription and the plan is monthly,
+            # total_count = 12 (12 months in a year)
+            if period == "monthly":
+                total_count = vendor_subscription_request.total_count * 12  # Convert years to months
+            elif period == "yearly":
+                total_count = vendor_subscription_request.total_count  # No conversion needed
+            elif period == "weekly":
+                total_count = vendor_subscription_request.total_count * 52  # Convert years to weeks
+            elif period == "daily":
+                total_count = vendor_subscription_request.total_count * 365  # Convert years to days
+
+            # Prepare the subscription data for Razorpay
             razorpay_subscription_data = {
                 "plan_id": vendor_subscription_request.plan_id,
-                "total_count": vendor_subscription_request.total_count,
-                "quantity": vendor_subscription_request.quantity,
-                "expire_by": expire_by_unix,
-                "customer_notify": True,
-                "customer_id": customer_id,
+                "total_count": total_count,  # Total number of billing cycles
+                "quantity": vendor_subscription_request.quantity,  # Quantity of the plan
+                "customer_notify": True,  # Notify the customer
             }
+
+            # Create the subscription in Razorpay
             try:
                 razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
             except Exception as e:
@@ -2103,22 +1944,24 @@ class VendorManager:
                     detail=f"Failed to create Razorpay subscription: {str(e)}",
                 )
 
+            # Update the vendor's subscription details in the database
             vendor_update_data = {
                 "manage_plan": vendor_subscription_request.plan_id,
                 "razorpay_subscription_id": razorpay_subscription["id"],
-                "start_at": start_at,
-                "expire_by": expire_at,
+                "is_subscription": True,
             }
             result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
             if result.modified_count == 0:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
-            razorpay_subscription = razorpay_client.subscription.fetch("sub_PpC2d9zqEYcoV1")
 
+            # Fetch the subscription details from Razorpay
+            razorpay_subscription_details = razorpay_client.subscription.fetch(razorpay_subscription["id"])
+
+            # Return the subscription details
             return {
                 "subscription_id": razorpay_subscription["id"],
                 "subscription_url": razorpay_subscription["short_url"],
-                "start_at": start_at,
-                "expire_by": expire_at,
+                "start_at": datetime.now(),  # Subscription start time
             }
 
         except HTTPException as e:
@@ -2129,7 +1972,7 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    async def subscription_payment(self, request: Request, token: str, subscription_id: str):
+    async def subscription_payment_details(self, request: Request, token: str):
         try:
             # Get the current user
             current_user = await get_current_user(request=request, token=token)
@@ -2138,36 +1981,46 @@ class VendorManager:
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
+            # Fetch the vendor details
+            current_user_id = str(current_user.id)
+            vendor = await vendor_collection.find_one({"user_id": current_user_id})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            if not vendor.get("razorpay_subscription_id"):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+
+            # Check if the subscription is active
+            subscription_id = vendor.get("razorpay_subscription_id")
+            subscription = await razorpay_client.subscription.fetch(subscription_id)
+            status = subscription.get("status")
+            if status != "Active":
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subscription is not active")
+
+            # Fetch the subscription details from Razorpay
+
             subscription = await razorpay_client.subscription.fetch(subscription_id)
             plan_id = subscription.get("plan_id")
             plan_details = await razorpay_client.plan.fetch(plan_id)
             amount = plan_details.get("amount")
 
-            if not amount:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount not found in plan details")
+            # if not amount:
+            #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount not found in plan details")
 
-            order_data = {
-                "amount": amount,
-                "currency": "INR",
-                "payment_capture": 1,
-                "receipt": subscription_id,
-                "notes": {
-                    "subscription_id": subscription_id,
-                },
-            }
+            # order_data = {
+            #     "amount": amount,
+            #     "currency": "INR",
+            #     "payment_capture": 1,
+            #     "receipt": subscription_id,
+            #     "notes": {
+            #         "subscription_id": subscription_id,
+            #     },
+            # }
 
-            order = await razorpay_client.order.create(data=order_data)
-            if not order or "id" not in order:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create order")
+            # order = await razorpay_client.order.create(data=order_data)
+            # if not order or "id" not in order:
+            #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create order")
 
-            return {
-                "message": "Order created successfully",
-                "order_id": order["id"],
-                "amount": amount,
-                "currency": "INR",
-                "subscription_id": subscription_id,
-                "order_url": f"https://rzp.io/i/{order['id']}",
-            }
+            return {"subscription_details": subscription, "plan_details": plan_details}
 
         except HTTPException as e:
             raise e
@@ -2204,7 +2057,6 @@ class VendorManager:
         try:
             # Get the current user
             current_user = await get_current_user(request=request, token=token)
-            print(current_user)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:

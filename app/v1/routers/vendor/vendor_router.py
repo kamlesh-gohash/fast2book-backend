@@ -705,17 +705,14 @@ async def create_vendor_subscription(
         )
 
 
-@router.post("/subscription-payment/{subscription_id}", status_code=status.HTTP_200_OK)
-async def subscription_payment(
+@router.post("/verify-subscription-payment", status_code=status.HTTP_200_OK)
+async def subscription_payment_details(
     request: Request,
-    subscription_id: str,
     token: str = Depends(get_token_from_header),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.subscription_payment(
-            request=request, token=token, subscription_id=subscription_id
-        )
+        result = await vendor_manager.subscription_payment_details(request=request, token=token)
         return success({"message": "payment successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

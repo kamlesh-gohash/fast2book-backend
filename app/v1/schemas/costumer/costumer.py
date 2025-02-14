@@ -35,7 +35,7 @@ costumer_create_validator = zon.record(
         "first_name": zon.string().min(1).max(50),
         "last_name": zon.string().min(1).max(50),
         "email": zon.string().email(),
-        "phone": zon.string().min(10).max(10),
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),
         "password": zon.string().min(6).max(20),
     }
 )
@@ -45,8 +45,10 @@ class CostumerCreateRequest(BaseModel):
     first_name: str
     last_name: str
     email: EmailStr
-    phone: str
+    phone: Optional[int] = None
     gender: Gender = Field(default=Gender.male)
+    user_image: Optional[str] = None
+    user_image_url: Optional[str] = None
     roles: list[Role] = [Role.user]
     status: StatusEnum = StatusEnum.ACTIVE
     costumer_address: Optional[str] = None
@@ -110,7 +112,7 @@ update_costumer_validator = zon.record(
         "first_name": zon.string().min(1).max(50).optional(),
         "last_name": zon.string().min(1).max(50).optional(),
         "email": zon.string().email().optional(),
-        "phone": zon.string().min(10).max(10).optional(),
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),
         "costumer_address": zon.string().optional(),
         "costumer_details": zon.string().optional(),
     }
@@ -121,7 +123,9 @@ class UpdateCostumerRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    user_image: Optional[str] = None
+    user_image_url: Optional[str] = None
+    phone: Optional[int] = None
     status: StatusEnum = StatusEnum.ACTIVE
     gender: Gender = Gender.male
     costumer_address: Optional[str] = None
