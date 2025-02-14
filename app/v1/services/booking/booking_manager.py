@@ -196,7 +196,6 @@ class BookingManager:
             if not service:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
             amount = booking_details["amount"]
-            print(amount, "amount")
             payment_method = "Razorpay"
             payment_config = await payment_collection.find_one({"name": payment_method})
             if not payment_config:
@@ -698,6 +697,7 @@ class BookingManager:
                 )
 
             # amount = int(booking["amount"] * 100)
+            # print(amount,'amount in booking payment')
             amount = float(booking["amount"])
             payment_method = "Razorpay"
             payment_config = await payment_collection.find_one({"name": payment_method})
@@ -723,14 +723,14 @@ class BookingManager:
             )
 
             await booking_collection.update_one(
-                {"_id": ObjectId(id)}, {"$set": {"booking_order_id": razorpay_order["id"]}}
+                {"_id": ObjectId(id)}, {"$set": {"booking_order_id": razorpay_order["id"],"amount":total_charges}}
             )
 
             return {
                 "data": {
                     "order_id": str(booking["_id"]),
                     "razorpay_order_id": razorpay_order["id"],
-                    "amount": total_amount,
+                    "amount": amount,
                     "currency": order_currency,
                 }
             }
