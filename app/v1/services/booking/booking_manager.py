@@ -17,6 +17,7 @@ from app.v1.middleware.auth import get_current_user
 from app.v1.models import (
     booking_collection,
     category_collection,
+    payment_collection,
     services_collection,
     slots_collection,
     user_collection,
@@ -194,6 +195,24 @@ class BookingManager:
             service = await services_collection.find_one({"_id": ObjectId(booking_details["service_id"])})
             if not service:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+            amount = booking_details["amount"]
+            print(amount, "amount")
+            payment_method = "Razorpay"
+            payment_config = await payment_collection.find_one({"name": payment_method})
+            if not payment_config:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+
+            admin_charge_type = payment_config.get("charge_type")  # 'percentage' or 'fixed'
+            admin_charge_value = payment_config.get("charge_value")  # e.g., 10 for 10% or 50 for $50
+
+            if admin_charge_type == "percentage":
+                admin_charge = (admin_charge_value / 100) * amount
+            elif admin_charge_type == "fixed":
+                admin_charge = admin_charge_value
+            else:
+                admin_charge = 0
+
+            total_amount = amount + admin_charge
 
             booking_data = {
                 "id": str(booking_details["_id"]),
@@ -221,6 +240,8 @@ class BookingManager:
                 "payment_status": booking_details["payment_status"],
                 "booking_order_id": booking_details["booking_order_id"],
                 "amount": booking_details["amount"],
+                "platform_fee": admin_charge,
+                "total_amount": total_amount,
                 "created_at": booking_details["created_at"],
             }
 
@@ -600,15 +621,20 @@ class BookingManager:
                     booking["user_name"] = user["first_name"]
                     booking["user_email"] = user["email"]
                 vendor_id = booking["vendor_id"]
-                vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
-                if vendor:
-                    vendor_user_id = vendor["user_id"]
-                    booking["business_name"] = vendor["business_name"]
-                    booking["business_type"] = vendor["business_type"]
-                vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
-                if vendor_user:
-                    booking["vendor_email"] = vendor_user["email"]
-                    booking["vendor_name"] = vendor_user["first_name"]
+                vendor = await vendor_collection.find_one({"_id": vendor_id})
+                vendor_id = booking.get("vendor_id")
+                if vendor_id:
+                    vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+                    if vendor:
+                        booking["business_name"] = vendor.get("business_name")  # Fetch business name
+                        booking["business_type"] = vendor.get("business_type")
+
+                        vendor_user_id = vendor.get("user_id")  # Use .get() to avoid KeyError
+                        if vendor_user_id:  # Only query if vendor_user_id exists
+                            vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
+                            if vendor_user:
+                                booking["vendor_email"] = vendor_user.get("email")
+                                booking["vendor_name"] = vendor_user.get("first_name")
                 booking["user_id"] = str(booking["user_id"])
                 booking["vendor_id"] = str(booking["vendor_id"])
                 category_id = booking["category_id"]
@@ -670,10 +696,30 @@ class BookingManager:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="Amount is missing or invalid in booking"
                 )
-            order_amount = int(booking["amount"] * 100)
+
+            # amount = int(booking["amount"] * 100)
+            amount = float(booking["amount"])
+            payment_method = "Razorpay"
+            payment_config = await payment_collection.find_one({"name": payment_method})
+            if not payment_config:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+
+            admin_charge_type = payment_config.get("charge_type")  # 'percentage' or 'fixed'
+            admin_charge_value = payment_config.get("charge_value")  # e.g., 10 for 10% or 50 for $50
+
+            if admin_charge_type == "percentage":
+                admin_charge = (admin_charge_value / 100) * amount
+            elif admin_charge_type == "fixed":
+                admin_charge = admin_charge_value
+            else:
+                admin_charge = 0
+
+            total_charges = amount + admin_charge
+            total_amount = int(total_charges * 100)
+
             order_currency = "INR"
             razorpay_order = razorpay_client.order.create(
-                {"amount": order_amount, "currency": order_currency, "receipt": f"booking_{id}", "payment_capture": 1}
+                {"amount": total_amount, "currency": order_currency, "receipt": f"booking_{id}", "payment_capture": 1}
             )
 
             await booking_collection.update_one(
@@ -684,7 +730,7 @@ class BookingManager:
                 "data": {
                     "order_id": str(booking["_id"]),
                     "razorpay_order_id": razorpay_order["id"],
-                    "amount": booking["amount"],
+                    "amount": total_amount,
                     "currency": order_currency,
                 }
             }
@@ -752,7 +798,7 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def user_booking_resulding(self, request: Request, token: str, booking_id: str):
+    async def user_booking_resulding(self, request: Request, token: str, booking_id: str, reason_for_reschulding):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -761,6 +807,61 @@ class BookingManager:
             booking = await booking_collection.find_one({"_id": ObjectId(booking_id)})
             if not booking:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+
+            vendor_id = booking.get("vendor_id")
+            if not vendor_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vendor ID not found in booking")
+
+            try:
+                parsed_date = datetime.strptime(reason_for_reschulding.new_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD"
+                )
+
+            try:
+                start_time, end_time = reason_for_reschulding.new_slot.split(" - ")
+                start_time_obj = datetime.strptime(start_time, "%H:%M").time()
+                end_time_obj = datetime.strptime(end_time, "%H:%M").time()
+            except ValueError:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid time slot format")
+
+            total_bookings = await booking_collection.count_documents(
+                {
+                    "vendor_id": vendor_id,
+                    "booking_date": reason_for_reschulding.new_date,
+                    "time_slot": reason_for_reschulding.new_slot,
+                }
+            )
+
+            vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor found")
+
+            max_seat = 10
+            if total_bookings >= max_seat:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Selected slot is fully booked. Please choose another slot.",
+                )
+
+            updated_booking = await booking_collection.update_one(
+                {"_id": ObjectId(booking_id)},
+                {
+                    "$set": {
+                        "booking_date": reason_for_reschulding.new_date,
+                        "time_slot": reason_for_reschulding.new_slot,
+                        "reaschulding_reason": reason_for_reschulding.reason,
+                    }
+                },
+            )
+
+            if updated_booking.modified_count == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update booking"
+                )
+
+            return {"status": "SUCCESS", "message": "Booking updated successfully"}
 
         except HTTPException:
             raise
@@ -769,52 +870,91 @@ class BookingManager:
 
     async def user_booking_update_request(self, request: Request, token: str, booking_id: str, date: str):
         try:
-            # Step 1: Authenticate the user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            # Step 2: Fetch the booking details
             booking = await booking_collection.find_one({"_id": ObjectId(booking_id)})
             if not booking:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-            # Step 3: Extract vendor ID and requested date
-            vendor_id = booking.get("vendor_id")  # Assuming the booking has a `vendor_id` field
+            vendor_id = booking.get("vendor_id")
             if not vendor_id:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vendor ID not found in booking")
 
-            # Step 4: Validate and convert the date to datetime.datetime
             try:
-                requested_date = datetime.strptime(date, "%Y-%m-%d")  # Convert to datetime.datetime
+                requested_date = datetime.strptime(date, "%Y-%m-%d")  # Convert string to datetime
+                requested_date_str = requested_date.date().isoformat()
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD"
                 )
 
-            # Step 5: Fetch vendor's slots for the requested date
-            vendor_slots = await slots_collection.find(
-                {
-                    "vendor_id": ObjectId(vendor_id),
-                    "date": requested_date,
-                }
-            ).to_list(length=None)
-            if not vendor_slots:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="No available slots found for the vendor on this date"
-                )
+            vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor found")
 
-            # Step 6: Convert datetime objects to strings for serialization
-            for slot in vendor_slots:
-                if "date" in slot:
-                    slot["date"] = slot["date"].isoformat()  # Convert datetime to ISO format string
+            vendor_business_type = vendor.get("business_type")
+            vendor_user_id = vendor.get("user_id")
+
+            if not vendor_user_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor user ID found")
+
+            # Fetch the user whose slots will be used
+            if vendor_business_type == "business":
+                # Fetch the user(s) created by the vendor
+                created_users = await user_collection.find({"created_by": str(vendor_user_id)}).to_list(length=None)
+                if not created_users:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND, detail="No users created by this vendor found"
+                    )
+
+                # Use the first created user's slots (or handle multiple users as needed)
+                user_slots = created_users[0].get("availability_slots")
+                if not user_slots:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND, detail="No slots found for the created user"
+                    )
+            else:
+                # Fetch the vendor's own user details
+                vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
+                if not vendor_user:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor user found")
+
+                user_slots = vendor_user.get("availability_slots")
+                if not user_slots:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor slots found")
+
+            day_of_week = requested_date.strftime("%A")
+            filtered_slots = None
+            for slot in user_slots:
+                if slot.get("day") == day_of_week:
+                    filtered_slots = slot.get("time_slots")
+                    break
+
+            if not filtered_slots:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No slots found for {day_of_week}")
+
+            for slot in filtered_slots:
                 if "start_time" in slot and isinstance(slot["start_time"], datetime):
                     slot["start_time"] = slot["start_time"].isoformat()
                 if "end_time" in slot and isinstance(slot["end_time"], datetime):
                     slot["end_time"] = slot["end_time"].isoformat()
 
-            # Step 7: Return the available slots
-            return {"message": "Vendor slots retrieved successfully", "data": vendor_slots}
+            for slot in filtered_slots:
+                slot_start_time = slot["start_time"]
+                slot_end_time = slot["end_time"]
+
+                total_bookings_for_slot = await booking_collection.count_documents(
+                    {
+                        "vendor_id": vendor_id,
+                        "booking_date": requested_date_str,
+                        "time_slot": {"$gte": slot_start_time, "$lt": slot_end_time},
+                    }
+                )
+                slot["total_bookings"] = total_bookings_for_slot
+
+            return {"slots": filtered_slots}
 
         except HTTPException:
             raise

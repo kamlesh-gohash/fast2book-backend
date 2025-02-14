@@ -125,6 +125,8 @@ class User(Document, BaseModel):
     first_name: str = Field(..., min_length=1, max_length=50)
     last_name: str = Field(default="")
     email: Optional[EmailStr] = Indexed(str, default=None)  # Make email optional
+    user_image: Optional[str] = None
+    user_image_url: Optional[str] = None
     otp: Optional[str] = None  # OTP field
     otp_expires: Optional[datetime] = None
     password: str

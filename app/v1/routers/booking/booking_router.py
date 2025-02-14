@@ -2,7 +2,7 @@ import razorpay
 import razorpay.errors
 
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Path, Query, Request, status
 
 from app.v1.dependencies import *
 from app.v1.middleware.auth import get_token_from_header
@@ -77,6 +77,7 @@ async def user_booking_checkout(
     request: Request,
     token: str = Depends(get_token_from_header),
     id: str = Path(..., min_length=1, max_length=100),
+    # payment_method: str = Form(...),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
@@ -369,27 +370,6 @@ async def user_booking_view(
         )
 
 
-@router.post("/user-booking-rescheduled/{booking_id}", status_code=status.HTTP_200_OK)
-async def user_booking_reschedule(
-    request: Request,
-    token: str = Depends(get_token_from_header),
-    booking_id: str = Path(..., min_length=1, max_length=100),
-    booking_manager: BookingManager = Depends(get_booking_manager),
-):
-    try:
-        result = await booking_manager.user_booking_resulding(request=request, token=token, booking_id=booking_id)
-        return success({"message": "User Booking update successfully", "data": result})
-    except HTTPException as http_ex:
-        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
-    except ValueError as ex:
-        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
-    except Exception as ex:
-        return internal_server_error(
-            {"message": "An unexpected error occurred", "error": str(ex)},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-
-
 @router.get("/user-booking-update-request/{booking_id}", status_code=status.HTTP_200_OK)
 async def user_booking_update_request(
     request: Request,
@@ -407,6 +387,33 @@ async def user_booking_update_request(
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/user-booking-reschedule/{booking_id}", status_code=status.HTTP_200_OK)
+async def user_booking_reschedule(
+    request: Request,
+    reason_for_reschulding: ResuldlinBookingRequest,
+    token: str = Depends(get_token_from_header),
+    booking_id: str = Path(..., min_length=1, max_length=100),
+    booking_manager: BookingManager = Depends(get_booking_manager),
+):
+    try:
+        result = await booking_manager.user_booking_resulding(
+            request=request,
+            token=token,
+            reason_for_reschulding=reason_for_reschulding,
+            booking_id=booking_id,
+        )
+        return success({"message": "Booking rescheduled successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},

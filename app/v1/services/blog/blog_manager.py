@@ -29,7 +29,7 @@ class BlogManager:
             blog_data = create_blog_request.dict()
             image_name = create_blog_request.blog_image
             bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
+            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
 
             # Insert the blog data into the database
             blog_data["blog_image_url"] = file_url
@@ -86,7 +86,6 @@ class BlogManager:
         except Exception as e:
             raise e
         except Exception as e:
-            print(e)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch list of blogs: {str(e)}"
             )
@@ -119,7 +118,6 @@ class BlogManager:
             }
             return blog_data
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -147,11 +145,13 @@ class BlogManager:
                 update_data["category"] = blog_request.category
             if blog_request.blog_image:
                 image_name = blog_request.blog_image
-                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
                 update_data["blog_image"] = image_name
                 update_data["blog_image_url"] = file_url
             else:
-                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{blog_request.blog_image}"
+                file_url = (
+                    f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{blog_request.blog_image}"
+                )
 
             if blog_request.tags:
                 # Ensure that tags are a list of strings
@@ -192,7 +192,6 @@ class BlogManager:
                 "updated_at": updated_blog["updated_at"],
             }
         except Exception as e:
-            print(e)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update blog: {str(e)}"
             )

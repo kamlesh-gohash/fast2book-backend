@@ -43,7 +43,7 @@ class ServicesManager:
                 )
             image_name = service_request.service_image
             bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
+            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
             # Prepare service data
             service_data = {
                 "name": service_request.name,
@@ -189,13 +189,11 @@ class ServicesManager:
             # Update image if provided
             if service_request.service_image:
                 image_name = service_request.service_image
-                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{image_name}"
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
                 update_data["service_image"] = image_name
                 update_data["service_image_url"] = file_url
             else:
-                file_url = (
-                    f"https://{bucket_name}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{service.get('service_image')}"
-                )
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{service.get('service_image')}"
 
             if service_request.name is not None:
                 update_data["name"] = service_request.name

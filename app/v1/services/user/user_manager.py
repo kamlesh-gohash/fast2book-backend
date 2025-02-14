@@ -19,6 +19,7 @@ from motor.motor_asyncio import AsyncIOMotorCollection  # Ensure this import for
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import (
     User,
+    blog_collection,
     booking_collection,
     category_collection,
     services_collection,
@@ -148,9 +149,12 @@ class UserManager:
         """Sign in a user by email and password."""
         try:
             if email:
-                result = await user_collection.find_one({"email": email})
+                users = await user_collection.find({}).to_list(length=None)
+                result = await user_collection.find_one({"email": {"$regex": f"^{email}$", "$options": "i"}})
                 if not result:
-                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED, detail="user does not exist with this email"
+                    )
                 if is_login_with_otp:
                     otp = generate_otp()
                     await user_collection.update_one(
@@ -167,7 +171,6 @@ class UserManager:
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
                     )
-                # Check if the entered password matches the stored hashed password
                 if not bcrypt.checkpw(
                     password.encode("utf-8"),
                     (
@@ -368,6 +371,7 @@ class UserManager:
                 vendor_data = await vendor_collection.find_one({"user_id": str(user_data["id"])})
                 vendor_data["id"] = str(vendor_data.pop("_id"))
                 user_data["is_subscription"] = vendor_data["is_subscription"]
+                user_data["business_type"] = vendor_data["business_type"]
 
             access_token = create_access_token(data={"sub": user.email})
             refresh_token = create_refresh_token(data={"sub": user.email})
@@ -393,6 +397,7 @@ class UserManager:
                 vendor_data = await vendor_collection.find_one({"user_id": str(user_data["id"])})
                 vendor_data["id"] = str(vendor_data.pop("_id"))
                 user_data["is_subscription"] = vendor_data["is_subscription"]
+                user_data["business_type"] = vendor_data["business_type"]
             # access_token = create_access_token(data={"sub": user.email})
             # refresh_token = create_refresh_token(data={"sub": user.email})
 
@@ -437,6 +442,7 @@ class UserManager:
             if user is None:
                 raise HTTPException(status_code=404, detail="User not found.")
             update_data = {}
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
             if profile_update_request.phone is not None and profile_update_request.secondary_phone_number is not None:
                 if profile_update_request.phone == profile_update_request.secondary_phone_number:
                     raise HTTPException(status_code=400, detail="Phone and secondary phone cannot be the same.")
@@ -449,7 +455,15 @@ class UserManager:
                 if existing_email and str(existing_email["_id"]) != str(user["_id"]):
                     raise HTTPException(status_code=400, detail="Email is already in use by another user.")
                 update_data["email"] = profile_update_request.email
-
+            if profile_update_request.user_image:
+                image_name = profile_update_request.user_image
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+                update_data["user_image"] = image_name
+                update_data["user_image_url"] = file_url
+            else:
+                file_url = (
+                    f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{user.get('user_image')}"
+                )
             # Check if phone number already exists in the database (excluding the current user)
             if profile_update_request.phone is not None:
                 existing_phone = await user_collection.find_one({"phone": profile_update_request.phone})
@@ -541,25 +555,14 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    # async def get_vendor_list_for_category(self, category_slug: str) -> List[dict]:
+    # async def get_vendor_list_for_category(
+    #     self, category_slug: str, service_id: Optional[str] = None, address: Optional[str] = None
+    # ) -> List[dict]:
     #     try:
     #         if not category_slug:
     #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
 
     #         category = await category_collection.find_one({"slug": category_slug})
-    #         if not category:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
-    #         category_id = str(category["_id"])
-    #         active_vendors = await vendor_collection.find({"category_id": category_id, "status": "active"}).to_list(length=None)
-    #         if not active_vendors:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active vendors found for the given category")
-    # async def get_vendor_list_for_category(self, category_slug: str, service_id: Optional[str] = None) -> List[dict]:
-    #     try:
-    #         if not category_slug:
-    #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
-
-    #         category = await category_collection.find_one({"slug": category_slug})
-    #         print(category, category_slug,'category')
     #         if not category:
     #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
 
@@ -581,13 +584,14 @@ class UserManager:
 
     #         # Fetch vendors based on the constructed filter
     #         active_vendors = await vendor_collection.find(vendor_filter).to_list(length=None)
-    #         print(active_vendors,'active_vendors')
     #         if not active_vendors:
     #             raise HTTPException(
     #                 status_code=status.HTTP_404_NOT_FOUND,
     #                 detail="No active vendors found for the given category" + (f" and service" if service_id else ""),
     #             )
+
     #         vendor_data = []
+
     #         for vendor in active_vendors:
     #             try:
     #                 user = await user_collection.find_one(
@@ -595,6 +599,12 @@ class UserManager:
     #                 )
 
     #                 if user:
+    #                     if address and vendor.get("location"):
+    #                         vendor_address = vendor["location"].get("formatted_address", "")
+    #                         # Skip this vendor if address doesn't match
+    #                         # You can modify this matching logic based on your requirements
+    #                         if not self._addresses_match(vendor_address, address):
+    #                             continue
     #                     if vendor["business_type"] == "business":
     #                         created_users = await user_collection.find(
     #                             {
@@ -615,52 +625,9 @@ class UserManager:
     #                                     "phone": u.get("phone"),
     #                                     "status": u.get("status"),
     #                                     "roles": u.get("roles"),
-    #                                     "availability_slots": [],
+    #                                     "availability_slots": await self.get_availability_slots(u),
     #                                 }
-    #                                 availability_slots = vendor.get("availability_slots", [])
-    #                             for slot in availability_slots:
-    #                                 slot_day = slot["day"]
-    #                                 current_date = datetime.now().date()
-    #                                 days = {
-    #                                     "Monday": 0,
-    #                                     "Tuesday": 1,
-    #                                     "Wednesday": 2,
-    #                                     "Thursday": 3,
-    #                                     "Friday": 4,
-    #                                     "Saturday": 5,
-    #                                     "Sunday": 6,
-    #                                 }
-    #                                 current_weekday = current_date.weekday()
-    #                                 target_weekday = days[slot_day]
-    #                                 days_ahead = (target_weekday - current_weekday) % 7
-    #                                 target_date = current_date + timedelta(days=days_ahead)
 
-    #                                 day_slot = {
-    #                                     "day": slot_day,
-    #                                     "date": target_date.strftime("%Y-%m-%d"),
-    #                                     "time_slots": [],
-    #                                 }
-    #                                 daily_booking_count = await self.get_daily_booking_count(
-    #                                     str(vendor["_id"]), slot_day
-    #                                 )
-    #                                 day_slot["daily_booking_count"] = daily_booking_count
-    #                                 total_seat_count = await self.get_max_seat_count(str(vendor["_id"]), slot_day)
-    #                                 day_slot["max_seat_count"] = total_seat_count
-    #                                 for time_slot in slot.get("time_slots", []):
-    #                                     booking_count = await self.get_booking_count_for_slot(
-    #                                         str(vendor["_id"]), slot_day, time_slot["start_time"]
-    #                                     )
-
-    #                                     day_slot["time_slots"].append(
-    #                                         {
-    #                                             "start_time": time_slot["start_time"],
-    #                                             "end_time": time_slot["end_time"],
-    #                                             "max_seat": time_slot["max_seat"],
-    #                                             "booking_count": booking_count,
-    #                                         }
-    #                                     )
-
-    #                                 user_details["availability_slots"].append(day_slot)
     #                                 vendor_data.append(
     #                                     {
     #                                         "vendor_id": str(vendor["_id"]),
@@ -670,7 +637,9 @@ class UserManager:
     #                                         "business_details": vendor.get("business_details"),
     #                                         "category_id": str(vendor["category_id"]),
     #                                         "services": vendor.get("services", []),
-    #                                         "fees": vendor.get("fees", 0),
+    #                                         "fees": u.get("fees", 0),
+    #                                         "location": vendor.get("location", {}),
+    #                                         "specialization": vendor.get("specialization", {}),
     #                                         "user_details": user_details,
     #                                     }
     #                                 )
@@ -682,47 +651,8 @@ class UserManager:
     #                             "phone": user.get("phone"),
     #                             "status": user.get("status"),
     #                             "roles": user.get("roles"),
-    #                             "availability_slots": [],
+    #                             "availability_slots": await self.get_availability_slots(user),
     #                         }
-
-    #                         availability_slots = vendor.get("availability_slots", [])
-    #                         for slot in availability_slots:
-    #                             slot_day = slot["day"]
-    #                             current_date = datetime.now().date()
-    #                             days = {
-    #                                 "Monday": 0,
-    #                                 "Tuesday": 1,
-    #                                 "Wednesday": 2,
-    #                                 "Thursday": 3,
-    #                                 "Friday": 4,
-    #                                 "Saturday": 5,
-    #                                 "Sunday": 6,
-    #                             }
-    #                             current_weekday = current_date.weekday()
-    #                             target_weekday = days[slot_day]
-    #                             days_ahead = (target_weekday - current_weekday) % 7
-    #                             target_date = current_date + timedelta(days=days_ahead)
-
-    #                             day_slot = {"day": slot_day, "date": target_date.strftime("%Y-%m-%d"), "time_slots": []}
-    #                             daily_booking_count = await self.get_daily_booking_count(str(vendor["_id"]), slot_day)
-    #                             day_slot["daily_booking_count"] = daily_booking_count
-    #                             total_seat_count = await self.get_max_seat_count(str(vendor["_id"]), slot_day)
-    #                             day_slot["max_seat_count"] = total_seat_count
-    #                             for time_slot in slot.get("time_slots", []):
-    #                                 booking_count = await self.get_booking_count_for_slot(
-    #                                     str(vendor["_id"]), slot_day, time_slot["start_time"]
-    #                                 )
-
-    #                                 day_slot["time_slots"].append(
-    #                                     {
-    #                                         "start_time": time_slot["start_time"],
-    #                                         "end_time": time_slot["end_time"],
-    #                                         "max_seat": time_slot["max_seat"],
-    #                                         "booking_count": booking_count,
-    #                                     }
-    #                                 )
-
-    #                             user_details["availability_slots"].append(day_slot)
 
     #                         vendor_data.append(
     #                             {
@@ -734,21 +664,13 @@ class UserManager:
     #                                 "category_id": str(vendor["category_id"]),
     #                                 "services": vendor.get("services", []),
     #                                 "fees": vendor.get("fees", 0),
+    #                                 "location": vendor.get("location", {}),
+    #                                 "specialization": vendor.get("specialization", {}),
     #                                 "user_details": user_details,
     #                             }
     #                         )
-
     #                 else:
-    #                     # vendor_data.append(
-    #                     #     {
-    #                     #         "vendor_id": str(vendor["_id"]),
-    #                     #         "business_name": vendor.get("business_name"),
-    #                     #         "business_type": vendor.get("business_type"),
-    #                     #         "user_details": [] if vendor["business_type"] == "business" else {},
-    #                     #         "services": vendor.get("services", []),
-    #                     #         "availability_slots": vendor.get("availability_slots", []),
-    #                     #     }
-    #                     # )
+    #                     # If no user is found, skip this vendor
     #                     pass
     #             except Exception as e:
     #                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
@@ -758,131 +680,594 @@ class UserManager:
     #         raise
     #     except Exception as e:
     #         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    # async def get_vendor_list_for_category(
+    #     self, category_slug: str, service_id: Optional[str] = None, address: Optional[str] = None
+    # ) -> List[dict]:
+    #     try:
+    #         if not category_slug:
+    #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
+
+    #         # Fetch the category
+    #         category = await category_collection.find_one({"slug": category_slug})
+    #         if not category:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+
+    #         category_id = str(category["_id"])
+
+    #         # Base filter for vendors
+    #         vendor_filter = {"category_id": category_id, "status": "active"}
+
+    #         if service_id:
+    #             if not ObjectId.is_valid(service_id):
+    #                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid service ID")
+
+    #             service = await services_collection.find_one({"_id": ObjectId(service_id), "status": "active"})
+    #             if not service:
+    #                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+    #             vendor_filter["services.id"] = service_id
+
+    #         # Aggregation pipeline
+    #         pipeline = [
+    #             {"$match": vendor_filter},
+    #             {
+    #                 "$lookup": {
+    #                     "from": "users",
+    #                     "let": {"userId": {"$toObjectId": "$user_id"}},
+    #                     "pipeline": [
+    #                         {"$match": {"$expr": {"$eq": ["$_id", "$$userId"]}}},
+    #                         {"$project": {"_id": 0, "first_name": 1, "last_name": 1, "email": 1, "phone": 1, "status": 1, "roles": 1, "availability_slots": 1}}
+    #                     ],
+    #                     "as": "user"
+    #                 }
+    #             },
+    #             {
+    #                 "$lookup": {
+    #                     "from": "bookings",
+    #                     "localField": "_id",
+    #                     "foreignField": "vendor_id",
+    #                     "as": "bookings"
+    #                 }
+    #             },
+    #             {
+    #                 "$project": {
+    #                     "vendor_id": {"$toString": "$_id"},
+    #                     "business_name": 1,
+    #                     "business_type": 1,
+    #                     "business_address": 1,
+    #                     "business_details": 1,
+    #                     "category_id": {"$toString": "$category_id"},
+    #                     "services": 1,
+    #                     "fees": 1,
+    #                     "location": 1,
+    #                     "specialization": 1,
+    #                     "user_details": {"$arrayElemAt": ["$user", 0]},
+    #                     "booking_count": {"$size": "$bookings"}
+    #                 }
+    #             }
+
+    #         ]
+
+    #         active_vendors = await vendor_collection.aggregate(pipeline).to_list(length=None)
+
+    #         if not active_vendors:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_404_NOT_FOUND,
+    #                 detail="No active vendors found for the given category" + (f" and service" if service_id else ""),
+    #             )
+
+    #         # Generate dates for the next 7 days
+    #         current_date = datetime.now().date()
+    #         date_range = [current_date + timedelta(days=i) for i in range(7)]
+
+    #         vendor_ids = [vendor["vendor_id"] for vendor in active_vendors]
+    #         vendor_bookings = await booking_collection.find({"vendor_id": {"$in": vendor_ids}, "payment_status": "paid"}).to_list(length=None)
+
+    #         bookings_dict = {}
+    #         for booking in vendor_bookings:
+    #             vendor_id = booking["vendor_id"]
+    #             if vendor_id not in bookings_dict:
+    #                 bookings_dict[vendor_id] = []
+    #             bookings_dict[vendor_id].append(booking)
+
+    #         vendor_data = []
+    #         for vendor in active_vendors:
+    #             vendor["id"] = str(vendor.pop("_id"))
+    #             if address and vendor.get("location"):
+    #                 vendor_address = vendor["location"].get("formatted_address", "")
+    #                 if not self._addresses_match(vendor_address, address):
+    #                     continue
+
+    #             # Process availability slots within user_details
+    #             if "user_details" in vendor and vendor["user_details"]:
+    #                 original_slots = vendor["user_details"].get("availability_slots", [])
+    #                 updated_slots = []
+
+    #                 # Get bookings for the current vendor
+    #                 vendor_id = vendor["vendor_id"]
+    #                 bookings = bookings_dict.get(vendor_id, [])
+
+    #                 for i in range(7):
+    #                     slot_date = current_date + timedelta(days=i)
+    #                     day_name = slot_date.strftime("%A")
+    #                     formatted_date = slot_date.strftime("%Y-%m-%d")
+
+    #                     day_slots = [slot for slot in original_slots if slot.get("day") == day_name]
+
+    #                     total_bookings = sum(1 for booking in bookings if booking.get("booking_date") == formatted_date)
+    #                     max_seat = max((slot['max_seat'] for slot in day_slots for slot in slot['time_slots']), default=0)
+
+    #                     for slot in day_slots:
+    #                         updated_slot = slot.copy()
+    #                         updated_slot["date"] = formatted_date
+    #                         updated_slot["daily_booking_count"] = total_bookings
+    #                         updated_slot["max_seat_count"] = max_seat
+    #                         updated_slots.append(updated_slot)
+
+    #                 vendor["user_details"]["availability_slots"] = updated_slots
+
+    #             vendor_data.append(vendor)
+
+    #         return vendor_data
+    #     except HTTPException:
+    #         raise
+    #     except Exception as e:
+    #         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    from datetime import datetime, timedelta
+
+    #     async def get_vendor_list_for_category_id(
+    #         self, category_slug: str, service_id: Optional[str] = None, address: Optional[str] = None
+    # ) -> List[dict]:
+    #         try:
+    #             if not category_slug:
+    #                 raise HTTPException(status_code=400, detail="Invalid category slug")
+    #             # Fetch the category
+    #             category = await category_collection.find_one({"slug": category_slug})
+    #             if not category:
+    #                 raise HTTPException(status_code=404, detail="Category not found")
+    #             category_id = str(category["_id"])
+    #             # Base filter for vendors
+    #             vendor_filter = {"category_id": category_id, "status": "active"}
+    #             if service_id:
+    #                 if not ObjectId.is_valid(service_id):
+    #                     raise HTTPException(status_code=400, detail="Invalid service ID")
+    #                 service = await services_collection.find_one({"_id": ObjectId(service_id), "status": "active"})
+    #                 if not service:
+    #                     raise HTTPException(status_code=404, detail="Service not found")
+    #                 vendor_filter["services.id"] = service_id
+    #             # Generate dates for the next 7 days
+    #             current_date = datetime.now().date()
+    #             date_range = [current_date + timedelta(days=i) for i in range(7)]
+    #             date_strings = [d.strftime("%Y-%m-%d") for d in date_range]
+    #             day_names = [d.strftime("%A") for d in date_range]
+    #             print("date_strings",date_strings)
+    #             # Aggregation pipeline
+    #             pipeline = [
+    #                 {"$match": vendor_filter},
+    #                 {
+    #                     "$lookup": {
+    #                         "from": "users",
+    #                         "let": {"userId": {"$toObjectId": "$user_id"}},
+    #                         "pipeline": [
+    #                             {"$match": {"$expr": {"$eq": ["$_id", "$$userId"]}}},
+    #                             {"$project": {"_id": 0, "first_name": 1, "last_name": 1, "email": 1, "phone": 1, "status": 1, "roles": 1, "availability_slots": 1}}
+    #                         ],
+    #                         "as": "user"
+    #                     }
+    #                 },
+    #                 {
+    #                     "$lookup": {
+    #                         "from": "bookings",
+    #                         "let": {"vendor_id": {"$toObjectId": "$_id"}},  # Convert vendor _id to ObjectId
+    #                         "pipeline": [
+    #                             {
+    #                                 "$match": {
+    #                                     "$expr": {
+    #                                         "$and": [
+    #                                             { "$eq": [{"$toObjectId": "$vendor_id"}, "$$vendor_id"] },  # Convert vendor_id to ObjectId
+    #                                             { "$eq": ["$payment_status", "paid"] },
+    #                                             { "$in": ["$booking_date", date_strings] }
+    #                                         ]
+    #                                     }
+    #                                 }
+    #                             }
+    #                         ],
+    #                         "as": "bookings"
+    #                     }
+    #                 },
+    #                 {
+    #                     "$project": {
+    #                         "_id": 1,
+    #                         "vendor_id": {"$toString": "$_id"},
+    #                         "business_name": 1,
+    #                         "business_type": 1,
+    #                         "business_address": 1,
+    #                         "business_details": 1,
+    #                         "category_id": {"$toString": "$category_id"},
+    #                         "services": 1,
+    #                         "fees": 1,
+    #                         "location": 1,
+    #                         "specialization": 1,
+    #                         "user_details": {"$arrayElemAt": ["$user", 0]},
+    #                         "booking_count": {"$size": "$bookings"},
+    #                         "bookings": {
+    #                             "$map": {
+    #                                 "input": "$bookings",
+    #                                 "as": "booking",
+    #                                 "in": {
+    #                                     "date": "$$booking.booking_date",
+    #                                     "seat_count": {"$ifNull": ["$$booking.seat_count", 1]}
+    #                                 }
+    #                             }
+    #                         }
+    #                     }
+    #                 },
+    #                 {
+    #                     "$addFields": {
+    #                         "user_details.availability_slots": {
+    #                             "$reduce": {
+    #                                 "input": date_strings,
+    #                                 "initialValue": [],
+    #                                 "in": {
+    #                                     "$concatArrays": [
+    #                                         "$$value",
+    #                                         {
+    #                                             "$map": {
+    #                                                 "input": {
+    #                                                     "$filter": {
+    #                                                         "input": "$user_details.availability_slots",
+    #                                                         "as": "slot",
+    #                                                         "cond": {
+    #                                                             "$eq": ["$$slot.day", {
+    #                                                                 "$arrayElemAt": [day_names, {"$indexOfArray": [date_strings, "$$this"]}]
+    #                                                             }]
+    #                                                         }
+    #                                                     }
+    #                                                 },
+    #                                                 "as": "slot",
+    #                                                 "in": {
+    #                                                     "$mergeObjects": [
+    #                                                         "$$slot",
+    #                                                         {
+    #                                                             "date": "$$this",
+    #                                                             "daily_booking_count": {
+    #                                                                 "$reduce": {
+    #                                                                     "input": {
+    #                                                                         "$filter": {
+    #                                                                             "input": "$bookings",
+    #                                                                             "as": "booking",
+    #                                                                             "cond": {"$eq": ["$$booking.date", "$$this"]}
+    #                                                                         }
+    #                                                                     },
+    #                                                                     "initialValue": 0,
+    #                                                                     "in": {"$add": ["$$value", "$$this.seat_count"]}
+    #                                                                 }
+    #                                                             },
+    #                                                             "max_seat_count": {
+    #                                                                 "$reduce": {
+    #                                                                     "input": "$$slot.time_slots",
+    #                                                                     "initialValue": 0,
+    #                                                                     "in": {"$add": ["$$value", "$$this.max_seat"]}
+    #                                                                 }
+    #                                                             }
+    #                                                         }
+    #                                                     ]
+    #                                                 }
+    #                                             }
+    #                                         }
+    #                                     ]
+    #                                 }
+    #                             }
+    #                         }
+    #                     }
+    #                 },
+    #                 {
+    #                     "$project": {
+    #                         "id": {"$toString": "$_id"},
+    #                         "_id": 0,
+    #                         "vendor_id": 1,
+    #                         "business_name": 1,
+    #                         "business_type": 1,
+    #                         "business_address": 1,
+    #                         "business_details": 1,
+    #                         "category_id": 1,
+    #                         "services": 1,
+    #                         "fees": 1,
+    #                         "location": 1,
+    #                         "specialization": 1,
+    #                         "user_details": 1,
+    #                         "booking_count": 1
+    #                     }
+    #                 }
+    #             ]
+    #             if address:
+    #                 pipeline.append({
+    #                     "$match": {
+    #                         "location.formatted_address": {
+    #                             "$regex": f".*{address}.*",
+    #                             "$options": "i"
+    #                         }
+    #                     }
+    #                 })
+    #             active_vendors = await vendor_collection.aggregate(pipeline).to_list(length=None)
+    #             # for vendor in active_vendors:
+    #             #     vendor["id"] = str(vendor["_id"])
+    #             if not active_vendors:
+    #                 raise HTTPException(
+    #                     status_code=404,
+    #                     detail="No active vendors found for the given category" + (f" and service" if service_id else ""),
+    #                 )
+    #             return active_vendors
+    #         except HTTPException:
+    #             raise
+    #         except Exception as e:
+    #             raise HTTPException(status_code=500, detail=str(e))
+
     async def get_vendor_list_for_category(
-        self, category_slug: str, service_id: Optional[str] = None, address: Optional[str] = None
+        self,
+        category_slug: str,
+        service_id: Optional[str] = None,
+        address: Optional[str] = None,
+        page: int = 1,
+        limit: int = 10,
     ) -> List[dict]:
         try:
+            skip = (page - 1) * limit
             if not category_slug:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
-
+                raise HTTPException(status_code=400, detail="Invalid category slug")
+            # Fetch the category
             category = await category_collection.find_one({"slug": category_slug})
             if not category:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
-
+                raise HTTPException(status_code=404, detail="Category not found")
             category_id = str(category["_id"])
-
-            # Base filter
+            # Base filter for vendors
             vendor_filter = {"category_id": category_id, "status": "active"}
-
-            # If service_id is provided, add it to the filter
             if service_id:
                 if not ObjectId.is_valid(service_id):
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid service ID")
-
+                    raise HTTPException(status_code=400, detail="Invalid service ID")
                 service = await services_collection.find_one({"_id": ObjectId(service_id), "status": "active"})
                 if not service:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-
+                    raise HTTPException(status_code=404, detail="Service not found")
                 vendor_filter["services.id"] = service_id
 
-            # Fetch vendors based on the constructed filter
-            active_vendors = await vendor_collection.find(vendor_filter).to_list(length=None)
-            if not active_vendors:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="No active vendors found for the given category" + (f" and service" if service_id else ""),
+            # Generate dates for the next 7 days
+            current_date = datetime.now().date()
+            date_range = [current_date + timedelta(days=i) for i in range(7)]
+            date_strings = [d.strftime("%Y-%m-%d") for d in date_range]
+            day_names = [d.strftime("%A") for d in date_range]
+
+            # Aggregation pipeline
+            pipeline = [
+                {"$match": vendor_filter},
+                {
+                    "$lookup": {
+                        "from": "users",
+                        "let": {"user_id": {"$toString": "$user_id"}},  # Vendor ID as string
+                        "pipeline": [
+                            {
+                                "$match": {
+                                    "$expr": {
+                                        "$and": [
+                                            {"$eq": ["$created_by", "$$user_id"]},
+                                        ]
+                                    }
+                                }
+                            },
+                            {
+                                "$project": {
+                                    "_id": 0,
+                                    "first_name": 1,
+                                    "last_name": 1,
+                                    "email": 1,
+                                    "phone": 1,
+                                    "roles": 1,
+                                    "availability_slots": 1,
+                                }
+                            },
+                        ],
+                        "as": "created_users",
+                    }
+                },
+                {
+                    "$lookup": {
+                        "from": "users",
+                        "let": {"userId": {"$toObjectId": "$user_id"}},  # Vendor's user_id
+                        "pipeline": [
+                            {"$match": {"$expr": {"$eq": ["$_id", "$$userId"]}}},
+                            {
+                                "$project": {
+                                    "_id": 0,
+                                    "first_name": 1,
+                                    "last_name": 1,
+                                    "email": 1,
+                                    "phone": 1,
+                                    "status": 1,
+                                    "roles": 1,
+                                    "availability_slots": 1,
+                                }
+                            },
+                        ],
+                        "as": "vendor_user",
+                    }
+                },
+                {
+                    "$lookup": {
+                        "from": "bookings",
+                        "let": {"vendor_id": {"$toObjectId": "$_id"}},  # Convert vendor _id to ObjectId
+                        "pipeline": [
+                            {
+                                "$match": {
+                                    "$expr": {
+                                        "$and": [
+                                            {
+                                                "$eq": [{"$toObjectId": "$vendor_id"}, "$$vendor_id"]
+                                            },  # Convert vendor_id to ObjectId
+                                            {"$eq": ["$payment_status", "paid"]},
+                                            {"$in": ["$booking_date", date_strings]},
+                                        ]
+                                    }
+                                }
+                            }
+                        ],
+                        "as": "bookings",
+                    }
+                },
+                {
+                    "$project": {
+                        "_id": 1,
+                        "vendor_id": {"$toString": "$_id"},
+                        "business_name": 1,
+                        "business_type": 1,
+                        "business_address": 1,
+                        "business_details": 1,
+                        "category_id": {"$toString": "$category_id"},
+                        "services": 1,
+                        "fees": 1,
+                        "location": 1,
+                        "specialization": 1,
+                        "created_users": 1,  # Users created by the vendor (for business type)
+                        "vendor_user": {"$arrayElemAt": ["$vendor_user", 0]},  # Vendor's own user details
+                        "booking_count": {"$size": "$bookings"},
+                        "bookings": {
+                            "$map": {
+                                "input": "$bookings",
+                                "as": "booking",
+                                "in": {
+                                    "date": "$$booking.booking_date",
+                                    "seat_count": {"$ifNull": ["$$booking.seat_count", 1]},
+                                },
+                            }
+                        },
+                    }
+                },
+                {
+                    "$addFields": {
+                        "user_details": {
+                            "$cond": {
+                                "if": {"$eq": ["$business_type", "business"]},
+                                "then": {"$arrayElemAt": ["$created_users", 0]},  # Use created user for business type
+                                "else": "$vendor_user",  # Use vendor's own user details for individual type
+                            }
+                        }
+                    }
+                },
+                {
+                    "$addFields": {
+                        "user_details.availability_slots": {
+                            "$reduce": {
+                                "input": date_strings,
+                                "initialValue": [],
+                                "in": {
+                                    "$concatArrays": [
+                                        "$$value",
+                                        {
+                                            "$map": {
+                                                "input": {
+                                                    "$filter": {
+                                                        "input": "$user_details.availability_slots",
+                                                        "as": "slot",
+                                                        "cond": {
+                                                            "$eq": [
+                                                                "$$slot.day",
+                                                                {
+                                                                    "$arrayElemAt": [
+                                                                        day_names,
+                                                                        {"$indexOfArray": [date_strings, "$$this"]},
+                                                                    ]
+                                                                },
+                                                            ]
+                                                        },
+                                                    }
+                                                },
+                                                "as": "slot",
+                                                "in": {
+                                                    "$mergeObjects": [
+                                                        "$$slot",
+                                                        {
+                                                            "date": "$$this",
+                                                            "daily_booking_count": {
+                                                                "$reduce": {
+                                                                    "input": {
+                                                                        "$filter": {
+                                                                            "input": "$bookings",
+                                                                            "as": "booking",
+                                                                            "cond": {
+                                                                                "$eq": ["$$booking.date", "$$this"]
+                                                                            },
+                                                                        }
+                                                                    },
+                                                                    "initialValue": 0,
+                                                                    "in": {"$add": ["$$value", "$$this.seat_count"]},
+                                                                }
+                                                            },
+                                                            "max_seat_count": {
+                                                                "$reduce": {
+                                                                    "input": "$$slot.time_slots",
+                                                                    "initialValue": 0,
+                                                                    "in": {"$add": ["$$value", "$$this.max_seat"]},
+                                                                }
+                                                            },
+                                                        },
+                                                    ]
+                                                },
+                                            }
+                                        },
+                                    ]
+                                },
+                            }
+                        }
+                    }
+                },
+                # Filter out vendors with null or empty availability_slots
+                {
+                    "$match": {
+                        "$and": [
+                            {"user_details.availability_slots": {"$ne": None}},  # Exclude null
+                            {"user_details.availability_slots": {"$ne": []}},  # Exclude empty array
+                        ]
+                    }
+                },
+                {
+                    "$project": {
+                        "id": {"$toString": "$_id"},
+                        "_id": 0,
+                        "vendor_id": 1,
+                        "business_name": 1,
+                        "business_type": 1,
+                        "business_address": 1,
+                        "business_details": 1,
+                        "category_id": 1,
+                        "services": 1,
+                        "fees": 1,
+                        "location": 1,
+                        "specialization": 1,
+                        "user_details": 1,
+                        "booking_count": 1,
+                    }
+                },
+            ]
+
+            if address:
+                pipeline.append(
+                    {"$match": {"location.formatted_address": {"$regex": f".*{address}.*", "$options": "i"}}}
                 )
 
-            vendor_data = []
+            active_vendors = await vendor_collection.aggregate(pipeline).to_list(length=None)
+            if not active_vendors:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No active vendors found for the given category" + (f" and service" if service_id else ""),
+                )
+            total_vendors = await vendor_collection.count_documents({})
+            total_pages = (total_vendors + limit - 1) // limit
+            return active_vendors
 
-            for vendor in active_vendors:
-                try:
-                    user = await user_collection.find_one(
-                        {"$or": [{"_id": vendor["user_id"]}, {"_id": ObjectId(vendor["user_id"])}]}
-                    )
-
-                    if user:
-                        if address and vendor.get("location"):
-                            vendor_address = vendor["location"].get("formatted_address", "")
-                            # Skip this vendor if address doesn't match
-                            # You can modify this matching logic based on your requirements
-                            if not self._addresses_match(vendor_address, address):
-                                continue
-                        if vendor["business_type"] == "business":
-                            created_users = await user_collection.find(
-                                {
-                                    "$or": [
-                                        {"created_by": str(vendor["user_id"])},
-                                        {"created_by": vendor["user_id"]},
-                                    ]
-                                }
-                            ).to_list(length=None)
-
-                            # If created users exist, append each user as a separate vendor entry
-                            if created_users:
-                                for u in created_users:
-                                    user_details = {
-                                        "first_name": u.get("first_name"),
-                                        "last_name": u.get("last_name"),
-                                        "email": u.get("email"),
-                                        "phone": u.get("phone"),
-                                        "status": u.get("status"),
-                                        "roles": u.get("roles"),
-                                        "availability_slots": await self.get_availability_slots(u),
-                                    }
-
-                                    vendor_data.append(
-                                        {
-                                            "vendor_id": str(vendor["_id"]),
-                                            "business_name": vendor.get("business_name"),
-                                            "business_type": vendor.get("business_type"),
-                                            "business_address": vendor.get("business_address"),
-                                            "business_details": vendor.get("business_details"),
-                                            "category_id": str(vendor["category_id"]),
-                                            "services": vendor.get("services", []),
-                                            "fees": u.get("fees", 0),
-                                            "location": vendor.get("location", {}),
-                                            "specialization": vendor.get("specialization", {}),
-                                            "user_details": user_details,
-                                        }
-                                    )
-                        else:
-                            user_details = {
-                                "first_name": user.get("first_name"),
-                                "last_name": user.get("last_name"),
-                                "email": user.get("email"),
-                                "phone": user.get("phone"),
-                                "status": user.get("status"),
-                                "roles": user.get("roles"),
-                                "availability_slots": await self.get_availability_slots(user),
-                            }
-
-                            vendor_data.append(
-                                {
-                                    "vendor_id": str(vendor["_id"]),
-                                    "business_name": vendor.get("business_name"),
-                                    "business_type": vendor.get("business_type"),
-                                    "business_address": vendor.get("business_address"),
-                                    "business_details": vendor.get("business_details"),
-                                    "category_id": str(vendor["category_id"]),
-                                    "services": vendor.get("services", []),
-                                    "fees": vendor.get("fees", 0),
-                                    "location": vendor.get("location", {}),
-                                    "specialization": vendor.get("specialization", {}),
-                                    "user_details": user_details,
-                                }
-                            )
-                    else:
-                        # If no user is found, skip this vendor
-                        pass
-                except Exception as e:
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
-            return vendor_data
+            # return {"data": active_vendors, "total_pages": total_pages, "total_items": total_vendors}
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
     async def get_booking_count_for_slot(self, vendor_id: str, day: str, time_slot: str) -> int:
         try:
@@ -893,16 +1278,28 @@ class UserManager:
             target_weekday = days[day]
             days_ahead = (target_weekday - current_weekday) % 7
             target_date = current_date + timedelta(days=days_ahead)
+            vendor_obj = await vendor_collection.find_one({"user_id": vendor_id})
+            if not vendor_obj:
+                return 0
+            vendor_id_str = str(vendor_obj["_id"])
+
+            formatted_date = target_date.strftime("%Y-%m-%d")
+
+            all_bookings = await booking_collection.find({"vendor_id": vendor_id_str}).to_list(length=None)
+            # print(target_date,'target_date in get_booking_count_for_slot')
             # Combine date and time
             # slot_datetime = datetime.combine(
             #     target_date,
             #     datetime.strptime(start_time, "%H:%M").time()
             # )
             # Count bookings for this specific slot
+            date_bookings = await booking_collection.find(
+                {"vendor_id": vendor_id_str, "booking_date": formatted_date}
+            ).to_list(length=None)
             booking_count = await booking_collection.count_documents(
                 {
-                    "vendor_id": vendor_id,
-                    "booking_date": target_date.strftime("%Y-%m-%d"),
+                    "vendor_id": vendor_id_str,
+                    "booking_date": formatted_date,
                     "time_slot": {"$regex": f"^{time_slot}"},
                     "payment_status": "paid",
                 }
@@ -911,23 +1308,22 @@ class UserManager:
         except Exception as e:
             return 0
 
-    async def get_daily_booking_count(self, vendor_id: str, day: str) -> int:
+    async def get_daily_booking_count(self, vendor_id: str, target_date: str) -> int:
         try:
             current_date = datetime.now().date()
 
-            days = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
-            current_weekday = current_date.weekday()
-            target_weekday = days[day]
-            days_ahead = (target_weekday - current_weekday) % 7
-            target_date = current_date + timedelta(days=days_ahead)
-
+            # days = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+            # current_weekday = current_date.weekday()
+            # target_weekday = days[day]
+            # days_ahead = (target_weekday - current_weekday) % 7
+            # target_date = current_date + timedelta(days=days_ahead)
+            vendor_obj = await vendor_collection.find_one({"user_id": vendor_id})
+            if not vendor_obj:
+                return 0
+            vendor_id_str = str(vendor_obj["_id"])
             # Get bookings for the entire day
             daily_booking_count = await booking_collection.count_documents(
-                {
-                    "vendor_id": vendor_id,
-                    "booking_date": target_date.strftime("%Y-%m-%d"),
-                    "payment_status": "paid",
-                }
+                {"vendor_id": vendor_id_str, "payment_status": "paid", "booking_date": target_date}
             )
 
             return daily_booking_count
@@ -978,7 +1374,7 @@ class UserManager:
             target_date = current_date + timedelta(days=days_ahead)
 
             day_slot = {"day": slot_day, "date": target_date.strftime("%Y-%m-%d"), "time_slots": []}
-            daily_booking_count = await self.get_daily_booking_count(str(user["_id"]), slot_day)
+            daily_booking_count = await self.get_daily_booking_count(str(user["_id"]), target_date)
             day_slot["daily_booking_count"] = daily_booking_count
             total_seat_count = await self.get_max_seat_count(str(user["_id"]), slot_day)
             day_slot["max_seat_count"] = total_seat_count
@@ -1337,4 +1733,105 @@ class UserManager:
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def blog_list(self, page: int = 1, limit: int = 10, search: str = None) -> dict:
+        """
+        Get list of all active categories.
+        """
+        try:
+            # Fetch all active categories
+            skip = (page - 1) * limit
+            query = {}  # Start with an empty query
+
+            # If there's a search term, modify the query to search by name or category_name
+            if search:
+                search_regex = {"$regex": search, "$options": "i"}  # Case-insensitive search
+                query["$or"] = [
+                    {"title": search_regex},  # Search by category name (if the category is loaded)
+                ]
+            active_blogs = await blog_collection.find(query).skip(skip).limit(limit).to_list(length=100)
+
+            # Format the response with category name, status, and created_at
+            blog_data = [
+                {
+                    "id": str(blog["_id"]),
+                    "title": blog["title"],
+                    "content": blog["content"],
+                    "blog_url": blog["blog_url"],
+                    "blog_image": blog["blog_image"],
+                    "blog_image_url": blog["blog_image_url"],
+                    "author_name": blog["author_name"],
+                    "category": blog["category"],
+                    "tags": blog["tags"],
+                    "status": blog["status"],
+                    "created_at": blog["created_at"],
+                    "updated_at": blog["updated_at"],
+                }
+                for blog in active_blogs
+            ]
+            total_blogs = await blog_collection.count_documents({})
+            total_pages = (total_blogs + limit - 1) // limit
+            # Return the formatted response
+            return {"data": blog_data, "total_pages": total_pages, "total_items": total_blogs}
+        except Exception as e:
+            raise e
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch list of blogs: {str(e)}"
+            )
+
+    async def get_blog_by_id(self, id: str) -> dict:
+        try:
+            # Convert the string ID to ObjectId and validate it
+            if not ObjectId.is_valid(id):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid blog ID: '{id}'")
+
+            # Check if the blog exists
+            existing_blog = await blog_collection.find_one({"_id": ObjectId(id)})
+            if not existing_blog:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Blog with ID '{id}' not found")
+
+            # Format the result
+            blog_data = {
+                "id": str(existing_blog["_id"]),
+                "title": existing_blog["title"],
+                "content": existing_blog["content"],
+                "blog_url": existing_blog["blog_url"],
+                "blog_image": existing_blog["blog_image"],
+                "blog_image_url": existing_blog["blog_image_url"],
+                "author_name": existing_blog["author_name"],
+                "category": existing_blog["category"],
+                "tags": existing_blog["tags"],
+                "status": existing_blog["status"],
+                "created_at": existing_blog["created_at"],
+                "updated_at": existing_blog["updated_at"],
+            }
+            recent_blogs = (
+                await blog_collection.find({"_id": {"$ne": ObjectId(id)}})
+                .sort("created_at", -1)
+                .limit(3)
+                .to_list(length=3)
+            )
+            recent_blog_list = []
+            for blog in recent_blogs:
+                recent_blog_list.append(
+                    {
+                        "id": str(blog["_id"]),
+                        "title": blog["title"],
+                        "blog_url": blog["blog_url"],
+                        "blog_image_url": blog["blog_image_url"],
+                        "author_name": blog["author_name"],
+                        "created_at": blog["created_at"],
+                    }
+                )
+
+            return {
+                "blog": blog_data,
+                "recent_blogs": recent_blog_list,
+            }
+            return blog_data
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
