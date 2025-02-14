@@ -47,6 +47,7 @@ class Bookings(BaseModel):
     amount: Optional[float] = None
     payment_method: Optional[str] = None
     booking_cancel_reason: Optional[str] = None
+    reaschulding_reason: Optional[str] = None
     payment_id: Optional[str] = None
 
     class Settings:

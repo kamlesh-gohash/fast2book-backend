@@ -24,7 +24,6 @@ from app.v1.utils.token import create_access_token, create_refresh_token, get_oa
 
 
 razorpay_client = razorpay.Client(auth=(os.getenv("RAZOR_PAY_KEY_ID"), os.getenv("RAZOR_PAY_KEY_SECRET")))
-print(f"Razorpay Client Type: {type(razorpay_client)}")
 
 
 class SubscriptionManager:
@@ -238,9 +237,22 @@ class SubscriptionManager:
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            if plan_request.period.lower() == "monthly":
+                interval = 1
+            elif plan_request.period.lower() == "yearly":
+                interval = 1
+            elif plan_request.period.lower() == "daily":
+                interval = 1
+            elif plan_request.period.lower() == "weekly":
+                interval = 1
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid period. Allowed values are 'monthly' or 'yearly'.",
+                )
             razorpay_plan_data = {
                 "period": plan_request.period,
-                "interval": plan_request.interval,
+                "interval": interval,
                 "item": {
                     "name": plan_request.name,
                     "description": plan_request.description,

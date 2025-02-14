@@ -1,3 +1,4 @@
+import os
 import random
 
 from datetime import datetime, timedelta
@@ -60,13 +61,23 @@ class CostumerManager:
             # Hash the password before saving
             hashed_password = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt())
             create_costumer_request.password = hashed_password
+            create_costumer_request.phone = (
+                int(create_costumer_request.phone) if create_costumer_request.phone else None
+            )
+            image_name = create_costumer_request.user_image
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+            create_costumer_request.user_image = create_costumer_request.user_image
+            create_costumer_request.user_image_url = file_url
             # create_costumer_request.password = hashpw(create_costumer_request.password.encode('utf-8'), gensalt()).decode('utf-8')
             # print(create_costumer_request.password, 'create_costumer_request.password')
             create_costumer_request_dict = create_costumer_request.dict()
             create_costumer_request_dict["created_at"] = datetime.utcnow()
             create_costumer_request_dict["is_active"] = True
+
             result = await user_collection.insert_one(create_costumer_request_dict)
             create_costumer_request_dict["id"] = str(result.inserted_id)  # Add `id`
+
             del create_costumer_request_dict["_id"]
             sign_in_link = f"http://localhost:3000/sign-in"
             source = "Account created"
@@ -76,7 +87,6 @@ class CostumerManager:
             await send_email(to_email, source, context)
             return create_costumer_request_dict
         except Exception as e:
-            print(e)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     async def customer_list(
@@ -120,6 +130,8 @@ class CostumerManager:
                 "phone": 1,
                 "roles": 1,
                 "gender": 1,
+                "user_image": 1,
+                "user_image_url": 1,
                 "status": 1,
                 "created_at": 1,
                 "costumer_address": 1,
@@ -174,9 +186,12 @@ class CostumerManager:
                 "phone": 1,
                 "gender": 1,
                 "status": 1,
+                "user_image": 1,
+                "user_image_url": 1,
                 "costumer_address": 1,  # Include customer address
                 "costumer_details": 1,
                 "created_at": 1,
+                "password": 1,
             }
 
             # Find the customer by id and role
@@ -204,7 +219,7 @@ class CostumerManager:
             # Include customer address if it exists
             result["costumer_address"] = result.get("costumer_address", None)
             result["costumer_details"] = result.get("costumer_details", None)
-            result.pop("password", None)
+            # result.pop("password", None)
 
             return result
         except Exception as ex:
@@ -231,6 +246,19 @@ class CostumerManager:
 
             # Prepare update data
             update_data = {}
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+
+            # Update image if provided
+            if update_costumer_request.user_image:
+                image_name = update_costumer_request.user_image
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+                update_data["user_image"] = image_name
+                update_data["user_image_url"] = file_url
+            else:
+                file_url = (
+                    f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{costumer.get('user_image')}"
+                )
+
             if update_costumer_request.first_name is not None:
                 update_data["first_name"] = update_costumer_request.first_name
             if update_costumer_request.last_name is not None:
@@ -262,16 +290,20 @@ class CostumerManager:
                 "id": str(updated_costumer.get("_id")),
                 "first_name": updated_costumer.get("first_name", "").capitalize(),
                 "last_name": updated_costumer.get("last_name", "").capitalize(),
-                "email": updated_costumer.get("email", "").lower(),
+                "email": updated_costumer.get("email", ""),
                 "phone": updated_costumer.get("phone", ""),
                 "gender": updated_costumer.get("gender", "").capitalize(),
                 "status": updated_costumer.get("status", ""),
+                "user_image": updated_costumer.get("user_image", ""),
+                "user_image_url": file_url,
                 "costumer_address": updated_costumer.get(
                     "costumer_address", ""
                 ),  # Default to empty string if not present
                 "costumer_details": updated_costumer.get(
                     "costumer_details", ""
                 ),  # Default to empty string if not present
+                "created_at": str(updated_costumer.get("created_at")),
+                "password": updated_costumer.get("password", ""),
             }
 
             # Remove sensitive fields like 'password' if they exist

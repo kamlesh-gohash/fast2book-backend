@@ -116,6 +116,7 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
             user = None
             if "@" in sub:
                 user = await User.get_user_by_email(sub)
+
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found by email.")
             elif sub.isdigit():

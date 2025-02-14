@@ -37,6 +37,8 @@ class SignUpRequest(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[int] = None
     roles: Optional[List[str]] = None  # Optional roles, can be a list of strings like ['user', 'vendor']
+    user_image: Optional[str] = None
+    user_image_url: Optional[str] = None
     gender: str
     password: str
     otp: Optional[str] = None  # Make OTP optional
@@ -312,6 +314,8 @@ class UpdateProfileRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
+    user_image: Optional[str] = None
+    user_image_url: Optional[str] = None
     phone: Optional[int] = None
     gender: Optional[str] = None
     blood_group: Optional[str] = None

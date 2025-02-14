@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field, validator
 
@@ -11,6 +11,9 @@ class PaymentType(BaseModel):
     description: str
     status: StatusEnum = StatusEnum.Active
     existing_names: ClassVar[set] = set()  # Keep track of existing names
+    charge_type: Literal["percentage", "fixed"]
+    charge_value: float  # Value of the charge (e.g., 1.5 for 1.5% or 5 for $5)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     @validator("name")
