@@ -62,10 +62,10 @@ class PaymentManager:
             update_data = {}
             if update_payment_request.status is not None:
                 update_data["status"] = update_payment_request.status
-            if update_payment_request.charge_type not in ["percentage", "fixed"]:
-                raise HTTPException(status_code=400, detail="Invalid charge type")
-            if update_payment_request.charge_value <= 0:
-                raise HTTPException(status_code=400, detail="Charge value must be greater than 0")
+            # if update_payment_request.charge_type not in ["percentage", "fixed"]:
+            #     raise HTTPException(status_code=400, detail="Invalid charge type")
+            # if update_payment_request.charge_value <= 0:
+            #     raise HTTPException(status_code=400, detail="Charge value must be greater than 0")
             if update_payment_request.charge_type is not None:
                 update_data["charge_type"] = update_payment_request.charge_type
             if update_payment_request.charge_value is not None:

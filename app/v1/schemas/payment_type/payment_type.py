@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 import bcrypt
 import zon
@@ -16,6 +16,8 @@ update_payment_validator = zon.record(
     {
         "name": zon.string().min(1).max(50).optional(),
         "status": zon.string().min(1).max(50).optional(),
+        "charge_type": zon.string().min(1).max(50).optional(),
+        "charge_value": zon.number().optional(),
     }
 )
 
@@ -23,6 +25,8 @@ update_payment_validator = zon.record(
 class UpdatePaymentRequest(BaseModel):
     name: Optional[str] = None
     status: StatusEnum = StatusEnum.Active
+    charge_type: Literal["percentage", "fixed"] = None
+    charge_value: float = 0
 
     def validate(self):
         try:
