@@ -508,48 +508,51 @@ class SuperUserManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
 
+            # Fetch latest 10 bookings sorted by 'created_at'
             bookings_cursor = (
                 booking_collection.find({"booking_status": "panding", "payment_status": "paid"})
                 .sort("created_at", DESCENDING)
                 .limit(10)
             )
 
-            bookings = await bookings_cursor.to_list(length=10)
+            bookings = await bookings_cursor.to_list(length=10)  # Convert cursor to list
+
             if not bookings:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No bookings found")
 
             booking_data = []
             for booking in bookings:
-
                 # Fetch related data
                 user = await user_collection.find_one({"_id": ObjectId(booking["user_id"])}, {"first_name": 1})
                 vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
-                vendor_user_name = await user_collection.find_one(
-                    {"_id": ObjectId(vendor["user_id"])}, {"first_name": 1}
-                )
+                vendor_user_name = None
+                if vendor:  # Check if vendor exists
+                    vendor_user_name = await user_collection.find_one(
+                        {"_id": ObjectId(vendor["user_id"])}, {"first_name": 1}
+                    )
                 category = await category_collection.find_one({"_id": ObjectId(booking["category_id"])}, {"name": 1})
                 service = await services_collection.find_one({"_id": ObjectId(booking["service_id"])}, {"name": 1})
 
                 booking_data.append(
                     {
                         "booking_id": str(booking["_id"]),
-                        "user_name": user["first_name"] if user else None,
-                        "vendor_name": vendor_user_name["first_name"] if vendor_user_name else None,
-                        "category_name": category["name"] if category else None,
-                        "service_name": service["name"] if service else None,
+                        "user_name": user.get("first_name") if user else None,  # Safely access 'first_name'
+                        "vendor_name": (
+                            vendor_user_name.get("first_name") if vendor_user_name else None
+                        ),  # Safely access 'first_name'
+                        "category_name": category.get("name") if category else None,  # Safely access 'name'
+                        "service_name": service.get("name") if service else None,  # Safely access 'name'
                         "booking_status": booking["booking_status"],
-                        "booking_confirm": booking["booking_confirm"] if "booking_confirm" in booking else None,
+                        "booking_confirm": booking.get("booking_confirm"),  # Safely access optional field
                         "booking_date": booking["booking_date"],
                         "time_slot": booking["time_slot"],
                         "payment_status": booking["payment_status"],
-                        "payment_method": booking["payment_method"] if "payment_method" in booking else None,
+                        "payment_method": booking.get("payment_method"),  # Safely access optional field
                         "amount": booking["amount"],
-                        "booking_cancel_reason": (
-                            booking["booking_cancel_reason"] if "booking_cancel_reason" in booking else None
-                        ),
-                        "booking_order_id": booking["booking_order_id"] if "booking_order_id" in booking else None,
-                        "payment_id": booking["payment_id"] if "payment_id" in booking else None,
-                        "created_at": booking.get("created_at"),  # Include timestamp if needed
+                        "booking_cancel_reason": booking.get("booking_cancel_reason"),  # Safely access optional field
+                        "booking_order_id": booking.get("booking_order_id"),  # Safely access optional field
+                        "payment_id": booking.get("payment_id"),  # Safely access optional field
+                        "created_at": booking.get("created_at"),  # Safely access optional field
                     }
                 )
 
