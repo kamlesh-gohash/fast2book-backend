@@ -5,6 +5,7 @@ from bcrypt import gensalt, hashpw
 from app.v1.models import User, category_collection, payment_collection
 from app.v1.models.category import Category
 from app.v1.models.payment import PaymentType
+from app.v1.models.permission import DEFAULT_MENU_STRUCTURE
 
 
 def hash_password(password: str) -> str:
@@ -24,6 +25,7 @@ async def seed_data():
             user_role=2,
             phone="9928821641",
             created_at=datetime.utcnow(),
+            menu=DEFAULT_MENU_STRUCTURE,
         )
         await seed_user.create()
         print("Admin user seeded successfully!")

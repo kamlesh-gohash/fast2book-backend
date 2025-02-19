@@ -73,6 +73,22 @@ class BookingManager:
             if not vendor_user:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
 
+            amount = vendor.get("fees")
+            payment_method = "Razorpay"
+            payment_config = await payment_collection.find_one({"name": payment_method})
+            if not payment_config:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+            admin_charge_type = payment_config.get("charge_type")  # 'percentage' or 'fixed'
+            admin_charge_value = payment_config.get("charge_value")  # e.g., 10 for 10% or 50 for $50
+
+            if admin_charge_type == "percentage":
+                admin_charge = (admin_charge_value / 100) * amount
+            elif admin_charge_type == "fixed":
+                admin_charge = admin_charge_value
+            else:
+                admin_charge = 0
+
+            total_amount = amount + admin_charge
             # Prepare response data
             response_data = {
                 "vendor": {
@@ -95,6 +111,8 @@ class BookingManager:
                 },
                 "booking_date": booking_date,
                 "time_slot": slot,
+                "platform_fee": admin_charge,
+                "total_amount": total_amount,
             }
 
             return response_data
@@ -276,8 +294,7 @@ class BookingManager:
                     {"business_name": search_regex},
                     {"category_name": search_regex},
                 ]
-            bookings = await booking_collection.find({"vendor_id": str(vendor["_id"]), **query}).to_list(None)
-
+            bookings = await booking_collection.find({"vendor_id": ObjectId(vendor["_id"]), **query}).to_list(None)
             # Convert ObjectId to string in the response
             for booking in bookings:
                 booking["id"] = str(booking["_id"])
@@ -485,6 +502,12 @@ class BookingManager:
                                 past_bookings.append(booking)
                         else:
                             past_bookings.append(booking)
+
+            def sort_by_date(bookings_list):
+                return sorted(bookings_list, key=lambda x: x["booking_date"])
+
+            upcoming_bookings = sort_by_date(upcoming_bookings)
+            past_bookings = sort_by_date(past_bookings)
 
             return {"upcoming_bookings": upcoming_bookings, "past_bookings": past_bookings}
 

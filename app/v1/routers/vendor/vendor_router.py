@@ -20,48 +20,6 @@ from app.v1.utils.response.response_format import failure, internal_server_error
 router = APIRouter()
 
 
-async def update_subscription_payment_details(
-    subscription_id: str, payment_id: str, amount: int, currency: str, status: str
-):
-    print(
-        subscription_id, payment_id, amount, currency, status, "subscription_id, payment_id, amount, currency, status"
-    )
-    """
-    Update the subscription payment details in the database.
-    """
-    # Update the subscription details in your database
-    await vendor_collection.update_one(
-        {"razorpay_subscription_id": subscription_id},
-        {
-            "$set": {
-                "is_subscription": True,
-            }
-        },
-    )
-
-
-async def cancel_subscription(subscription_id: str):
-    print(subscription_id, "subscription_id")
-    """
-    Handle subscription cancellation.
-    """
-    # Update the subscription status in your database
-    await vendor_collection.update_one(
-        {"razorpay_subscription_id": subscription_id}, {"$set": {"is_subscription": False}}
-    )
-
-
-async def handle_payment_failure(subscription_id: str, payment_id: str):
-    print(subscription_id, payment_id, "subscription_id, payment_id")
-    """
-    Handle payment failure.
-    """
-    # Update the payment status in your database
-    await vendor_collection.update_one(
-        {"razorpay_subscription_id": subscription_id}, {"$set": {"last_payment_status": "failed"}}
-    )
-
-
 # Custom function to handle validation errors
 def validate_request_data(schema: Type[BaseModel]) -> Callable:
     def validator(data: dict):
@@ -792,6 +750,7 @@ async def subscription_payment_details(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex, "ex")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

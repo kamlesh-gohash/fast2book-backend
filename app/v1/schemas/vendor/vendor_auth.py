@@ -272,6 +272,7 @@ class SignUpVendorRequest(BaseModel):
     bank_account_number: Optional[int] = None
     ifsc: Optional[str] = None
     account_type: Optional[str] = None
+    availability_slots: Optional[List[DaySlot]] = None  # Set as Optional, no default value
     password: str
 
     @validator("roles", pre=True, always=True)

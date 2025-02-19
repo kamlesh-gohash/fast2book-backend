@@ -563,12 +563,15 @@ async def send_link(email: str = Query(None), phone: str = Query(None)):
             otp = "https://fast2book.com/"
             await send_sms_on_phone(to_phone, otp, expiry_minutes)
 
-        return {"message": "Link sent successfully"}
+        return success({"message": "Link sent successfully", "data": None})
 
     except HTTPException as http_ex:
-        raise http_ex
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=validation_error(str(e)))
     except Exception as ex:
-        raise HTTPException(
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An unexpected error occurred: {str(ex)}",
         )
