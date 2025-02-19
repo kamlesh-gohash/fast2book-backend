@@ -482,12 +482,10 @@ class SuperUserManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
             total_users = await user_collection.count_documents({"roles": {"$in": ["user"]}, "user_role": {"$ne": 2}})
-            total_bookings = await booking_collection.count_documents({"booking_confirm": True})
+            total_bookings = await booking_collection.count_documents({"payment_status": "paid"})
 
-            # Bookings that are canceled
             canceled_bookings = await booking_collection.count_documents({"booking_status": "cancelled"})
 
-            # Bookings that are resulting
             reschedule_bookings = await booking_collection.count_documents({"booking_status": "rescheduled"})
 
             return {
@@ -510,20 +508,19 @@ class SuperUserManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
 
-            # Fetch latest 10 bookings sorted by 'created_at' (or another timestamp field)
             bookings_cursor = (
-                booking_collection.find({"booking_status": "panding", "booking_confirm": True})
+                booking_collection.find({"booking_status": "panding", "payment_status": "paid"})
                 .sort("created_at", DESCENDING)
                 .limit(10)
             )
 
-            bookings = await bookings_cursor.to_list(length=10)  # Convert cursor to list
-
+            bookings = await bookings_cursor.to_list(length=10)
             if not bookings:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No bookings found")
 
             booking_data = []
             for booking in bookings:
+
                 # Fetch related data
                 user = await user_collection.find_one({"_id": ObjectId(booking["user_id"])}, {"first_name": 1})
                 vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
@@ -541,17 +538,17 @@ class SuperUserManager:
                         "category_name": category["name"] if category else None,
                         "service_name": service["name"] if service else None,
                         "booking_status": booking["booking_status"],
-                        "booking_confirm": booking["booking_confirm"],
+                        "booking_confirm": booking["booking_confirm"] if "booking_confirm" in booking else None,
                         "booking_date": booking["booking_date"],
                         "time_slot": booking["time_slot"],
                         "payment_status": booking["payment_status"],
-                        "payment_method": booking["payment_method"],
+                        "payment_method": booking["payment_method"] if "payment_method" in booking else None,
                         "amount": booking["amount"],
                         "booking_cancel_reason": (
                             booking["booking_cancel_reason"] if "booking_cancel_reason" in booking else None
                         ),
-                        "booking_order_id": booking["booking_order_id"],
-                        "payment_id": booking["payment_id"],
+                        "booking_order_id": booking["booking_order_id"] if "booking_order_id" in booking else None,
+                        "payment_id": booking["payment_id"] if "payment_id" in booking else None,
                         "created_at": booking.get("created_at"),  # Include timestamp if needed
                     }
                 )

@@ -72,37 +72,6 @@ RAZOR_PAY_KEY_SECRET = os.getenv("RAZOR_PAY_KEY_SECRET")
 razorpay_client = razorpay.Client(auth=(RAZOR_PAY_KEY_ID, RAZOR_PAY_KEY_SECRET))
 
 
-def create_razorpay_subaccount(vendor_data, user_data):
-    """
-    Creates a Razorpay subaccount for the vendor.
-    """
-
-    account_data = {
-        "name": vendor_data["business_name"],
-        "email": user_data["email"],
-        "contact": user_data["phone"],
-        "business_type": vendor_data["business_type"],
-        "business_category": "services",
-        "account_type": "savings",
-    }
-
-    try:
-
-        response = razorpay_client.account.create(account_data)
-        if response and isinstance(response, dict):
-            account_id = response.get("id")
-            account_details = razorpay_client.account.fetch(account_id)
-        else:
-            return {"error": "Failed to create Razorpay subaccount. Response not as expected."}
-
-        return response
-
-    except razorpay.errors.BadRequestError as e:
-        raise HTTPException(status_code=400, detail=f"Razorpay Error: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create Razorpay subaccount: {str(e)}")
-
-
 class VendorManager:
 
     async def create_vendor(self, request: Request, token: str, create_vendor_request: SignUpVendorRequest):
@@ -410,24 +379,20 @@ class VendorManager:
             query = {"_id": ObjectId(id), "roles": {"$in": ["vendor"]}}
 
             result = await user_collection.find_one(query)
+            print(result, "result")
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
             result["id"] = str(result.pop("_id"))
-            result["first_name"] = result["first_name"].capitalize()
-            result["last_name"] = result["last_name"].capitalize()
-            result["email"] = result["email"]
-            result["phone"] = result["phone"]
+            result["first_name"] = result.get("first_name", "").capitalize()
+            result["last_name"] = result.get("last_name", "").capitalize()
+            result["email"] = result.get("email", "")
+            result["phone"] = result.get("phone", "Unknown")
             result["user_image"] = result.get("user_image", "")  # Default to empty string if missing
             result["user_image_url"] = result.get("user_image_url", "")  # Default to empty string if missing
-            if result["phone"]:
-                result["phone"] = result["phone"]
-            else:
-                result["phone"] = "Unknown"
-            if result["gender"]:
-                result["gender"] = result["gender"]
-            else:
-                result["gender"] = "Unknown"
+            result["gender"] = result.get("gender", "Unknown")
             result["created_by"] = result.get("created_by", "Unknown")
+
             vendor_details = await vendor_collection.find_one({"user_id": result["id"]})
             if vendor_details:
                 result["business_name"] = vendor_details.get("business_name")
@@ -450,7 +415,6 @@ class VendorManager:
                 result["is_payment_verified"] = vendor_details.get("is_payment_verified", False)
                 result["is_payment_required"] = vendor_details.get("is_payment_required", False)
                 result["status"] = vendor_details.get("status", "N/A")
-                # if not result.get("location"):
                 result["location"] = vendor_details.get("location")
                 result["specialization"] = vendor_details.get("specialization")
                 result["created_at"] = vendor_details.get("created_at")
@@ -631,6 +595,7 @@ class VendorManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
             result = await user_collection.delete_one({"_id": ObjectId(id)})
+            vendor = await vendor_collection.delete_one({"user_id": str(id)})
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
             return {"data": None}
@@ -802,10 +767,12 @@ class VendorManager:
                 "otp_expires": datetime.utcnow() + timedelta(minutes=10),
                 "roles": vendor_request.roles,
                 "password": hashed_password,
+                "status": vendor_request.status,
                 "is_dashboard_created": vendor_request.is_dashboard_created,
             }
 
             if vendor_request.business_type.lower() == "individual":
+                print("individual")
                 new_vendor_user["availability_slots"] = default_availability_slots()
 
             result = await user_collection.insert_one(new_vendor_user)
@@ -2169,43 +2136,40 @@ class VendorManager:
 
     async def subscription_payment_details(self, request: Request, token: str):
         try:
-            # Get the current user
             current_user = await get_current_user(request=request, token=token)
+            print(current_user, "current_user")
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
-            # Fetch the vendor details
             current_user_id = str(current_user.id)
+            print(current_user_id, "current_user_id")
             vendor = await vendor_collection.find_one({"user_id": current_user_id})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
             if not vendor.get("razorpay_subscription_id"):
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
 
-            # Check if the subscription is active
             subscription_id = vendor.get("razorpay_subscription_id")
+            print(subscription_id, "subscription_id")
             subscription = razorpay_client.subscription.fetch(subscription_id)
-            status = subscription.get("status")
-            if status != "active":
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subscription is not active")
+            # statuss = subscription.get("status")
+            # if statuss != "active":
+            #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subscription is not active")
 
-            # Fetch the subscription details from Razorpay
             plan_id = subscription.get("plan_id")
             plan_details = razorpay_client.plan.fetch(plan_id)
+            print(plan_details, "plan_details")
 
-            # Convert timestamps to readable date-time format
             def format_timestamp(timestamp):
                 return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S") if timestamp else None
 
-            # Convert paise to INR
             def format_amount(amount):
                 return amount / 100 if amount else 0  # Convert to rupees
 
-            # Formatting subscription details
             subscription_details = {
                 **subscription,
                 "current_start": format_timestamp(subscription.get("current_start")),
@@ -2225,9 +2189,9 @@ class VendorManager:
             return {
                 "vendor": {
                     "id": str(vendor.get("_id")),
-                    "name": vendor.get("first_name"),
-                    "email": vendor.get("email"),
-                    "phone": vendor.get("phone"),
+                    "name": current_user.first_name,
+                    "email": current_user.email,
+                    "phone": current_user.phone,
                     "business_name": vendor.get("business_name"),
                     "razorpay_subscription_id": vendor.get("razorpay_subscription_id"),
                     "is_subscription": vendor.get("is_subscription"),
@@ -2239,6 +2203,7 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex, "hhhhhhhh")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
@@ -2353,17 +2318,15 @@ class VendorManager:
             vendor_obj = await vendor_collection.find_one({"user_id": str(vendor)})
 
             vendor_id = vendor_obj["_id"]
-            total_bookings = await booking_collection.count_documents(
-                {"booking_confirm": True, "vendor_id": str(vendor_id)}
-            )
+            total_bookings = await booking_collection.count_documents({"vendor_id": ObjectId(vendor_id)})
 
             # Bookings that are canceled
             canceled_bookings = await booking_collection.count_documents(
-                {"booking_status": "cancelled", "vendor_id": str(vendor_id)}
+                {"booking_status": "cancelled", "vendor_id": ObjectId(vendor_id)}
             )
             # Bookings that are rescheduled
             reschedule_bookings = await booking_collection.count_documents(
-                {"booking_status": "rescheduled", "vendor_id": str(vendor_id)}
+                {"booking_status": "rescheduled", "vendor_id": ObjectId(vendor_id)}
             )
 
             return {
@@ -2392,14 +2355,12 @@ class VendorManager:
             vendor_id = vendor_obj["_id"]
             bookings_cursor = (
                 booking_collection.find(
-                    {"booking_status": "panding", "booking_confirm": True, "vendor_id": str(vendor_id)}
+                    {"booking_status": "panding", "payment_status": "paid", "vendor_id": ObjectId(vendor_id)}
                 )
                 .sort("created_at", DESCENDING)
                 .limit(10)
             )
-
-            bookings = await bookings_cursor.to_list(length=10)  # Convert cursor to list
-
+            bookings = await bookings_cursor.to_list(length=10)
             if not bookings:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No bookings found")
 
@@ -2422,17 +2383,17 @@ class VendorManager:
                         "category_name": category["name"] if category else None,
                         "service_name": service["name"] if service else None,
                         "booking_status": booking["booking_status"],
-                        "booking_confirm": booking["booking_confirm"],
+                        "booking_confirm": booking["booking_confirm"] if "booking_confirm" in booking else None,
                         "booking_date": booking["booking_date"],
                         "time_slot": booking["time_slot"],
-                        "payment_status": booking["payment_status"],
-                        "payment_method": booking["payment_method"],
+                        "payment_status": booking["payment_status"] if "payment_status" in booking else None,
+                        "payment_method": booking["payment_method"] if "payment_method" in booking else None,
                         "amount": booking["amount"],
                         "booking_cancel_reason": (
                             booking["booking_cancel_reason"] if "booking_cancel_reason" in booking else None
                         ),
-                        "booking_order_id": booking["booking_order_id"],
-                        "payment_id": booking["payment_id"],
+                        "booking_order_id": booking["booking_order_id"] if "booking_order_id" in booking else None,
+                        "payment_id": booking["payment_id"] if "payment_id" in booking else None,
                         "created_at": booking.get("created_at"),  # Include timestamp if needed
                     }
                 )
