@@ -269,8 +269,10 @@ class SuperUserManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            # if current_user.user_role != 2:
+            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             # Check if the user already exists
             user = await User.find_one(User.email == super_user_create_request.email)
             if user is not None:
@@ -319,7 +321,7 @@ class SuperUserManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             valid_roles = ["admin", "user", "vendor"]
             if role not in valid_roles:
@@ -375,7 +377,7 @@ class SuperUserManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             query = {"_id": ObjectId(id), "roles": {"$in": ["admin"]}}
             admin = await user_collection.find_one(query)
@@ -398,7 +400,7 @@ class SuperUserManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             # Validate costumer ID
             if not ObjectId.is_valid(id):

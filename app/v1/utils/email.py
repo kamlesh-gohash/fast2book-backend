@@ -191,6 +191,7 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "Account created": project_root / "templates/email/account_create.html",
         "Login With Otp": project_root / "templates/email/login_with_otp.html",
         "Vednor Create": project_root / "templates/email/vendor_create_email.html",
+        "APP Link": project_root / "templates/email/app_link.html",
     }
 
     # Get the template path based on the source

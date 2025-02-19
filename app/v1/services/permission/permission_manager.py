@@ -23,9 +23,10 @@ class PermissionManager:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            # if current_user.user_role != 2:
+            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
             query = {"roles": {"$regex": "^admin$", "$options": "i"}}
             admin_list = await user_collection.find(query).to_list(length=100)
@@ -121,8 +122,10 @@ class PermissionManager:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            # if current_user.user_role != 2:
+            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             if not admin_id:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin ID is required")
 
@@ -201,8 +204,10 @@ class PermissionManager:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            # if current_user.user_role != 2:
+            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             if not admin_id:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin ID is required")
 

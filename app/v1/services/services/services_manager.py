@@ -52,6 +52,7 @@ class ServicesManager:
                 "service_image_url": file_url,
                 "category_id": ObjectId(service_request.category_id),
                 "category_name": category["name"],
+                "category_slug": category["slug"],
                 "created_at": datetime.utcnow(),
             }
 
@@ -159,12 +160,15 @@ class ServicesManager:
 
     async def service_update(self, request: Request, token: str, id: str, service_request: UpdateServiceRequest):
         try:
+            # Get current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
+            # Check if the user has the required role
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
             # Validate service ID
             if not ObjectId.is_valid(id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid service ID: '{id}'")
@@ -176,12 +180,18 @@ class ServicesManager:
 
             # Validate category_id if provided
             if service_request.category_id:
+                if not ObjectId.is_valid(service_request.category_id):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid category ID: '{service_request.category_id}'",
+                    )
                 category = await category_collection.find_one({"_id": ObjectId(service_request.category_id)})
                 if not category:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Category with ID '{service_request.category_id}' does not exist.",
                     )
+
             # Prepare update data
             update_data = {}
             bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
@@ -200,6 +210,7 @@ class ServicesManager:
 
             if service_request.status is not None:
                 update_data["status"] = service_request.status
+
             if service_request.category_id is not None:
                 update_data["category_id"] = ObjectId(service_request.category_id)
 
@@ -217,6 +228,7 @@ class ServicesManager:
             if updated_service.get("category_id"):
                 category = await category_collection.find_one({"_id": updated_service["category_id"]})
                 category_name = category["name"] if category else "Unknown Category"
+
             return {
                 "id": str(updated_service["_id"]),
                 "name": updated_service.get("name"),

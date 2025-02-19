@@ -2,7 +2,7 @@ import razorpay
 import razorpay.errors
 
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
-from fastapi import APIRouter, Depends, Form, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, Body, Depends, Form, HTTPException, Path, Query, Request, UploadFile, status
 
 from app.v1.dependencies import *
 from app.v1.middleware.auth import get_token_from_header
@@ -44,27 +44,31 @@ async def appointment_time(
         )
 
 
-@router.post("/user-book-appointment", status_code=status.HTTP_201_CREATED)
+@router.get("/user-book-appointment", status_code=status.HTTP_200_OK)
 async def book_appointment(
     request: Request,
-    booking_request: CreateBookingRequest,
+    booking_date: str = Query(..., description="Booking date in YYYY-MM-DD format"),
+    slot: str = Query(..., description="Time slot in 'HH:MM - HH:MM' format"),
+    vendor_id: str = Query(..., description="Vendor ID"),
+    service_id: str = Query(..., description="Service ID"),
     token: str = Depends(get_token_from_header),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        validation_result = booking_request.validate()
-        if validation_result:
-            return validation_result
+        # Call the booking manager to fetch and return the required data
+        result = await booking_manager.book_appointment(
+            request=request,
+            token=token,
+            booking_date=booking_date,
+            slot=slot,
+            vendor_id=vendor_id,
+            service_id=service_id,
+        )
 
-        result = await booking_manager.book_appointment(request=request, token=token, booking_request=booking_request)
-
-        return success({"message": "Booking Created Successfully", "data": result})
+        return success({"message": "Booking details fetched successfully", "data": result})
 
     except HTTPException as http_ex:
-        # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
-    except ValueError as ex:
-        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
@@ -276,17 +280,25 @@ async def get_user_booking_for_admin(
         )
 
 
-@router.post("/booking-payment/{id}", status_code=status.HTTP_200_OK)
+@router.post("/booking-payment", status_code=status.HTTP_200_OK)
 async def booking_payment(
     request: Request,
     token: str = Depends(get_token_from_header),
-    id: str = Path(..., title="The ID of the booking to retrieve"),
+    booking_data: CreateBookingRequest = Body(...),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.booking_payment(request=request, token=token, id=id)
+        result = await booking_manager.booking_payment(
+            request=request,
+            token=token,
+            vendor_id=booking_data.vendor_id,
+            slot=booking_data.time_slot,
+            booking_date=booking_data.booking_date,
+            service_id=booking_data.service_id,
+            category_id=booking_data.category_id,
+        )
 
-        return success({"message": "payment successfully", "data": result})
+        return success({"message": "Payment initiated successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
@@ -300,6 +312,7 @@ async def booking_payment(
 
 @router.post("/verify-payment", status_code=status.HTTP_200_OK)
 async def verify_payment(request: Request, payload: dict):
+
     try:
         razorpay_order_id = payload["razorpay_order_id"]
         razorpay_payment_id = payload["razorpay_payment_id"]

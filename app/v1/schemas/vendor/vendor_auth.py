@@ -141,6 +141,7 @@ update_vendor_validator = zon.record(
         "phone": zon.number().int().min(1000000000).max(9999999999).optional(),
         "vendor_address": zon.string().optional(),
         "vendor_details": zon.string().optional(),
+        "is_payment_required": zon.boolean().optional(),
     }
 )
 
@@ -162,7 +163,8 @@ class UpdateVendorRequest(BaseModel):
     category_name: Optional[str] = Field(None, description="Name of the selected category")
     services: Optional[List[Service]] = Field(None, description="List of selected services with their IDs and names")
     service_details: Optional[str] = None
-    fees: float = Field(default=0.0)
+    is_payment_required: Optional[bool] = Field(default=False)
+    fees: Optional[float] = Field(default=0.0)
     # Additional Fields
     manage_plan: Optional[str] = None
     manage_fee_and_gst: Optional[str] = None
@@ -262,7 +264,7 @@ class SignUpVendorRequest(BaseModel):
     manage_offer: Optional[str] = None
     is_payment_verified: bool = Field(default=False)
     is_dashboard_created: bool = Field(default=False)
-    # availability_slots: List[DaySlot] = Field(default_factory=default_availability_slots)
+    is_payment_required: bool = Field(default=False)
     fees: float = Field(default=0.0)
     location: Optional[Location] = Field(None, description="Location details of the vendor")
     specialization: Optional[str] = Field(None, description="specialization of the vendor")
