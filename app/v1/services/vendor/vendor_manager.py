@@ -112,7 +112,9 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             if create_vendor_request.email:
                 existing_user = await user_collection.find_one({"email": create_vendor_request.email})
@@ -304,7 +306,9 @@ class VendorManager:
 
             # Check permissions
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Validate role
             valid_roles = ["admin", "user", "vendor"]
@@ -400,7 +404,9 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             query = {"_id": ObjectId(id), "roles": {"$in": ["vendor"]}}
 
             result = await user_collection.find_one(query)
@@ -463,7 +469,9 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Validate the vendor ID
             if not ObjectId.is_valid(id):
@@ -619,7 +627,9 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             result = await user_collection.delete_one({"_id": ObjectId(id)})
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
@@ -637,7 +647,9 @@ class VendorManager:
             user_roles = [role.value for role in current_user.roles]
 
             if not any(role in allowed_roles for role in user_roles) and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             services = await services_collection.find({"category_id": ObjectId(id), "status": "active"}).to_list(None)
 
@@ -658,14 +670,13 @@ class VendorManager:
         vendor_request: SignInVendorRequest,
     ):
         try:
-            # Search user by email or phone
-            # query = {"$or": [{"email": vendor_request.email}, {"phone": vendor_request.phone}]}
             if vendor_request.email:
                 query = {"email": vendor_request.email}
             elif vendor_request.phone:
                 query = {"phone": vendor_request.phone}
             else:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email or phone is required")
+
             vendor = await user_collection.find_one(query)
 
             if not vendor:
@@ -674,11 +685,7 @@ class VendorManager:
             if "vendor" not in vendor["roles"]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not a vendor")
 
-            # if vendor["status"] != "active":
-            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Vendor is not active")
-            print(vendor["status"], "vendor status")
             if vendor["status"] != "active":
-                print(vendor["status"], "vendor status")
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="Vendor status is not active, please contact admin"
                 )
@@ -713,7 +720,8 @@ class VendorManager:
                 stored_password_hash.encode("utf-8") if isinstance(stored_password_hash, str) else stored_password_hash,
             ):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Password")
-            if not vendor.get("is_active", False):  # Default to False if key is missing
+
+            if not vendor.get("is_active", False):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Vendor user is not active")
 
             vendor_data = await vendor_collection.find_one({"user_id": str(vendor["_id"])})
@@ -724,93 +732,55 @@ class VendorManager:
             access_token = create_access_token(data={"sub": vendor["email"] or vendor["phone"]})
             refresh_token = create_refresh_token(data={"sub": vendor["email"] or vendor["phone"]})
 
-            vendor_response = {key: str(value) if key == "_id" else value for key, value in vendor.items()}
-            vendor_response["id"] = vendor_response.pop("_id")
-            vendor_response.pop("password", None)
-            vendor_response.pop("otp", None)
-            vendor_response["is_subscription"] = subscription
-            vendor_response["access_token"] = access_token
-            vendor_response["refresh_token"] = refresh_token
-            vendor_response["vendor_details"] = {
-                "business_name": vendor_data.get("business_name"),
-                "business_type": vendor_data.get("business_type"),
-                "business_address": vendor_data.get("business_address"),
-                "category_id": vendor_data.get("category_id"),
-                "category_name": vendor_data.get("category_name"),
-                "services": vendor_data.get("services"),
-                "service_details": vendor_data.get("service_details"),
-                "manage_plan": vendor_data.get("manage_plan"),
-                "manage_fee_and_gst": vendor_data.get("manage_fee_and_gst"),
-                "manage_offer": vendor_data.get("manage_offer"),
-                "status": vendor_data.get("status"),
+            user_data = {
+                "first_name": vendor.get("first_name"),
+                "last_name": vendor.get("last_name"),
+                "email": vendor.get("email"),
+                "user_image": vendor.get("user_image"),
+                "user_image_url": vendor.get("user_image_url"),
+                "otp_expires": vendor.get("otp_expires"),
+                "user_role": vendor.get("user_role"),
+                "phone": vendor.get("phone"),
+                "is_deleted": vendor.get("is_deleted", False),
+                "is_active": vendor.get("is_active", False),
+                "created_at": vendor.get("created_at"),
+                "updated_at": vendor.get("updated_at"),
+                "register_status": vendor.get("register_status"),
+                "register_token": vendor.get("register_token"),
+                "register_expires": vendor.get("register_expires"),
+                "reset_password_token": vendor.get("reset_password_token"),
+                "reset_password_expires": vendor.get("reset_password_expires"),
+                "user_profile": vendor.get("user_profile"),
+                "gender": vendor.get("gender"),
+                "blood_group": vendor.get("blood_group"),
+                "dob": vendor.get("dob"),
+                "status": vendor.get("status"),
+                "roles": vendor.get("roles"),
+                "menu": vendor.get("menu", []),
+                "address": vendor.get("address"),
+                "secondary_phone_number": vendor.get("secondary_phone_number"),
                 "availability_slots": vendor_data.get("availability_slots"),
+                "notification_settings": vendor.get("notification_settings", {}),
+                "id": str(vendor["_id"]),
+                "is_subscription": subscription,
+                "business_type": vendor_data.get("business_type"),
             }
 
-            return vendor_response
+            response = {
+                "user_data": user_data,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+            }
+
+            return response
 
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    # async def vendor_sign_up(self, vendor_request: SignUpVendorRequest):
-    #     try:
-    #         existing_vendor = await user_collection.find_one({"email": vendor_request.email})
-    #         if existing_vendor:
-    #             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Vendor already exists")
-
-    #         hashed_password = bcrypt.hashpw(vendor_request.password.encode("utf-8"), bcrypt.gensalt())
-    #         vendor_request.is_dashboard_created = True
-    #         otp = generate_otp()
-
-    #         new_vendor_user = {
-    #             "first_name": vendor_request.first_name,
-    #             "last_name": vendor_request.last_name,
-    #             "email": vendor_request.email,
-    #             "otp": otp,
-    #             "otp_expires": datetime.utcnow() + timedelta(minutes=10),
-    #             "roles": vendor_request.roles,
-    #             "password": hashed_password,
-    #             "is_dashboard_created": vendor_request.is_dashboard_created,
-    #         }
-    #         if vendor_request.business_type.lower() == "individual":
-    #             new_vendor_user["availability_slots"] = default_availability_slots()
-    #         result = await user_collection.insert_one(new_vendor_user)
-
-    #         user_id = str(result.inserted_id)
-
-    #         vendor_data = {
-    #             "user_id": user_id,
-    #             "business_name": vendor_request.business_name,
-    #             "business_type": vendor_request.business_type,
-    #             "status": vendor_request.status,
-    #             "is_subscription": False,
-    #             "created_at": datetime.utcnow(),
-    #         }
-
-    #         vendor_result = await vendor_collection.insert_one(vendor_data)
-
-    #         new_vendor_user["id"] = user_id
-    #         new_vendor_user.pop("_id", None)
-    #         new_vendor_user.pop("password", None)
-    #         new_vendor_user.pop("otp", None)
-    #         new_vendor_user["vendor_details"] = {
-    #             "id": str(vendor_result.inserted_id),
-    #             "business_name": vendor_request.business_name,
-    #             "business_type": vendor_request.business_type,
-    #             "status": vendor_request.status,
-    #         }
-    #         source = "Activation_code"
-    #         context = {"otp": otp}
-    #         to_email = vendor_request.email
-    #         await send_email(to_email, source, context)
-
-    #         return new_vendor_user
-    #     except Exception as ex:
-    #         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
     async def vendor_sign_up(self, vendor_request: SignUpVendorRequest):
         try:
             existing_vendor = None
 
-            # Check if user exists based on email or phone
             if vendor_request.email:
                 existing_vendor = await user_collection.find_one({"email": vendor_request.email})
             elif vendor_request.phone:
@@ -826,7 +796,7 @@ class VendorManager:
             new_vendor_user = {
                 "first_name": vendor_request.first_name,
                 "last_name": vendor_request.last_name,
-                "email": vendor_request.email,  # May be None
+                "email": vendor_request.email,
                 "phone": int(vendor_request.phone) if vendor_request.phone else None,
                 "otp": otp,
                 "otp_expires": datetime.utcnow() + timedelta(minutes=10),
@@ -863,7 +833,6 @@ class VendorManager:
                 "status": vendor_request.status,
             }
 
-            # Send OTP based on whether user signed up with email or phone
             if vendor_request.email:
                 source = "Activation_code"
                 context = {"otp": otp}
@@ -872,7 +841,7 @@ class VendorManager:
             elif vendor_request.phone:
                 to_phone = vendor_request.phone
                 expiry_minutes = 10
-                await send_sms_on_phone(to_phone, otp, expiry_minutes)  # Implement send_sms function
+                await send_sms_on_phone(to_phone, otp, expiry_minutes)
 
             return new_vendor_user
         except Exception as ex:
@@ -885,7 +854,9 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             query = {"_id": ObjectId(current_user.id)}
             vendor = await user_collection.find_one(query)
@@ -923,17 +894,16 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
-            # Validate that category_id is provided
             if update_vendor_request.category_id is None:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Category ID is required.")
 
-            # Validate that services are provided
             if update_vendor_request.services is None or len(update_vendor_request.services) == 0:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one service is required.")
 
-            # Update user profile in user_collection
             user_query = {"_id": ObjectId(current_user.id)}
             user_data = {}
             bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
@@ -953,17 +923,15 @@ class VendorManager:
                 user_data["user_image_url"] = file_url
             else:
                 file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{current_user.get('user_image')}"
-            # If there are updates to user data, update user_collection
+
             if user_data:
                 await user_collection.update_one(user_query, {"$set": user_data})
 
-            # Check if the user exists in the user collection
             updated_user = await user_collection.find_one(user_query)
             if not updated_user:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-            # Update vendor-specific details in vendor_collection
-            vendor_query = {"user_id": str(current_user.id)}  # Assuming vendor_collection has user_id as foreign key
+            vendor_query = {"user_id": str(current_user.id)}
             vendor_data = {}
 
             if update_vendor_request.business_type is not None:
@@ -1025,7 +993,6 @@ class VendorManager:
                 ]
 
             if update_vendor_request.service_details is not None:
-                print(update_vendor_request.service_details, "aaaaaaaaaaaaa")
                 vendor_data["service_details"] = update_vendor_request.service_details
             if update_vendor_request.manage_plan is not None:
                 vendor_data["manage_plan"] = update_vendor_request.manage_plan
@@ -1038,16 +1005,13 @@ class VendorManager:
             if update_vendor_request.business_details is not None:
                 vendor_data["business_details"] = update_vendor_request.business_details
 
-            # If there are updates to vendor data, update vendor_collection
             if vendor_data:
                 await vendor_collection.update_one(vendor_query, {"$set": vendor_data})
 
-            # Check if the vendor exists in the vendor collection
             updated_vendor = await vendor_collection.find_one(vendor_query)
             if not updated_vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Prepare the response data
             response_data = {
                 "user_id": str(updated_user["_id"]),
                 "first_name": updated_user.get("first_name"),
@@ -1088,7 +1052,9 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             vendor = await vendor_collection.find_one({"user_id": str(current_user.id)})
             if not vendor or vendor.get("business_type") != "business":
@@ -1170,14 +1136,15 @@ class VendorManager:
         search: str = None,
     ):
         try:
-            # Get the current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             # Check if the current user has the "vendor" role
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Query to filter users with the "vendor_user" role and created by the current user
             skip = max((page - 1) * limit, 0)
@@ -1197,7 +1164,6 @@ class VendorManager:
                     {"phone": search_regex},
                 ]
 
-            # Find users matching the query
             vendor_users = await user_collection.find(query).skip(skip).limit(limit).to_list(length=limit)
             if not vendor_users:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor users found")
@@ -1220,7 +1186,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Get the vendor's current data
             vendor = await vendor_collection.find_one({"user_id": str(current_user.id)})
@@ -1231,7 +1199,9 @@ class VendorManager:
                 if not vendor_user:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
                 if vendor_user["created_by"] != str(current_user.id):
-                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                    )
                 new_availability_slots = []
                 for day_slot in slots:
                     day_slot_data = day_slot.dict()
@@ -1317,7 +1287,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             if vendor_user_id:
                 vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
                 if not vendor_user:
@@ -1341,7 +1313,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             vendor = await vendor_collection.find_one({"user_id": str(current_user.id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
@@ -1401,7 +1375,9 @@ class VendorManager:
 
             # Ensure the user is a vendor
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Find the vendor associated with the user
             vendor = await vendor_collection.find_one({"user_id": str(current_user.id)})
@@ -1457,7 +1433,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             vendor = await vendor_collection.find_one({"user_id": str(current_user.id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
@@ -1545,7 +1523,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             vendor = await vendor_collection.find_one({"user_id": vendor_id})
             if not vendor:
@@ -1608,7 +1588,9 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             user_data = await user_collection.find_one({"_id": ObjectId(vendor_id)})
             if not user_data:
@@ -1668,7 +1650,9 @@ class VendorManager:
 
             # Ensure the user is a super admin
             if current_user.user_role != 2:  # Assuming role `2` is for super admin
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             query = {"roles": {"$regex": "^vendor$", "$options": "i"}}
             # Fetch all vendors from the user collection (consider filtering for vendor-specific users)
             vendors = await user_collection.find(query).to_list(None)  # Assuming role 'vendor' is used for vendor users
@@ -1729,7 +1713,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             if not ObjectId.is_valid(vendor_id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid vendor ID")
@@ -1774,7 +1760,9 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             valid_roles = ["admin", "user", "vendor"]
             if role not in valid_roles:
                 raise HTTPException(
@@ -1819,7 +1807,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             if not ObjectId.is_valid(id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid vendor user ID")
             vendor_user = await user_collection.find_one({"_id": ObjectId(id)})
@@ -1850,7 +1840,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             valid_roles = ["admin", "user", "vendor"]
             if role not in valid_roles:
                 raise HTTPException(
@@ -1883,7 +1875,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             vendor = await vendor_collection.find_one({"user_id": current_user.id})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
@@ -1910,7 +1904,7 @@ class VendorManager:
 
     #         # Check if the user has the "vendor" role
     #         if "vendor" not in [role.value for role in current_user.roles]:
-    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page ")
 
     #         # Fetch the vendor details
     #         current_user_id = str(current_user.id)
@@ -1997,7 +1991,9 @@ class VendorManager:
 
             if "vendor" not in [role.value for role in current_user.roles]:
                 print(current_user.roles, "current_user.roles")
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
 
             current_user_id = str(current_user.id)
             vendor = await vendor_collection.find_one({"user_id": current_user_id})
@@ -2018,7 +2014,6 @@ class VendorManager:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
                 )
-            print(period, "perioddddddddddd")
             if period == "monthly":
                 total_count = vendor_subscription_request.total_count * 12
             elif period == "yearly":
@@ -2121,16 +2116,15 @@ class VendorManager:
 
     async def verify_subscription_payment(self, request: Request, token: str, subscription_id: str):
         try:
-            # Get the current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            # Check if the user has the vendor role
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
-            # Fetch the subscription details from Razorpay
             try:
                 subscription_details = razorpay_client.subscription.fetch(subscription_id)
             except Exception as e:
@@ -2139,33 +2133,29 @@ class VendorManager:
                     detail=f"Failed to fetch Razorpay subscription: {str(e)}",
                 )
 
-            # Check the status of the subscription
             subscription_status = subscription_details.get("status", "").lower()
-            is_active = subscription_status in ["active", "authenticated"]
+            print(subscription_status, "subscription_status")
+            is_active = subscription_status in ["Active", "authenticated"]
 
-            # Fetch the vendor details
             current_user_id = str(current_user.id)
+            print(current_user_id, "current_user_id")
             vendor = await vendor_collection.find_one({"user_id": current_user_id})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Update the vendor details
             vendor_update_data = {"razorpay_subscription_id": subscription_id, "is_subscription": True}
 
             result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
-
-            if result.modified_count == 0:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
-            result["id"] = str(result["_id"])
+            # if result.modified_count == 0:
+            #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
+            # result["id"] = str(result["_id"])
 
             # Return the subscription status and details
             return {
                 "subscription_id": subscription_id,
                 "status": subscription_status,
                 "is_active": is_active,
-                "subscription_details": subscription_details,
-                "amount": int(subscription_details["item"]["amount"]),
-                "vendor_id": result,
+                "is_subscription": True,
             }
 
         except HTTPException as e:
@@ -2184,7 +2174,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Fetch the vendor details
             current_user_id = str(current_user.id)
@@ -2233,7 +2225,7 @@ class VendorManager:
             return {
                 "vendor": {
                     "id": str(vendor.get("_id")),
-                    "name": vendor.get("name"),
+                    "name": vendor.get("first_name"),
                     "email": vendor.get("email"),
                     "phone": vendor.get("phone"),
                     "business_name": vendor.get("business_name"),
@@ -2259,7 +2251,7 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             # if "vendor" not in [role.value for role in current_user.roles]:
-            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page ")
             plans = await plan_collection.find({"status": "active"}).to_list(length=100)
 
             for plan in plans:
@@ -2282,7 +2274,9 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             plan = await plan_collection.find_one({"_id": ObjectId(plan_id)})
             if not plan:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
@@ -2320,7 +2314,9 @@ class VendorManager:
 
             # Check if the current user has the "vendor" role
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Query to filter users with the "vendor_user" role and created by the current user
             query = {
@@ -2348,7 +2344,9 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Use current_user.id as vendor_id
             vendor = str(current_user.id)
@@ -2383,7 +2381,9 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Use current_user.id as vendor_id
             vendor = str(current_user.id)
