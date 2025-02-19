@@ -75,6 +75,7 @@ class Vendor(Document):
     razorpay_customer_id: Optional[str] = None
     razorpay_account_id: Optional[str] = None
     is_subscription: bool = Field(default=False)
+    is_payment_required: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:

@@ -10,6 +10,7 @@ from app.v1.models.support import Support
 from app.v1.schemas.user.auth import *
 from app.v1.services import UserManager
 from app.v1.services.support.support_manager import SupportManager
+from app.v1.utils.email import generate_otp, send_email, send_sms_on_phone
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
 from app.v1.utils.token import *
 
@@ -535,4 +536,39 @@ async def get_blog(
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-app-link", status_code=status.HTTP_200_OK)
+async def send_link(email: str = Query(None), phone: str = Query(None)):
+    try:
+        if not email and not phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either email or phone must be provided",
+            )
+
+        # Send link via email
+        if email:
+            source = "APP Link"
+            to_email = email
+            link = "https://fast2book.com/"
+            context = {"to_email": email, "link": link}
+            await send_email(to_email, source, context)
+
+        # Send link via SMS
+        if phone:
+            to_phone = phone
+            expiry_minutes = 10
+            otp = "https://fast2book.com/"
+            await send_sms_on_phone(to_phone, otp, expiry_minutes)
+
+        return {"message": "Link sent successfully"}
+
+    except HTTPException as http_ex:
+        raise http_ex
+    except Exception as ex:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(ex)}",
         )

@@ -1,3 +1,7 @@
+import hashlib
+import hmac
+import json
+
 from typing import Callable, Type
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
@@ -6,7 +10,7 @@ from pydantic import ValidationError
 
 from app.v1.dependencies import get_vendor_manager
 from app.v1.middleware.auth import get_token_from_header
-from app.v1.models import User
+from app.v1.models import User, vendor_collection
 from app.v1.schemas.slots.slots import *
 from app.v1.schemas.vendor.vendor_auth import *
 from app.v1.services import VendorManager
@@ -14,6 +18,48 @@ from app.v1.utils.response.response_format import failure, internal_server_error
 
 
 router = APIRouter()
+
+
+async def update_subscription_payment_details(
+    subscription_id: str, payment_id: str, amount: int, currency: str, status: str
+):
+    print(
+        subscription_id, payment_id, amount, currency, status, "subscription_id, payment_id, amount, currency, status"
+    )
+    """
+    Update the subscription payment details in the database.
+    """
+    # Update the subscription details in your database
+    await vendor_collection.update_one(
+        {"razorpay_subscription_id": subscription_id},
+        {
+            "$set": {
+                "is_subscription": True,
+            }
+        },
+    )
+
+
+async def cancel_subscription(subscription_id: str):
+    print(subscription_id, "subscription_id")
+    """
+    Handle subscription cancellation.
+    """
+    # Update the subscription status in your database
+    await vendor_collection.update_one(
+        {"razorpay_subscription_id": subscription_id}, {"$set": {"is_subscription": False}}
+    )
+
+
+async def handle_payment_failure(subscription_id: str, payment_id: str):
+    print(subscription_id, payment_id, "subscription_id, payment_id")
+    """
+    Handle payment failure.
+    """
+    # Update the payment status in your database
+    await vendor_collection.update_one(
+        {"razorpay_subscription_id": subscription_id}, {"$set": {"last_payment_status": "failed"}}
+    )
 
 
 # Custom function to handle validation errors
@@ -294,6 +340,7 @@ async def update_profile(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex, "ex")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -699,13 +746,135 @@ async def create_vendor_subscription(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex, "ex")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
-@router.post("/verify-subscription-payment", status_code=status.HTTP_200_OK)
+@router.get("/verify-subscription-payment/{subscription_id}", status_code=status.HTTP_200_OK)
+async def verify_subscription_payment(
+    request: Request,
+    subscription_id: str,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        # Pass data to vendor manager for processing
+        result = await vendor_manager.verify_subscription_payment(
+            request=request, token=token, subscription_id=subscription_id
+        )
+        return success({"message": "Subscription payment verified successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        print(ex, "ex")
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+import logging
+
+
+RAZORPAY_WEBHOOK_SECRET = "fast2book"
+logger = logging.getLogger(__name__)
+
+
+@router.post("/razorpay-webhook")
+async def razorpay_webhook(request: Request):
+    try:
+        logger.info("Received Razorpay webhook")
+
+        # Get the raw body of the request
+        body = await request.body()
+        body_str = body.decode("utf-8")
+        body_dict = json.loads(body_str)
+        print(body_dict, "body_dict")
+
+        # Get the Razorpay signature from headers
+        razorpay_signature = request.headers.get("X-Razorpay-Signature")
+        if not razorpay_signature:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Signature missing")
+        print(razorpay_signature, "razorpay_signature")
+
+        # Verify the webhook signature
+        generated_signature = hmac.new(
+            RAZORPAY_WEBHOOK_SECRET.encode("utf-8"), body_str.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(generated_signature, razorpay_signature):
+            logger.error("Invalid webhook signature")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
+
+        # Extract event type and payload
+        event = body_dict.get("event")
+        print(event, "event")
+        payload = body_dict.get("payload", {})
+        print(payload, "payload")
+
+        # Default URLs for redirection
+        success_url = "https://fast2book.com/"  # Update this to your success page
+        failure_url = "https://fast2book.com/payment-failed"  # Update this to your failure page
+
+        # if event == "payment.captured":
+        #     logger.info("Handling payment.captured event")
+        #     payment_id = payload.get('payment', {}).get('entity', {}).get('id')
+        #     amount = payload.get('payment', {}).get('entity', {}).get('amount')
+        #     currency = payload.get('payment', {}).get('entity', {}).get('currency')
+        #     status = payload.get('payment', {}).get('entity', {}).get('status')
+
+        #     # Redirect to success URL
+        #     print("Redirecting to success URL:", success_url)
+        #     return RedirectResponse(url=success_url)
+
+        if event == "subscription.activated":
+            logger.info("Handling subscription.activated event")
+            subscription_id = payload.get("subscription", {}).get("entity", {}).get("id") or payload.get(
+                "payment", {}
+            ).get("entity", {}).get("subscription_id")
+
+            payment_id = payload.get("payment", {}).get("entity", {}).get("id")
+            amount = payload.get("payment", {}).get("entity", {}).get("amount")
+            currency = payload.get("payment", {}).get("entity", {}).get("currency")
+            status = payload.get("payment", {}).get("entity", {}).get("status")
+
+            # Update subscription payment details
+            await update_subscription_payment_details(subscription_id, payment_id, amount, currency, status)
+            print("Subscription activated and updated")
+            return success({"message": "Subscription activated", "data": payload, "redirect_url": success_url})
+
+        elif event == "payment.failed":
+            logger.info("Handling payment.failed event")
+            payment_id = payload.get("payment", {}).get("id")
+            subscription_id = payload.get("subscription", {}).get("id")
+
+            if subscription_id and payment_id:
+                await handle_payment_failure(subscription_id, payment_id)
+
+            return failure({"message": "Payment failed", "data": payload, "redirect_url": failure_url})
+
+        # Add more event handlers if needed
+
+        return success({"message": "Webhook processed successfully", "data": payload})
+
+    except HTTPException as http_ex:
+        logger.error("Invalid JSON payload received")
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+
+    except Exception as ex:
+        logger.exception("Unexpected error in webhook processing")
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vendor-subscription-payment-detail", status_code=status.HTTP_200_OK)
 async def subscription_payment_details(
     request: Request,
     token: str = Depends(get_token_from_header),
@@ -713,7 +882,7 @@ async def subscription_payment_details(
 ):
     try:
         result = await vendor_manager.subscription_payment_details(request=request, token=token)
-        return success({"message": "payment successfully", "data": result})
+        return success({"message": "subscription payment details found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
@@ -780,6 +949,48 @@ async def vendor_users_list_for_slot(
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vednor-dashboard", status_code=status.HTTP_200_OK)
+async def get_dashboard_data_for_vendor(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.get_dashboard_data_for_vendor(request=request, token=token)
+        return success({"message": "Dashboard details", "data": result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-vendor-bookings", status_code=status.HTTP_200_OK)
+async def get_vendor_bookings(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.get_vendor_bookings(request=request, token=token)
+        return success({"message": "Dashboard details", "data": result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
