@@ -16,7 +16,9 @@ class SupportManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Pagination variables
             skip = max((page - 1) * limit, 0)
@@ -59,7 +61,9 @@ class SupportManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             support = await support_collection.find_one({"_id": ObjectId(support_id)})
             if not support:
@@ -78,7 +82,9 @@ class SupportManager:
 
             # Check if the user is an admin
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Fetch the support ticket
             support = await support_collection.find_one({"_id": ObjectId(support_id)})

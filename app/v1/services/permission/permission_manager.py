@@ -24,9 +24,11 @@ class PermissionManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             # if current_user.user_role != 2:
-            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page ")
 
             query = {"roles": {"$regex": "^admin$", "$options": "i"}}
             admin_list = await user_collection.find(query).to_list(length=100)
@@ -62,7 +64,9 @@ class PermissionManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             permission_list = DEFAULT_MENU_STRUCTURE
             return {"data": permission_list}
@@ -76,7 +80,7 @@ class PermissionManager:
     #         if not current_user:
     #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
     #         if current_user.user_role != 2:
-    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page ")
 
     #         if not admin_id:
     #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin ID is required")
@@ -123,9 +127,11 @@ class PermissionManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             # if current_user.user_role != 2:
-            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page ")
             if not admin_id:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin ID is required")
 
@@ -149,7 +155,7 @@ class PermissionManager:
     #             )
     #         if current_user.user_role != 2:
     #             raise HTTPException(
-    #                 status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+    #                 status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
     #             )
     #         if not admin_id:
     #             raise HTTPException(
@@ -205,9 +211,11 @@ class PermissionManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             # if current_user.user_role != 2:
-            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page ")
             if not admin_id:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin ID is required")
 

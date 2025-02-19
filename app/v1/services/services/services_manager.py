@@ -27,7 +27,9 @@ class ServicesManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             category = await category_collection.find_one({"_id": ObjectId(service_request.category_id)})
             if not category:
                 raise HTTPException(
@@ -88,7 +90,9 @@ class ServicesManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             skip = (page - 1) * limit
             query = {}
 
@@ -136,7 +140,9 @@ class ServicesManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             service = await services_collection.find_one({"_id": ObjectId(id)})
             if not service:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
@@ -167,7 +173,9 @@ class ServicesManager:
 
             # Check if the user has the required role
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             # Validate service ID
             if not ObjectId.is_valid(id):
@@ -213,22 +221,22 @@ class ServicesManager:
 
             if service_request.category_id is not None:
                 update_data["category_id"] = ObjectId(service_request.category_id)
+                update_data["category_name"] = category["name"]
 
             if not update_data:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields provided for update"
                 )
 
-            # Perform the update
-            await services_collection.update_one({"_id": ObjectId(id)}, {"$set": update_data})
+            update_result = await services_collection.update_one({"_id": ObjectId(id)}, {"$set": update_data})
 
-            # Fetch the updated service
             updated_service = await services_collection.find_one({"_id": ObjectId(id)})
+
             category_name = None
             if updated_service.get("category_id"):
                 category = await category_collection.find_one({"_id": updated_service["category_id"]})
                 category_name = category["name"] if category else "Unknown Category"
-
+                print("Category Name:", category_name)
             return {
                 "id": str(updated_service["_id"]),
                 "name": updated_service.get("name"),
@@ -253,7 +261,9 @@ class ServicesManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             await services_collection.delete_one({"_id": ObjectId(id)})
             return {"data": None}
         except Exception as ex:
@@ -271,7 +281,9 @@ class ServicesManager:
             user_roles = [role.value for role in current_user.roles]
 
             if not any(role in allowed_roles for role in user_roles) and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             active_categories = await category_collection.find({"status": "active"}).to_list(length=100)
 
             # Format the response with category name, status, and created_at

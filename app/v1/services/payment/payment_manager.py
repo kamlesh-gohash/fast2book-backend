@@ -17,7 +17,9 @@ class PaymentManager:
 
             # Check if the current user has the "vendor" role
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             skip = max((page - 1) * limit, 0)
             query = {}
             payment_types = await payment_collection.find(query).skip(skip).limit(limit).to_list(None)
@@ -54,7 +56,9 @@ class PaymentManager:
 
             # Check if the current user has the "vendor" role
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             payment = await payment_collection.find_one({"_id": ObjectId(id)})
             if not payment:
