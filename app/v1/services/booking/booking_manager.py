@@ -228,7 +228,9 @@ class BookingManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             user_id = str(current_user.id)
             vendor = await vendor_collection.find_one({"user_id": user_id})
             if not vendor:
@@ -341,7 +343,9 @@ class BookingManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             user_id = str(current_user.id)
 
             vendor = await vendor_collection.find_one({"user_id": user_id})
@@ -372,7 +376,9 @@ class BookingManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             user_id = str(current_user.id)
 
             vendor = await vendor_collection.find_one({"user_id": user_id})
@@ -384,7 +390,9 @@ class BookingManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
             if str(vendor["_id"]) != str(booking["vendor_id"]):
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             booking = await booking_collection.update_one({"_id": ObjectId(id)}, {"$set": request.json})
 
@@ -409,7 +417,9 @@ class BookingManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "user" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             user_id = str(current_user.id)
             user = await user_collection.find_one({"_id": ObjectId(user_id)})
@@ -490,7 +500,9 @@ class BookingManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "user" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             user_id = str(current_user.id)
 
             user = await user_collection.find_one({"_id": ObjectId(user_id)})
@@ -532,7 +544,9 @@ class BookingManager:
             if not current_user:
                 raise ValueError(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             valid_roles = ["admin", "user", "vendor"]
             if role not in valid_roles:
@@ -634,7 +648,9 @@ class BookingManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "admin" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
 
             booking = await booking_collection.find_one({"_id": ObjectId(id)})
             if not booking:
