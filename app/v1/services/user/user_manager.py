@@ -819,10 +819,8 @@ class UserManager:
 
             if address:
                 address = address.strip()
-                print(address, "address in get_vendor_list_for_category")
                 if address:
-                    escaped_address = re.escape(address)  # Escape special characters
-                    print(escaped_address, "escaped_address")
+                    escaped_address = re.escape(address)
                     pipeline.append(
                         {
                             "$match": {

@@ -236,7 +236,6 @@ class ServicesManager:
             if updated_service.get("category_id"):
                 category = await category_collection.find_one({"_id": updated_service["category_id"]})
                 category_name = category["name"] if category else "Unknown Category"
-                print("Category Name:", category_name)
             return {
                 "id": str(updated_service["_id"]),
                 "name": updated_service.get("name"),

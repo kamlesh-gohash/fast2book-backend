@@ -277,7 +277,7 @@ async def send_sms_on_phone(to_phone: str, otp: str, expiry_minutes: int = 10):
     try:
         formatted_phone = f"+91{to_phone}"
         message = f"Your OTP for login to Fast2Book is {otp}. This OTP is valid for {expiry_minutes} minutes. Do not share this with anyone. - Fast2Book"
-        print(message, "message")
+
         # Send SMS
         response = sns_client.publish(PhoneNumber=formatted_phone, Message=message)
 
