@@ -311,7 +311,6 @@ class VendorManager:
                 # Fetch associated vendor details
                 vendor_id = str(vendor.pop("_id"))
                 vendor["id"] = vendor_id
-                print(vendor, "vendor")
                 # Capitalize names and format email
                 vendor["first_name"] = vendor["first_name"].capitalize()
                 vendor["last_name"] = vendor["last_name"].capitalize()
@@ -379,7 +378,6 @@ class VendorManager:
             query = {"_id": ObjectId(id), "roles": {"$in": ["vendor"]}}
 
             result = await user_collection.find_one(query)
-            print(result, "result")
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
@@ -772,7 +770,6 @@ class VendorManager:
             }
 
             if vendor_request.business_type.lower() == "individual":
-                print("individual")
                 new_vendor_user["availability_slots"] = default_availability_slots()
 
             result = await user_collection.insert_one(new_vendor_user)
@@ -1950,34 +1947,27 @@ class VendorManager:
         self, request: Request, token: str, vendor_subscription_request: VendorSubscriptionRequest
     ):
         try:
-            print(vendor_subscription_request, "vendor_subscription_request")
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
-                print(current_user, "current_user")
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
-                print(current_user.roles, "current_user.roles")
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
             current_user_id = str(current_user.id)
             vendor = await vendor_collection.find_one({"user_id": current_user_id})
-            print(vendor, "vendor")
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-            print(vendor_subscription_request.plan_id, "vendor_subscription_request.plan_id")
             plan_details = razorpay_client.plan.fetch(vendor_subscription_request.plan_id)
             if not plan_details:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
-            print(plan_details, "plan_details")
 
             interval = plan_details.get("interval", 1)
             period = plan_details.get("period", "monthly").lower()
 
             if period not in ["daily", "weekly", "monthly", "yearly"]:
-                print(period, "period")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
                 )
@@ -1999,7 +1989,6 @@ class VendorManager:
 
             try:
                 razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
-                print(razorpay_subscription, "razorpay_subscription")
             except Exception as e:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -2018,7 +2007,6 @@ class VendorManager:
 
             try:
                 razorpay_order = razorpay_client.order.create(data=order_data)
-                print(razorpay_order, "razorpay_order")
             except Exception as e:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -2075,7 +2063,6 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex, "hhhhhhhh")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
@@ -2101,11 +2088,9 @@ class VendorManager:
                 )
 
             subscription_status = subscription_details.get("status", "").lower()
-            print(subscription_status, "subscription_status")
             is_active = subscription_status in ["Active", "authenticated"]
 
             current_user_id = str(current_user.id)
-            print(current_user_id, "current_user_id")
             vendor = await vendor_collection.find_one({"user_id": current_user_id})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
@@ -2128,7 +2113,6 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex, "hhhhhhhh")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
@@ -2137,7 +2121,6 @@ class VendorManager:
     async def subscription_payment_details(self, request: Request, token: str):
         try:
             current_user = await get_current_user(request=request, token=token)
-            print(current_user, "current_user")
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
@@ -2146,7 +2129,6 @@ class VendorManager:
                 )
 
             current_user_id = str(current_user.id)
-            print(current_user_id, "current_user_id")
             vendor = await vendor_collection.find_one({"user_id": current_user_id})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
@@ -2154,7 +2136,6 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
 
             subscription_id = vendor.get("razorpay_subscription_id")
-            print(subscription_id, "subscription_id")
             subscription = razorpay_client.subscription.fetch(subscription_id)
             # statuss = subscription.get("status")
             # if statuss != "active":
@@ -2162,7 +2143,6 @@ class VendorManager:
 
             plan_id = subscription.get("plan_id")
             plan_details = razorpay_client.plan.fetch(plan_id)
-            print(plan_details, "plan_details")
 
             def format_timestamp(timestamp):
                 return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S") if timestamp else None
@@ -2203,7 +2183,6 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex, "hhhhhhhh")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
