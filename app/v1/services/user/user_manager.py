@@ -585,6 +585,7 @@ class UserManager:
             category_id = str(category["_id"])
             # Base filter for vendors
             vendor_filter = {"category_id": category_id, "status": "active", "is_subscription": True}
+
             if service_id:
                 if not ObjectId.is_valid(service_id):
                     raise HTTPException(status_code=400, detail="Invalid service ID")
