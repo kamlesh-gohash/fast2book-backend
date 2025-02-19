@@ -35,83 +35,55 @@ razorpay_client = razorpay.Client(auth=(os.getenv("RAZOR_PAY_KEY_ID"), os.getenv
 
 class BookingManager:
 
-    async def book_appointment(self, request: Request, token: str, booking_request: CreateBookingRequest):
+    async def book_appointment(
+        self,
+        request: Request,
+        token: str,
+        booking_date: str = Query(..., description="Booking date in YYYY-MM-DD format"),
+        slot: str = Query(..., description="Time slot in 'HH:MM - HH:MM' format"),
+        vendor_id: str = Query(..., description="Vendor ID"),
+        service_id: str = Query(..., description="Service ID"),
+    ):
         try:
             # Get current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            vendor_id = booking_request.vendor_id
+            # Fetch vendor details
             vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-            if vendor["business_type"] == "business":
-                vendor_user = await user_collection.find_one({"created_by": vendor["user_id"]})
-                if not vendor_user:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
-            else:
-                vendor_user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
-                if not vendor_user:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
-
-            try:
-                start_time, end_time = [time.strip() for time in booking_request.time_slot.split(" - ")]
-            except (IndexError, ValueError):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid time_slot format. Expected 'HH:MM - HH:MM'.",
-                )
-
-            requested_slot = {"start_time": start_time, "end_time": end_time}
-            available_slots = self.get_vendor_slots(vendor_user, booking_request.booking_date)
-
-            # Check slot availability
-            if not self.is_slot_available(available_slots, requested_slot):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Selected time slot is not available",
-                )
-
-            category_id = booking_request.category_id
+            # Fetch category details
+            category_id = vendor.get("category_id")
             category = await category_collection.find_one({"_id": ObjectId(category_id)})
             if not category:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
 
-            service_id = booking_request.service_id
+            # Fetch service details
             service = await services_collection.find_one({"_id": ObjectId(service_id)})
             if not service:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-            booking_order_id = str(random.randint(100000, 999999))
-            amount = vendor.get("fees", 0)
-            new_booking = await booking_collection.insert_one(
-                {
-                    "user_id": current_user.id,
-                    "vendor_id": vendor_id,
-                    "category_id": category_id,
-                    "service_id": service_id,
-                    "booking_date": booking_request.booking_date,
-                    "time_slot": booking_request.time_slot,
-                    "status": booking_request.status,
-                    "booking_status": booking_request.booking_status,
-                    "payment_status": booking_request.payment_status,
-                    "booking_order_id": booking_order_id,
-                    "amount": amount,
-                    "created_at": datetime.utcnow(),
-                }
-            )
-            user_id = str(vendor.get("user_id"))
-            user_name = await user_collection.find_one({"_id": ObjectId(user_id)})
-            booking_data = {
-                "id": str(new_booking.inserted_id),
+
+            # Fetch vendor user details
+            if vendor["business_type"] == "business":
+                vendor_user = await user_collection.find_one({"created_by": vendor["user_id"]})
+            else:
+                vendor_user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
+            if not vendor_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+
+            # Prepare response data
+            response_data = {
                 "vendor": {
                     "id": str(vendor.get("_id")),
                     "business_name": vendor.get("business_name"),
-                    "name": user_name.get("first_name"),
-                    "last_name": user_name.get("last_name"),
+                    "name": vendor_user.get("first_name"),
+                    "last_name": vendor_user.get("last_name"),
                     "fees": vendor.get("fees", 0),
                     "location": vendor.get("location"),
                     "specialization": vendor.get("specialization"),
+                    "is_payment_required": vendor.get("is_payment_required", False),
                 },
                 "category": {
                     "id": str(category.get("_id")),
@@ -121,15 +93,11 @@ class BookingManager:
                     "id": str(service.get("_id")),
                     "name": service.get("name"),
                 },
-                "booking_date": booking_request.booking_date,
-                "time_slot": booking_request.time_slot,
-                "status": booking_request.status,
-                "booking_status": booking_request.booking_status,
-                "payment_status": booking_request.payment_status,
-                "booking_order_id": booking_order_id,
-                "created_at": datetime.utcnow(),
+                "booking_date": booking_date,
+                "time_slot": slot,
             }
-            return booking_data
+
+            return response_data
 
         except HTTPException as http_ex:
             raise http_ex
@@ -223,6 +191,7 @@ class BookingManager:
                     "fees": vendor.get("fees", 0),
                     "location": vendor.get("location"),
                     "specialization": vendor.get("specialization"),
+                    "is_payment_required": vendor.get("is_payment_required", False),
                 },
                 "category": {
                     "id": str(category.get("_id")),
@@ -512,6 +481,7 @@ class BookingManager:
         except HTTPException:
             raise
         except Exception as ex:
+            print(ex, "ex")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def cancel_booking(self, request: Request, token: str, id: str, cancel_request: CancelBookingRequest):
@@ -683,57 +653,167 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def booking_payment(self, request: Request, token: str, id: str):
+    # async def booking_payment(self, request: Request, token: str, id: str):
+    #     try:
+    #         current_user = await get_current_user(request=request, token=token)
+    #         if not current_user:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    #         booking = await booking_collection.find_one({"_id": ObjectId(id)})
+    #         if not booking:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    #         if "amount" not in booking or booking["amount"] is None:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_400_BAD_REQUEST, detail="Amount is missing or invalid in booking"
+    #             )
+
+    #         # amount = int(booking["amount"] * 100)
+    #         # print(amount,'amount in booking payment')
+    #         amount = float(booking["amount"])
+    #         payment_method = "Razorpay"
+    #         payment_config = await payment_collection.find_one({"name": payment_method})
+    #         if not payment_config:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+
+    #         admin_charge_type = payment_config.get("charge_type")  # 'percentage' or 'fixed'
+    #         admin_charge_value = payment_config.get("charge_value")  # e.g., 10 for 10% or 50 for $50
+
+    #         if admin_charge_type == "percentage":
+    #             admin_charge = (admin_charge_value / 100) * amount
+    #         elif admin_charge_type == "fixed":
+    #             admin_charge = admin_charge_value
+    #         else:
+    #             admin_charge = 0
+
+    #         total_charges = amount + admin_charge
+    #         total_amount = int(total_charges * 100)
+
+    #         order_currency = "INR"
+    #         razorpay_order = razorpay_client.order.create(
+    #             {"amount": total_amount, "currency": order_currency, "receipt": f"booking_{id}", "payment_capture": 1}
+    #         )
+
+    #         await booking_collection.update_one(
+    #             {"_id": ObjectId(id)}, {"$set": {"booking_order_id": razorpay_order["id"], "amount": total_charges}}
+    #         )
+
+    #         return {
+    #             "data": {
+    #                 "order_id": str(booking["_id"]),
+    #                 "razorpay_order_id": razorpay_order["id"],
+    #                 "amount": amount,
+    #                 "currency": order_currency,
+    #             }
+    #         }
+
+    #     except razorpay.errors.BadRequestError as e:
+    #         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+    #         )
+
+    async def booking_payment(
+        self,
+        request: Request,
+        token: str,
+        vendor_id: str,
+        slot: str,
+        booking_date: str,
+        service_id: str,
+        category_id: str,
+    ):
         try:
+            # Step 1: Get current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-            booking = await booking_collection.find_one({"_id": ObjectId(id)})
-            if not booking:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
-            if "amount" not in booking or booking["amount"] is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail="Amount is missing or invalid in booking"
+
+            # Step 2: Fetch service details
+            service = await services_collection.find_one({"_id": ObjectId(service_id)})
+            if not service:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+            category = await category_collection.find_one({"_id": ObjectId(category_id)})
+            if not category:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+
+            vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            is_payment_required = vendor.get("is_payment_required", True)
+            booking_data = {
+                "user_id": current_user.id,  # Access the user ID using dot notation
+                "vendor_id": ObjectId(vendor_id),
+                "service_id": ObjectId(service_id),
+                "category_id": ObjectId(category_id),
+                "time_slot": slot,
+                "booking_date": booking_date,
+                "amount": vendor.get("fees", 0),
+                "booking_status": "panding",
+                "payment_status": "paid" if not is_payment_required else "panding",  # Set payment status
+                "created_at": datetime.utcnow(),
+            }
+
+            # Insert the booking into the database
+            booking_result = await booking_collection.insert_one(booking_data)
+            booking_id = booking_result.inserted_id
+
+            # Step 7: Handle payment logic
+            if is_payment_required:
+                # Process payment via Razorpay
+                amount = float(vendor.get("fees", 0))
+                payment_method = "Razorpay"
+                payment_config = await payment_collection.find_one({"name": payment_method})
+                if not payment_config:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+
+                admin_charge_type = payment_config.get("charge_type")
+                admin_charge_value = payment_config.get("charge_value")
+
+                if admin_charge_type == "percentage":
+                    admin_charge = (admin_charge_value / 100) * amount
+                elif admin_charge_type == "fixed":
+                    admin_charge = admin_charge_value
+                else:
+                    admin_charge = 0
+
+                total_charges = amount + admin_charge
+                total_amount = int(total_charges * 100)
+
+                order_currency = "INR"
+                razorpay_order = razorpay_client.order.create(
+                    {
+                        "amount": total_amount,
+                        "currency": order_currency,
+                        "receipt": f"booking_{booking_id}",
+                        "payment_capture": 1,
+                    }
                 )
 
-            # amount = int(booking["amount"] * 100)
-            # print(amount,'amount in booking payment')
-            amount = float(booking["amount"])
-            payment_method = "Razorpay"
-            payment_config = await payment_collection.find_one({"name": payment_method})
-            if not payment_config:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+                # Update the booking with the Razorpay order ID and total amount
+                await booking_collection.update_one(
+                    {"_id": booking_id},
+                    {"$set": {"booking_order_id": razorpay_order["id"], "amount": total_charges}},
+                )
 
-            admin_charge_type = payment_config.get("charge_type")  # 'percentage' or 'fixed'
-            admin_charge_value = payment_config.get("charge_value")  # e.g., 10 for 10% or 50 for $50
-
-            if admin_charge_type == "percentage":
-                admin_charge = (admin_charge_value / 100) * amount
-            elif admin_charge_type == "fixed":
-                admin_charge = admin_charge_value
-            else:
-                admin_charge = 0
-
-            total_charges = amount + admin_charge
-            total_amount = int(total_charges * 100)
-
-            order_currency = "INR"
-            razorpay_order = razorpay_client.order.create(
-                {"amount": total_amount, "currency": order_currency, "receipt": f"booking_{id}", "payment_capture": 1}
-            )
-
-            await booking_collection.update_one(
-                {"_id": ObjectId(id)}, {"$set": {"booking_order_id": razorpay_order["id"], "amount": total_charges}}
-            )
-
-            return {
-                "data": {
-                    "order_id": str(booking["_id"]),
-                    "razorpay_order_id": razorpay_order["id"],
-                    "amount": amount,
-                    "currency": order_currency,
+                return {
+                    "data": {
+                        "order_id": str(booking_id),
+                        "razorpay_order_id": razorpay_order["id"],
+                        "amount": amount,
+                        "currency": order_currency,
+                    }
                 }
-            }
+            else:
+                return {
+                    "data": {
+                        "order_id": str(booking_id),
+                        "amount": vendor.get("fees", 0),
+                        "currency": "INR",
+                        "payment_status": "paid",
+                    }
+                }
 
         except razorpay.errors.BadRequestError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

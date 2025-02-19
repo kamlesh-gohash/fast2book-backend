@@ -14,10 +14,12 @@ from dateutil.relativedelta import relativedelta
 
 # from app.v1.utils.token import generate_jwt_token
 from fastapi import Body, HTTPException, Query, Request, status
+from pymongo import ASCENDING, DESCENDING
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import (
     User,
+    booking_collection,
     category_collection,
     payment_collection,
     plan_collection,
@@ -214,6 +216,7 @@ class VendorManager:
                 "manage_fee_and_gst": create_vendor_request.manage_fee_and_gst,
                 "manage_offer": create_vendor_request.manage_offer,
                 "is_payment_verified": create_vendor_request.is_payment_verified,
+                "is_payment_required": create_vendor_request.is_payment_required,
                 "fees": create_vendor_request.fees,
                 "status": create_vendor_request.status,
                 "is_subscription": create_vendor_request.is_subscription,
@@ -262,6 +265,7 @@ class VendorManager:
                     "manage_fee_and_gst": create_vendor_request.manage_fee_and_gst,
                     "manage_offer": create_vendor_request.manage_offer,
                     "is_payment_verified": create_vendor_request.is_payment_verified,
+                    "is_payment_required": create_vendor_request.is_payment_required,
                     "fees": create_vendor_request.fees,
                     # "razorpay_account_id": sub_account["id"],
                     "created_at": vendor_data["created_at"],
@@ -328,18 +332,19 @@ class VendorManager:
 
             # Fetch vendor data
             vendors = await user_collection.find(query).skip(skip).limit(limit).to_list(length=limit)
+
             vendor_data = []
             for vendor in vendors:
                 # Fetch associated vendor details
                 vendor_id = str(vendor.pop("_id"))
                 vendor["id"] = vendor_id
-
+                print(vendor, "vendor")
                 # Capitalize names and format email
                 vendor["first_name"] = vendor["first_name"].capitalize()
                 vendor["last_name"] = vendor["last_name"].capitalize()
                 vendor["email"] = vendor["email"].lower()
-                vendor["user_image"] = vendor["user_image"]
-                vendor["user_image_url"] = vendor["user_image_url"]
+                vendor["user_image"] = vendor.get("user_image", "")  # Default to empty string if missing
+                vendor["user_image_url"] = vendor.get("user_image_url", "")  # Default to empty string if missing
 
                 # Fetch vendor-specific data
                 vendor_details = await vendor_collection.find_one({"user_id": vendor_id})
@@ -357,6 +362,7 @@ class VendorManager:
                     vendor["status"] = vendor_details.get("status", "N/A")
                     vendor["location"] = vendor_details.get("location")
                     vendor["specialization"] = vendor_details.get("specialization")
+                    vendor["is_payment_required"] = vendor_details.get("is_payment_required", False)
                     vendor["created_at"] = vendor_details.get("created_at")
 
                     # Fetch category name
@@ -405,8 +411,8 @@ class VendorManager:
             result["last_name"] = result["last_name"].capitalize()
             result["email"] = result["email"]
             result["phone"] = result["phone"]
-            result["user_image"] = result["user_image"]
-            result["user_image_url"] = result["user_image_url"]
+            result["user_image"] = result.get("user_image", "")  # Default to empty string if missing
+            result["user_image_url"] = result.get("user_image_url", "")  # Default to empty string if missing
             if result["phone"]:
                 result["phone"] = result["phone"]
             else:
@@ -436,6 +442,7 @@ class VendorManager:
                 result["manage_fee_and_gst"] = vendor_details.get("manage_fee_and_gst", False)
                 result["manage_offer"] = vendor_details.get("manage_offer", False)
                 result["is_payment_verified"] = vendor_details.get("is_payment_verified", False)
+                result["is_payment_required"] = vendor_details.get("is_payment_required", False)
                 result["status"] = vendor_details.get("status", "N/A")
                 # if not result.get("location"):
                 result["location"] = vendor_details.get("location")
@@ -480,12 +487,11 @@ class VendorManager:
                 file_url = (
                     f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{vendor.get('user_image')}"
                 )
-            for field in ["first_name", "last_name", "email", "phone", "gender"]:
+            for field in ["first_name", "last_name", "email", "phone", "gender", "status"]:
                 value = getattr(update_vendor_request, field, None)
                 if value is not None:
                     user_update_data[field] = value
 
-            # Prepare update data for vendor collection
             vendor_update_data = {}
             for field in [
                 "business_type",
@@ -501,7 +507,6 @@ class VendorManager:
                 if value is not None:
                     vendor_update_data[field] = value
 
-            # Handle category update
             if update_vendor_request.category_id is not None:
                 category_id = update_vendor_request.category_id
                 category_data = await category_collection.find_one({"_id": ObjectId(category_id)})
@@ -512,11 +517,9 @@ class VendorManager:
                 vendor_update_data["category_id"] = category_id
                 vendor_update_data["category_name"] = category_data.get("name")
 
-            # Handle fees update
             if update_vendor_request.fees is not None:
                 vendor_update_data["fees"] = update_vendor_request.fees
 
-            # Handle services update
             if update_vendor_request.services is not None:
                 services = update_vendor_request.services
                 if not isinstance(services, list):
@@ -550,31 +553,29 @@ class VendorManager:
                     for service in valid_services
                 ]
 
-            # Handle specialization update
             if update_vendor_request.specialization is not None:
                 vendor_update_data["specialization"] = update_vendor_request.specialization
 
-            # Handle location update
             if update_vendor_request.location is not None:
                 vendor_update_data["location"] = update_vendor_request.location.dict()
-
+            if update_vendor_request.is_payment_required is not None:
+                vendor_update_data["is_payment_required"] = update_vendor_request.is_payment_required
+            if update_vendor_request.service_details is not None:
+                vendor_update_data["service_details"] = update_vendor_request.service_details
             # Check if there are any updates to perform
             if not user_update_data and not vendor_update_data:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields provided for update."
                 )
 
-            # Update user collection with user details
             if user_update_data:
                 await user_collection.update_one({"_id": ObjectId(id)}, {"$set": user_update_data})
 
-            # Update vendor collection with business details
             if vendor_update_data:
-                # Use the `user_id` to find and update the existing vendor document
                 await vendor_collection.update_one(
-                    {"user_id": id},  # Use `user_id` to find the correct document
+                    {"user_id": id},
                     {"$set": vendor_update_data},
-                    upsert=True,  # Create a new document if it doesn't exist
+                    upsert=True,
                 )
 
             # Fetch updated vendor details
@@ -603,6 +604,7 @@ class VendorManager:
                 "manage_offer": updated_vendor.get("manage_offer"),
                 "location": updated_vendor.get("location"),
                 "specialization": updated_vendor.get("specialization"),
+                "is_payment_required": updated_vendor.get("is_payment_required"),
                 "fees": updated_vendor.get("fees"),
                 "status": updated_vendor.get("status"),
             }
@@ -670,8 +672,16 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
             if "vendor" not in vendor["roles"]:
-
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not a vendor")
+
+            # if vendor["status"] != "active":
+            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Vendor is not active")
+            print(vendor["status"], "vendor status")
+            if vendor["status"] != "active":
+                print(vendor["status"], "vendor status")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Vendor status is not active, please contact admin"
+                )
 
             if vendor_request.is_login_with_otp:
                 otp = generate_otp()
@@ -703,6 +713,8 @@ class VendorManager:
                 stored_password_hash.encode("utf-8") if isinstance(stored_password_hash, str) else stored_password_hash,
             ):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Password")
+            if not vendor.get("is_active", False):  # Default to False if key is missing
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Vendor user is not active")
 
             vendor_data = await vendor_collection.find_one({"user_id": str(vendor["_id"])})
             if not vendor_data:
@@ -897,6 +909,7 @@ class VendorManager:
             vendor["user_image_url"] = vendor.get("user_image_url", "")
             if vendor_data:
                 vendor_data["id"] = str(vendor_data.pop("_id"))
+                vendor_data["is_payment_required"] = vendor_data.get("is_payment_required", False)
                 vendor.update(vendor_data)
 
             return vendor
@@ -911,6 +924,14 @@ class VendorManager:
 
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Validate that category_id is provided
+            if update_vendor_request.category_id is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Category ID is required.")
+
+            # Validate that services are provided
+            if update_vendor_request.services is None or len(update_vendor_request.services) == 0:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one service is required.")
 
             # Update user profile in user_collection
             user_query = {"_id": ObjectId(current_user.id)}
@@ -947,10 +968,14 @@ class VendorManager:
 
             if update_vendor_request.business_type is not None:
                 vendor_data["business_type"] = update_vendor_request.business_type
+            if update_vendor_request.fees is not None:
+                vendor_data["fees"] = update_vendor_request.fees
             if update_vendor_request.business_address is not None:
                 vendor_data["business_address"] = update_vendor_request.business_address
             if update_vendor_request.business_name is not None:
                 vendor_data["business_name"] = update_vendor_request.business_name
+            if update_vendor_request.is_payment_required is not None:
+                vendor_data["is_payment_required"] = update_vendor_request.is_payment_required
             if update_vendor_request.category_id is not None:
                 category_id = update_vendor_request.category_id
                 category_data = await category_collection.find_one({"_id": ObjectId(category_id)})
@@ -1000,6 +1025,7 @@ class VendorManager:
                 ]
 
             if update_vendor_request.service_details is not None:
+                print(update_vendor_request.service_details, "aaaaaaaaaaaaa")
                 vendor_data["service_details"] = update_vendor_request.service_details
             if update_vendor_request.manage_plan is not None:
                 vendor_data["manage_plan"] = update_vendor_request.manage_plan
@@ -1019,18 +1045,7 @@ class VendorManager:
             # Check if the vendor exists in the vendor collection
             updated_vendor = await vendor_collection.find_one(vendor_query)
             if not updated_vendor:
-
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-            customer_id = updated_vendor.get("razorpay_customer_id")
-            if not customer_id:
-                customer_data = {
-                    "name": current_user.first_name + " " + current_user.last_name,
-                    "email": current_user.email,
-                    "contact": current_user.phone,  # Assuming phone is available
-                }
-                razorpay_customer = razorpay_client.customer.create(data=customer_data)
-                customer_id = razorpay_customer["id"]
-                await vendor_collection.update_one(vendor_query, {"$set": {"razorpay_customer_id": customer_id}})
 
             # Prepare the response data
             response_data = {
@@ -1045,6 +1060,7 @@ class VendorManager:
                     "business_details": updated_vendor.get("business_details"),
                     "business_name": updated_vendor.get("business_name"),
                     "business_type": updated_vendor.get("business_type"),
+                    "fees": updated_vendor.get("fees"),
                     "business_address": updated_vendor.get("business_address"),
                     "category_id": updated_vendor.get("category_id"),
                     "category_name": updated_vendor.get("category_name"),
@@ -1053,11 +1069,11 @@ class VendorManager:
                     "manage_plan": updated_vendor.get("manage_plan"),
                     "manage_fee_and_gst": updated_vendor.get("manage_fee_and_gst"),
                     "manage_offer": updated_vendor.get("manage_offer"),
+                    "is_payment_required": updated_vendor.get("is_payment_required"),
                     "availability_slots": updated_vendor.get("availability_slots"),
                     "status": updated_vendor.get("status"),
                 },
             }
-
             return response_data
 
         except Exception as ex:
@@ -1883,18 +1899,249 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
+    # async def create_vendor_subscription(
+    #     self, request: Request, token: str, vendor_subscription_request: VendorSubscriptionRequest
+    # ):
+    #     try:
+    #         # Get current user
+    #         current_user = await get_current_user(request=request, token=token)
+    #         if not current_user:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    #         # Check if the user has the "vendor" role
+    #         if "vendor" not in [role.value for role in current_user.roles]:
+    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    #         # Fetch the vendor details
+    #         current_user_id = str(current_user.id)
+    #         vendor = await vendor_collection.find_one({"user_id": current_user_id})
+    #         if not vendor:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+    #         # Fetch the plan details from Razorpay
+    #         plan_details = razorpay_client.plan.fetch(vendor_subscription_request.plan_id)
+
+    #         interval = plan_details.get("interval", 1)
+    #         period = plan_details.get("period", "monthly").lower()
+
+    #         # Validate the period
+    #         if period not in ["daily", "weekly", "monthly", "yearly"]:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
+    #             )
+
+    #         # Calculate the total_count based on the subscription duration
+    #         # For example, if the user wants a 1-year subscription and the plan is monthly,
+    #         # total_count = 12 (12 months in a year)
+    #         if period == "monthly":
+    #             total_count = vendor_subscription_request.total_count * 12
+    #         elif period == "yearly":
+    #             total_count = vendor_subscription_request.total_count
+    #         elif period == "weekly":
+    #             total_count = vendor_subscription_request.total_count * 52
+    #         elif period == "daily":
+    #             total_count = vendor_subscription_request.total_count * 365
+
+    #         # Prepare the subscription data for Razorpay
+    #         razorpay_subscription_data = {
+    #             "plan_id": vendor_subscription_request.plan_id,
+    #             "total_count": total_count,
+    #             "quantity": vendor_subscription_request.quantity,
+    #             "customer_notify": True,
+    #         }
+
+    #         try:
+    #             razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
+    #         except Exception as e:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #                 detail=f"Failed to create Razorpay subscription: {str(e)}",
+    #             )
+
+    #         vendor_update_data = {
+    #             "manage_plan": vendor_subscription_request.plan_id,
+    #             "razorpay_subscription_id": razorpay_subscription["id"],
+    #         }
+
+    #         result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
+    #         if result.modified_count == 0:
+    #             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
+
+    #         # Fetch the subscription details from Razorpay
+    #         razorpay_subscription_details = razorpay_client.subscription.fetch(razorpay_subscription["id"])
+
+    #         # Return the subscription details
+    #         return {
+    #             "subscription_id": razorpay_subscription["id"],
+    #             "subscription_url": razorpay_subscription["short_url"],
+    #             "start_at": datetime.now(),  # Subscription start time
+    #         }
+
+    #     except HTTPException as e:
+    #         raise e
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #             detail=f"An unexpected error occurred: {str(ex)}",
+    #         )
+
     async def create_vendor_subscription(
         self, request: Request, token: str, vendor_subscription_request: VendorSubscriptionRequest
     ):
         try:
-            # Get current user
+            print(vendor_subscription_request, "vendor_subscription_request")
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                print(current_user, "current_user")
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "vendor" not in [role.value for role in current_user.roles]:
+                print(current_user.roles, "current_user.roles")
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            current_user_id = str(current_user.id)
+            vendor = await vendor_collection.find_one({"user_id": current_user_id})
+            print(vendor, "vendor")
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            print(vendor_subscription_request.plan_id, "vendor_subscription_request.plan_id")
+            plan_details = razorpay_client.plan.fetch(vendor_subscription_request.plan_id)
+            if not plan_details:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+            print(plan_details, "plan_details")
+
+            interval = plan_details.get("interval", 1)
+            period = plan_details.get("period", "monthly").lower()
+
+            if period not in ["daily", "weekly", "monthly", "yearly"]:
+                print(period, "period")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
+                )
+            print(period, "perioddddddddddd")
+            if period == "monthly":
+                total_count = vendor_subscription_request.total_count * 12
+            elif period == "yearly":
+                total_count = vendor_subscription_request.total_count
+            elif period == "weekly":
+                total_count = vendor_subscription_request.total_count * 52
+            elif period == "daily":
+                total_count = vendor_subscription_request.total_count * 365
+
+            razorpay_subscription_data = {
+                "plan_id": vendor_subscription_request.plan_id,
+                "total_count": total_count,
+                "quantity": vendor_subscription_request.quantity,
+                "customer_notify": True,
+            }
+
+            try:
+                razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
+                print(razorpay_subscription, "razorpay_subscription")
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to create Razorpay subscription: {str(e)}",
+                )
+            order_data = {
+                "amount": int(plan_details["item"]["amount"]),
+                "currency": "INR",
+                "receipt": f"sub_{razorpay_subscription['id']}",
+                "notes": {
+                    "subscription_id": razorpay_subscription["id"],
+                    "vendor_id": str(vendor["_id"]),
+                },
+                "payment_capture": 1,
+            }
+
+            try:
+                razorpay_order = razorpay_client.order.create(data=order_data)
+                print(razorpay_order, "razorpay_order")
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to create Razorpay order: {str(e)}",
+                )
+            vendor_update_data = {
+                "manage_plan": vendor_subscription_request.plan_id,
+                "razorpay_subscription_id": razorpay_subscription["id"],
+                "razorpay_order_id": razorpay_order["id"],
+            }
+
+            result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
+            if result.modified_count == 0:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
+
+            # payment_link_data = {
+            #     "amount": order_data["amount"],
+            #     "currency": order_data["currency"],
+            #     "accept_partial": False,
+            #     "reference_id": razorpay_order["id"],
+            #     "description": f"Payment for subscription {razorpay_subscription['id']}",
+            #     "customer": {
+            #         "name": current_user.first_name,
+            #         "email": current_user.email,
+            #         # "contact": current_user.phone,
+            #     },
+            #     "notify": {
+            #         "sms": True,
+            #         "email": True,
+            #     },
+            #     "callback_url": "https://fast2book.com",
+            #     "callback_method": "get",
+            # }
+
+            # try:
+            #     payment_link = razorpay_client.payment_link.create(data=payment_link_data)
+            #     print(payment_link,'payment_link')
+            # except Exception as e:
+            #     raise HTTPException(
+            #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            #         detail=f"Failed to create payment link: {str(e)}",
+            #     )
+
+            # Return the payment link to the frontend
+            return {
+                "subscription_id": razorpay_subscription["id"],
+                "order_id": razorpay_order["id"],
+                "amount": order_data["amount"],
+                "currency": order_data["currency"],
+                # "paymnet_link_id": payment_link["id"],
+                # "payment_link": payment_link["short_url"],
+            }
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            print(ex, "hhhhhhhh")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )
+
+    async def verify_subscription_payment(self, request: Request, token: str, subscription_id: str):
+        try:
+            # Get the current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            # Check if the user has the "vendor" role
+            # Check if the user has the vendor role
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Fetch the subscription details from Razorpay
+            try:
+                subscription_details = razorpay_client.subscription.fetch(subscription_id)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to fetch Razorpay subscription: {str(e)}",
+                )
+
+            # Check the status of the subscription
+            subscription_status = subscription_details.get("status", "").lower()
+            is_active = subscription_status in ["active", "authenticated"]
 
             # Fetch the vendor details
             current_user_id = str(current_user.id)
@@ -1902,71 +2149,29 @@ class VendorManager:
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Fetch the plan details from Razorpay
-            plan_details = razorpay_client.plan.fetch(vendor_subscription_request.plan_id)
+            # Update the vendor details
+            vendor_update_data = {"razorpay_subscription_id": subscription_id, "is_subscription": True}
 
-            # Extract interval and period from the plan
-            interval = plan_details.get("interval", 1)  # Default to 1 if not specified
-            period = plan_details.get("period", "monthly").lower()
-
-            # Validate the period
-            if period not in ["daily", "weekly", "monthly", "yearly"]:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
-                )
-
-            # Calculate the total_count based on the subscription duration
-            # For example, if the user wants a 1-year subscription and the plan is monthly,
-            # total_count = 12 (12 months in a year)
-            if period == "monthly":
-                total_count = vendor_subscription_request.total_count * 12  # Convert years to months
-            elif period == "yearly":
-                total_count = vendor_subscription_request.total_count  # No conversion needed
-            elif period == "weekly":
-                total_count = vendor_subscription_request.total_count * 52  # Convert years to weeks
-            elif period == "daily":
-                total_count = vendor_subscription_request.total_count * 365  # Convert years to days
-
-            # Prepare the subscription data for Razorpay
-            razorpay_subscription_data = {
-                "plan_id": vendor_subscription_request.plan_id,
-                "total_count": total_count,  # Total number of billing cycles
-                "quantity": vendor_subscription_request.quantity,  # Quantity of the plan
-                "customer_notify": True,  # Notify the customer
-            }
-
-            # Create the subscription in Razorpay
-            try:
-                razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to create Razorpay subscription: {str(e)}",
-                )
-
-            # Update the vendor's subscription details in the database
-            vendor_update_data = {
-                "manage_plan": vendor_subscription_request.plan_id,
-                "razorpay_subscription_id": razorpay_subscription["id"],
-                "is_subscription": True,
-            }
             result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
+
             if result.modified_count == 0:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
+            result["id"] = str(result["_id"])
 
-            # Fetch the subscription details from Razorpay
-            razorpay_subscription_details = razorpay_client.subscription.fetch(razorpay_subscription["id"])
-
-            # Return the subscription details
+            # Return the subscription status and details
             return {
-                "subscription_id": razorpay_subscription["id"],
-                "subscription_url": razorpay_subscription["short_url"],
-                "start_at": datetime.now(),  # Subscription start time
+                "subscription_id": subscription_id,
+                "status": subscription_status,
+                "is_active": is_active,
+                "subscription_details": subscription_details,
+                "amount": int(subscription_details["item"]["amount"]),
+                "vendor_id": result,
             }
 
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex, "hhhhhhhh")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
@@ -1991,36 +2196,53 @@ class VendorManager:
 
             # Check if the subscription is active
             subscription_id = vendor.get("razorpay_subscription_id")
-            subscription = await razorpay_client.subscription.fetch(subscription_id)
+            subscription = razorpay_client.subscription.fetch(subscription_id)
             status = subscription.get("status")
-            if status != "Active":
+            if status != "active":
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subscription is not active")
 
             # Fetch the subscription details from Razorpay
-
-            subscription = await razorpay_client.subscription.fetch(subscription_id)
             plan_id = subscription.get("plan_id")
-            plan_details = await razorpay_client.plan.fetch(plan_id)
-            amount = plan_details.get("amount")
+            plan_details = razorpay_client.plan.fetch(plan_id)
 
-            # if not amount:
-            #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount not found in plan details")
+            # Convert timestamps to readable date-time format
+            def format_timestamp(timestamp):
+                return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S") if timestamp else None
 
-            # order_data = {
-            #     "amount": amount,
-            #     "currency": "INR",
-            #     "payment_capture": 1,
-            #     "receipt": subscription_id,
-            #     "notes": {
-            #         "subscription_id": subscription_id,
-            #     },
-            # }
+            # Convert paise to INR
+            def format_amount(amount):
+                return amount / 100 if amount else 0  # Convert to rupees
 
-            # order = await razorpay_client.order.create(data=order_data)
-            # if not order or "id" not in order:
-            #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create order")
+            # Formatting subscription details
+            subscription_details = {
+                **subscription,
+                "current_start": format_timestamp(subscription.get("current_start")),
+                "current_end": format_timestamp(subscription.get("current_end")),
+                "start_at": format_timestamp(subscription.get("start_at")),
+                "end_at": format_timestamp(subscription.get("end_at")),
+                "charge_at": format_timestamp(subscription.get("charge_at")),
+                "created_at": format_timestamp(subscription.get("created_at")),
+            }
 
-            return {"subscription_details": subscription, "plan_details": plan_details}
+            # Formatting plan details
+            plan_details["item"]["amount"] = format_amount(plan_details["item"].get("amount"))
+            plan_details["item"]["unit_amount"] = format_amount(plan_details["item"].get("unit_amount"))
+            plan_details["created_at"] = format_timestamp(plan_details.get("created_at"))
+
+            # Return the formatted data
+            return {
+                "vendor": {
+                    "id": str(vendor.get("_id")),
+                    "name": vendor.get("name"),
+                    "email": vendor.get("email"),
+                    "phone": vendor.get("phone"),
+                    "business_name": vendor.get("business_name"),
+                    "razorpay_subscription_id": vendor.get("razorpay_subscription_id"),
+                    "is_subscription": vendor.get("is_subscription"),
+                },
+                "subscription_details": subscription_details,
+                "plan_details": plan_details,
+            }
 
         except HTTPException as e:
             raise e
@@ -2036,8 +2258,8 @@ class VendorManager:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-            if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            # if "vendor" not in [role.value for role in current_user.roles]:
+            #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
             plans = await plan_collection.find({"status": "active"}).to_list(length=100)
 
             for plan in plans:
@@ -2116,5 +2338,111 @@ class VendorManager:
                 formatted_users.append(user)
 
             return {"data": formatted_users}
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_dashboard_data_for_vendor(self, request: Request, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Use current_user.id as vendor_id
+            vendor = str(current_user.id)
+            vendor_obj = await vendor_collection.find_one({"user_id": str(vendor)})
+
+            vendor_id = vendor_obj["_id"]
+            total_bookings = await booking_collection.count_documents(
+                {"booking_confirm": True, "vendor_id": str(vendor_id)}
+            )
+
+            # Bookings that are canceled
+            canceled_bookings = await booking_collection.count_documents(
+                {"booking_status": "cancelled", "vendor_id": str(vendor_id)}
+            )
+            # Bookings that are rescheduled
+            reschedule_bookings = await booking_collection.count_documents(
+                {"booking_status": "rescheduled", "vendor_id": str(vendor_id)}
+            )
+
+            return {
+                "total_bookings": total_bookings,
+                "canceled_bookings": canceled_bookings,
+                "reschedule_bookings": reschedule_bookings,
+            }
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_vendor_bookings(self, request: Request, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+            # Use current_user.id as vendor_id
+            vendor = str(current_user.id)
+            vendor_obj = await vendor_collection.find_one({"user_id": str(vendor)})
+
+            vendor_id = vendor_obj["_id"]
+            bookings_cursor = (
+                booking_collection.find(
+                    {"booking_status": "panding", "booking_confirm": True, "vendor_id": str(vendor_id)}
+                )
+                .sort("created_at", DESCENDING)
+                .limit(10)
+            )
+
+            bookings = await bookings_cursor.to_list(length=10)  # Convert cursor to list
+
+            if not bookings:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No bookings found")
+
+            booking_data = []
+            for booking in bookings:
+                # Fetch related data
+                user = await user_collection.find_one({"_id": ObjectId(booking["user_id"])}, {"first_name": 1})
+                vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
+                vendor_user_name = await user_collection.find_one(
+                    {"_id": ObjectId(vendor["user_id"])}, {"first_name": 1}
+                )
+                category = await category_collection.find_one({"_id": ObjectId(booking["category_id"])}, {"name": 1})
+                service = await services_collection.find_one({"_id": ObjectId(booking["service_id"])}, {"name": 1})
+
+                booking_data.append(
+                    {
+                        "booking_id": str(booking["_id"]),
+                        "user_name": user["first_name"] if user else None,
+                        "vendor_name": vendor_user_name["first_name"] if vendor_user_name else None,
+                        "category_name": category["name"] if category else None,
+                        "service_name": service["name"] if service else None,
+                        "booking_status": booking["booking_status"],
+                        "booking_confirm": booking["booking_confirm"],
+                        "booking_date": booking["booking_date"],
+                        "time_slot": booking["time_slot"],
+                        "payment_status": booking["payment_status"],
+                        "payment_method": booking["payment_method"],
+                        "amount": booking["amount"],
+                        "booking_cancel_reason": (
+                            booking["booking_cancel_reason"] if "booking_cancel_reason" in booking else None
+                        ),
+                        "booking_order_id": booking["booking_order_id"],
+                        "payment_id": booking["payment_id"],
+                        "created_at": booking.get("created_at"),  # Include timestamp if needed
+                    }
+                )
+
+            return {
+                "total_bookings": len(booking_data),
+                "bookings": booking_data,
+            }
+
+        except HTTPException as e:
+            raise e
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
