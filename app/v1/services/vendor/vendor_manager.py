@@ -151,6 +151,7 @@ class VendorManager:
                 "user_image_url": file_url,
                 "password": hashed_password,
                 "status": create_vendor_request.status,
+                "is_active": True,
                 "is_dashboard_created": create_vendor_request.is_dashboard_created,
                 # "otp": otp,
                 # "otp_expiration_time": otp_expiration_time,
