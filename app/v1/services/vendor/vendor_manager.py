@@ -155,6 +155,7 @@ class VendorManager:
                 # "otp": otp,
                 # "otp_expiration_time": otp_expiration_time,
             }
+            user_data["is_active"] = True
             if create_vendor_request.business_type.lower() == "individual":
                 user_data["availability_slots"] = default_availability_slots()
             user_result = await user_collection.insert_one(user_data)
