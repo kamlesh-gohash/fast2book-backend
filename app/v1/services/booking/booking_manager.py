@@ -835,7 +835,25 @@ class BookingManager:
                     {"_id": booking_id},
                     {"$set": {"booking_order_id": razorpay_order["id"], "amount": total_charges}},
                 )
+                source = "Booking Confirmation"
+                context = {
+                    "booking_id": str(booking_id),
+                    "vendor_name": vendor.get("name"),
+                    "service_name": service.get("name"),
+                    "category_name": category.get("name"),
+                    "amount": amount,
+                    "currency": "INR",
+                    "payment_method": payment_method,
+                    "booking_date": booking_date,
+                    "time_slot": slot,
+                    "user_name": current_user.first_name + " " + current_user.last_name,
+                }
 
+                await send_email(
+                    to_email=current_user.email,
+                    source=source,
+                    context=context,
+                )
                 return {
                     "data": {
                         "order_id": str(booking_id),

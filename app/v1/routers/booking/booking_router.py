@@ -350,6 +350,17 @@ async def verify_payment(request: Request, payload: dict):
                 }
             },
         )
+        source = "Payment Success"
+        context = {
+            "name": payment_details.get("name"),
+            "email": payment_details.get("email"),
+            "order_id": order_id,
+            "payment_id": razorpay_payment_id,
+            "payment_method": payment_method,
+            "amount": payment_details.get("amount") / 100,
+        }
+
+        await send_email(to_email=payment_details.get("email"), source=source, context=context)
 
         return success({"message": "Payment verification successful"})
     except razorpay.errors.SignatureVerificationError:
