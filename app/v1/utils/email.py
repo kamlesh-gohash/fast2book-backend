@@ -183,7 +183,7 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "Signup Successful": project_root / "templates/email/signup_successful.html",
         "Verification Email": project_root / "templates/email/verification_email.html",
         "Order Placed": project_root / "templates/email/order_place.html",
-        "Payment Success": project_root / "templates/email/payment_success_email.html",
+        "Payment Success": project_root / "templates/email/payment_successfully.html",
         "Activation_code": project_root / "templates/email/activation_code.html",
         "sign_in": project_root / "templates/email/welcome.html",
         "Forgot_Password": project_root / "templates/email/forgot_password.html",
@@ -192,6 +192,7 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "Login With Otp": project_root / "templates/email/login_with_otp.html",
         "Vednor Create": project_root / "templates/email/vendor_create_email.html",
         "APP Link": project_root / "templates/email/app_link.html",
+        "Booking Confirmation": project_root / "templates/email/booking_confirm.html",
     }
 
     # Get the template path based on the source
@@ -235,9 +236,12 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "Account created": "Account created",
         "Login With Otp": "Login With Otp",
         "Vednor Create": "Vednor Create",
+        "APP Link": "APP Link",
+        "Payment Success": "Payment Success",
+        "Booking Confirmation": "Booking Confirm",
         # Add other sources and subjects here
     }
-    msg["Subject"] = subject_map.get(source, "Your OTP Code")  # Default subject
+    msg["Subject"] = subject_map.get(source, "Welcome")  # Default subject
 
     # Attach both plain text and HTML versions
     text_part = MIMEText(plain_text_content, "plain")

@@ -79,7 +79,7 @@ DEFAULT_MENU_STRUCTURE = [
         "id": "service-management",
         "title": "Service Management",
         "icon": "service-management",
-        "path": "/super-admin/service-managements",
+        "path": "/super-admin/service-management",
         "status": True,
         "actions": {
             "List": True,
@@ -95,7 +95,7 @@ DEFAULT_MENU_STRUCTURE = [
         "icon": "subscription-managemen",
         "path": "/super-admin/subscription-management",
         "status": True,
-        "actions": {"List": True, "deleteSubscription": True},
+        "actions": {"List": True, "deleteSubscription": True, "addSubscription": True},
     },
     {
         "id": "vendor-management",
@@ -133,9 +133,7 @@ DEFAULT_MENU_STRUCTURE = [
         "icon": "booking",
         "path": "/super-admin/booking-management",
         "status": True,
-        "actions": {
-            "List": True,
-        },
+        "actions": {"List": True},
     },
     {
         "id": "blog-management",
@@ -159,9 +157,7 @@ DEFAULT_MENU_STRUCTURE = [
         "icon": "support",
         "path": "/super-admin/support",
         "status": True,
-        "actions": {
-            "List": True,
-        },
+        "actions": {"List": True},
     },
     {
         "id": "payment-management",
@@ -169,11 +165,7 @@ DEFAULT_MENU_STRUCTURE = [
         "icon": "payment-management",
         "path": "/super-admin/payment-configuration",
         "status": True,
-        "actions": {
-            "List": True,
-            "editPermissions": True,
-            "permissionsStatus": True,
-        },
+        "actions": {"List": True, "editPermissions": True, "permissionsStatus": True},
     },
     {
         "id": "slot",
