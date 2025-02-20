@@ -151,11 +151,11 @@ class VendorManager:
                 "user_image_url": file_url,
                 "password": hashed_password,
                 "status": create_vendor_request.status,
-                "is_active": True,
                 "is_dashboard_created": create_vendor_request.is_dashboard_created,
                 # "otp": otp,
                 # "otp_expiration_time": otp_expiration_time,
             }
+            user_data["is_active"] = True
             if create_vendor_request.business_type.lower() == "individual":
                 user_data["availability_slots"] = default_availability_slots()
             user_result = await user_collection.insert_one(user_data)
