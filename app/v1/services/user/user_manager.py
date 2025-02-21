@@ -578,12 +578,12 @@ class UserManager:
             skip = (page - 1) * limit
             if not category_slug:
                 raise HTTPException(status_code=400, detail="Invalid category slug")
-            # Fetch the category
+
             category = await category_collection.find_one({"slug": category_slug})
             if not category:
                 raise HTTPException(status_code=404, detail="Category not found")
             category_id = str(category["_id"])
-            # Base filter for vendors
+
             vendor_filter = {"category_id": category_id, "status": "active", "is_subscription": True}
 
             if service_id:
@@ -594,19 +594,17 @@ class UserManager:
                     raise HTTPException(status_code=404, detail="Service not found")
                 vendor_filter["services.id"] = service_id
 
-            # Generate dates for the next 7 days
             current_date = datetime.now().date()
             date_range = [current_date + timedelta(days=i) for i in range(7)]
             date_strings = [d.strftime("%Y-%m-%d") for d in date_range]
             day_names = [d.strftime("%A") for d in date_range]
 
-            # Aggregation pipeline
             pipeline = [
                 {"$match": vendor_filter},
                 {
                     "$lookup": {
                         "from": "users",
-                        "let": {"user_id": {"$toString": "$user_id"}},  # Vendor ID as string
+                        "let": {"user_id": {"$toString": "$user_id"}},
                         "pipeline": [
                             {
                                 "$match": {
@@ -635,7 +633,7 @@ class UserManager:
                 {
                     "$lookup": {
                         "from": "users",
-                        "let": {"userId": {"$toObjectId": "$user_id"}},  # Vendor's user_id
+                        "let": {"userId": {"$toObjectId": "$user_id"}},
                         "pipeline": [
                             {"$match": {"$expr": {"$eq": ["$_id", "$$userId"]}}},
                             {
@@ -657,15 +655,13 @@ class UserManager:
                 {
                     "$lookup": {
                         "from": "bookings",
-                        "let": {"vendor_id": {"$toObjectId": "$_id"}},  # Convert vendor _id to ObjectId
+                        "let": {"vendor_id": {"$toObjectId": "$_id"}},
                         "pipeline": [
                             {
                                 "$match": {
                                     "$expr": {
                                         "$and": [
-                                            {
-                                                "$eq": [{"$toObjectId": "$vendor_id"}, "$$vendor_id"]
-                                            },  # Convert vendor_id to ObjectId
+                                            {"$eq": [{"$toObjectId": "$vendor_id"}, "$$vendor_id"]},
                                             {"$eq": ["$payment_status", "paid"]},
                                             {"$in": ["$booking_date", date_strings]},
                                         ]
@@ -690,8 +686,8 @@ class UserManager:
                         "fees": 1,
                         "location": 1,
                         "specialization": 1,
-                        "created_users": 1,  # Users created by the vendor (for business type)
-                        "vendor_user": {"$arrayElemAt": ["$vendor_user", 0]},  # Vendor's own user details
+                        "created_users": 1,
+                        "vendor_user": {"$arrayElemAt": ["$vendor_user", 0]},
                         "booking_count": {"$size": "$bookings"},
                         "bookings": {
                             "$map": {
@@ -712,11 +708,11 @@ class UserManager:
                                 "if": {"$eq": ["$business_type", "business"]},
                                 "then": {
                                     "$mergeObjects": [
-                                        {"$arrayElemAt": ["$created_users", 0]},  # Include the created user details
+                                        {"$arrayElemAt": ["$created_users", 0]},
                                         {"created_user_id": {"$toString": {"$arrayElemAt": ["$created_users._id", 0]}}},
                                     ]
                                 },
-                                "else": "$vendor_user",  # Use vendor's own user details for individual type
+                                "else": "$vendor_user",
                             }
                         },
                     }
@@ -788,12 +784,11 @@ class UserManager:
                         }
                     }
                 },
-                # Filter out vendors with null or empty availability_slots
                 {
                     "$match": {
                         "$and": [
-                            {"user_details.availability_slots": {"$ne": None}},  # Exclude null
-                            {"user_details.availability_slots": {"$ne": []}},  # Exclude empty array
+                            {"user_details.availability_slots": {"$ne": None}},
+                            {"user_details.availability_slots": {"$ne": []}},
                         ]
                     }
                 },
@@ -815,6 +810,8 @@ class UserManager:
                         "booking_count": 1,
                     }
                 },
+                {"$skip": skip},
+                {"$limit": limit},
             ]
 
             if address:
@@ -835,11 +832,13 @@ class UserManager:
                     status_code=404,
                     detail="No active vendors found for the given category" + (f" and service" if service_id else ""),
                 )
-            total_vendors = await vendor_collection.count_documents({})
-            total_pages = (total_vendors + limit - 1) // limit
-            return active_vendors
 
-            # return {"data": active_vendors, "total_pages": total_pages, "total_items": total_vendors}
+            total_vendors = await vendor_collection.count_documents(
+                {"is_subscription": True, "category_id": category_id}
+            )
+            total_pages = (total_vendors + limit - 1) // limit
+
+            return {"data": active_vendors, "total_pages": total_pages, "total_items": total_vendors}
         except HTTPException:
             raise
         except Exception as e:
