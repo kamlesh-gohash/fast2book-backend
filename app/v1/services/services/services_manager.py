@@ -30,6 +30,13 @@ class ServicesManager:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
+            service_management_menu = next(
+                (menu for menu in current_user.menu if menu["id"] == "service-management"), None
+            )
+            if not service_management_menu or not service_management_menu["actions"]["addServices"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to add a service"
+                )
             category = await category_collection.find_one({"_id": ObjectId(service_request.category_id)})
             if not category:
                 raise HTTPException(
@@ -93,6 +100,15 @@ class ServicesManager:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
+            service_management_menu = next(
+                (menu for menu in current_user.menu if menu["id"] == "service-management"), None
+            )
+
+            if not service_management_menu or not service_management_menu["actions"]["List"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to view the service list"
+                )
+
             skip = (page - 1) * limit
             query = {}
 
