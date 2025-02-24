@@ -71,9 +71,8 @@ def default_availability_slots():
 
 
 class NotificationType(str, Enum):
-    FORGET_PASSWORD = "forget_password"
+    PAYMENT_CONFIRMATION = "payment_confirmation"
     BOOKING_CONFIRMATION = "booking_confirmation"
-    OTP_VERIFICATION = "otp_verification"
 
 
 class NotificationPreference(BaseModel):
@@ -92,12 +91,18 @@ class NotificationPreferenceRequest(BaseModel):
     class Config:
         schema_extra = {
             "example": {
-                "preferences": {"forget_password": True, "booking_confirmation": True, "otp_verification": True}
+                "preferences": {
+                    "payment_confirmation": True,
+                    "booking_confirmation": True,
+                }
             }
         }
 
 
-DEFAULT_NOTIFICATION_PREFERENCES = {"forget_password": False, "booking_confirmation": True, "otp_verification": True}
+DEFAULT_NOTIFICATION_PREFERENCES = {
+    "payment_confirmation": True,
+    "booking_confirmation": True,
+}
 
 
 class BloodGroup(str, Enum):

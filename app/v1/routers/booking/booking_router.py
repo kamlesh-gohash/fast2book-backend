@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, Depends, Form, HTTPException, Path, Query, 
 
 from app.v1.dependencies import *
 from app.v1.middleware.auth import get_token_from_header
-from app.v1.models import booking_collection, services
+from app.v1.models import booking_collection, services, user_collection
 from app.v1.models.booking import *
 from app.v1.schemas.booking.booking import *
 from app.v1.schemas.subscription.subscription_auth import CreateSubscriptionRequest, UpdateSubscriptionRequest
@@ -321,6 +321,7 @@ async def verify_payment(request: Request, payload: dict):
         params = {"razorpay_order_id": razorpay_order_id, "razorpay_payment_id": razorpay_payment_id}
         razorpay_client.utility.verify_payment_signature({**params, "razorpay_signature": razorpay_signature})
         payment_details = razorpay_client.payment.fetch(razorpay_payment_id)
+        print(payment_details, "payment_details")
         payment_status = payment_details.get("status")
         payment_method = payment_details.get("method")
 
@@ -350,17 +351,35 @@ async def verify_payment(request: Request, payload: dict):
                 }
             },
         )
-        source = "Payment Success"
-        context = {
-            "name": payment_details.get("name"),
-            "email": payment_details.get("email"),
-            "order_id": order_id,
-            "payment_id": razorpay_payment_id,
-            "payment_method": payment_method,
-            "amount": payment_details.get("amount") / 100,
-        }
+        updated_booking = await booking_collection.find_one({"_id": ObjectId(order_id)})
+        if not updated_booking:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-        await send_email(to_email=payment_details.get("email"), source=source, context=context)
+        user_id = updated_booking.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User ID not found in booking")
+
+        # Fetch user data to check notification settings
+        user_data = await user_collection.find_one({"_id": ObjectId(user_id)})
+        if not user_data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+        # Check if booking confirmation notifications are enabled
+        notification_settings = user_data.get("notification_settings", {})
+        if notification_settings.get("booking_confirmation", True):  # Default to True if not set
+            # Prepare email context
+            source = "Payment Success"
+            context = {
+                "name": payment_details.get("name"),
+                "email": payment_details.get("email"),
+                "order_id": order_id,
+                "payment_id": razorpay_payment_id,
+                "payment_method": payment_method,
+                "amount": payment_details.get("amount") / 100,
+            }
+
+            # Send email
+            await send_email(to_email=payment_details.get("email"), source=source, context=context)
 
         return success({"message": "Payment verification successful"})
     except razorpay.errors.SignatureVerificationError:

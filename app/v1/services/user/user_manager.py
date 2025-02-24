@@ -84,8 +84,10 @@ class UserManager:
                 user.roles = [Role.user]
             # user.otp_expires = otp_expiration_time
             user.notification_settings = DEFAULT_NOTIFICATION_PREFERENCES
+            print(user, "user in create user")
             user_dict = user.dict()
             result = await user_collection.insert_one(user_dict)
+            print(result, "result in create user")
             user_dict["_id"] = str(result.inserted_id)
             return user_dict
         except HTTPException as e:
@@ -1411,8 +1413,58 @@ class UserManager:
                 "blog": blog_data,
                 "recent_blogs": recent_blog_list,
             }
-            return blog_data
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
+
+    async def get_notifications_list(self, request: Request, token: str) -> dict:
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            notifications = current_user.notification_settings
+
+            return notifications
+
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    async def update_notification(self, request: Request, token: str) -> dict:
+        try:
+            # Get the current user
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            # Get the update data from the request body
+            update_data = await request.json()
+            if not update_data:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No data provided for update")
+
+            # Validate the update data
+            valid_keys = {"booking_confirmation", "payment_confirmation"}
+            if not all(key in valid_keys for key in update_data.keys()):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid notification settings provided"
+                )
+
+            # Update the notification settings in the current user object
+            for key, value in update_data.items():
+                if key in current_user.notification_settings:
+                    current_user.notification_settings[key] = value
+
+            # Update the notification settings in the database
+            await user_collection.update_one(
+                {"_id": current_user.id},  # Filter by user ID
+                {
+                    "$set": {"notification_settings": current_user.notification_settings}
+                },  # Update the notification settings
+            )
+
+            # Return the updated notification settings
+            return current_user.notification_settings
+
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
