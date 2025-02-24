@@ -14,7 +14,7 @@ from fastapi import Body, HTTPException, Path, Request, status
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import user_collection
-from app.v1.models.user import User
+from app.v1.models.user import DEFAULT_NOTIFICATION_PREFERENCES, User
 from app.v1.schemas.costumer.costumer import UpdateCostumerRequest
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
@@ -76,6 +76,7 @@ class CostumerManager:
             create_costumer_request_dict = create_costumer_request.dict()
             create_costumer_request_dict["created_at"] = datetime.utcnow()
             create_costumer_request_dict["is_active"] = True
+            create_costumer_request_dict["notification_settings"] = DEFAULT_NOTIFICATION_PREFERENCES
 
             result = await user_collection.insert_one(create_costumer_request_dict)
             create_costumer_request_dict["id"] = str(result.inserted_id)  # Add `id`

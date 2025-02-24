@@ -575,3 +575,43 @@ async def send_link(email: str = Query(None), phone: str = Query(None)):
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.get("/get-notifications-list", status_code=status.HTTP_200_OK)
+async def get_notifications_list(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    try:
+        result = await user_manager.get_notifications_list(request=request, token=token)
+        return success({"message": "Notifications list found successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.put("/update-notification", status_code=status.HTTP_200_OK)
+async def update_notification(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    try:
+        result = await user_manager.update_notification(request=request, token=token)
+        return success({"message": "Notifications update successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

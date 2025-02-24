@@ -835,15 +835,55 @@ class BookingManager:
                     {"_id": booking_id},
                     {"$set": {"booking_order_id": razorpay_order["id"], "amount": total_charges}},
                 )
+
+                user_data = await user_collection.find_one({"_id": ObjectId(current_user.id)})
+                if not user_data:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+                notification_settings = user_data.get("notification_settings", {})
+                payment_confirmation_enabled = notification_settings.get("payment_confirmation", True)
+
+                # Send email only if payment confirmation is enabled
+                if payment_confirmation_enabled:
+                    source = "Booking Confirmation"
+                    context = {
+                        "booking_id": str(booking_id),
+                        "vendor_name": vendor.get("name"),
+                        "service_name": service.get("name"),
+                        "category_name": category.get("name"),
+                        "amount": amount,
+                        "currency": "INR",
+                        "payment_method": payment_method,
+                        "booking_date": booking_date,
+                        "time_slot": slot,
+                        "user_name": current_user.first_name + " " + current_user.last_name,
+                    }
+
+                    await send_email(
+                        to_email=current_user.email,
+                        source=source,
+                        context=context,
+                    )
+
+                return {
+                    "data": {
+                        "order_id": str(booking_id),
+                        "razorpay_order_id": razorpay_order["id"],
+                        "amount": amount,
+                        "currency": order_currency,
+                    }
+                }
+            else:
+                # If payment is not required, send email directly
                 source = "Booking Confirmation"
                 context = {
                     "booking_id": str(booking_id),
                     "vendor_name": vendor.get("name"),
                     "service_name": service.get("name"),
                     "category_name": category.get("name"),
-                    "amount": amount,
+                    "amount": vendor.get("fees", 0),
                     "currency": "INR",
-                    "payment_method": payment_method,
+                    "payment_method": "None",
                     "booking_date": booking_date,
                     "time_slot": slot,
                     "user_name": current_user.first_name + " " + current_user.last_name,
@@ -854,15 +894,7 @@ class BookingManager:
                     source=source,
                     context=context,
                 )
-                return {
-                    "data": {
-                        "order_id": str(booking_id),
-                        "razorpay_order_id": razorpay_order["id"],
-                        "amount": amount,
-                        "currency": order_currency,
-                    }
-                }
-            else:
+
                 return {
                     "data": {
                         "order_id": str(booking_id),
