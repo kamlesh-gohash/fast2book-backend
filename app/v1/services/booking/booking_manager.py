@@ -142,7 +142,6 @@ class BookingManager:
 
             # Fetch vendor details
             vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
-            print(vendor, "vendor")
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
@@ -216,14 +215,12 @@ class BookingManager:
                 "total_amount": total_amount,
                 "vendor_user_id": str(vendor_user.get("_id")) if vendor_user else None,
             }
-            print(response_data, "response_data")
 
             return response_data
 
         except HTTPException as http_ex:
             raise http_ex
         except Exception as ex:
-            print(ex, "ex")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
@@ -433,7 +430,6 @@ class BookingManager:
                 vendor_user = await user_collection.find_one({"vendor_id": ObjectId(vendor_id)})
                 if vendor.get("business_type") == "business":
                     vendor_user = await user_collection.find_one({"created_by": str(vendor_user.get("_id"))})
-                    print(vendor_user, "vendor_userkkkkkkkkkkk")
                 booking["vendor_email"] = vendor_user["email"]
                 booking["vendor_name"] = vendor_user["first_name"]
 
