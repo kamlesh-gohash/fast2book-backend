@@ -58,7 +58,7 @@ class Vendor(Document):
     vendor_image: Optional[str] = None
     image_url: Optional[str] = None
     business_name: str = Field(..., min_length=1, max_length=50)
-    user_id: Link[User]
+    # user_id: Link[User]
     business_type: BusinessType = Field(default=BusinessType.individual)
     business_name: Optional[str] = Field(None, max_length=100)
     business_address: Optional[str] = Field(None, max_length=255)

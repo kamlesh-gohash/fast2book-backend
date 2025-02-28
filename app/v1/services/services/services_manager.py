@@ -37,6 +37,14 @@ class ServicesManager:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to add a service"
                 )
+            existing_service = await services_collection.find_one(
+                {"name": {"$regex": f"^{service_request.name}$", "$options": "i"}}
+            )
+            if existing_service:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Service with name '{service_request.name}' already exists.",
+                )
             category = await category_collection.find_one({"_id": ObjectId(service_request.category_id)})
             if not category:
                 raise HTTPException(
@@ -229,7 +237,15 @@ class ServicesManager:
             else:
                 file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{service.get('service_image')}"
 
-            if service_request.name is not None:
+            if service_request.name is not None and service_request.name != service["name"]:
+                existing_service = await services_collection.find_one(
+                    {"name": {"$regex": f"^{service_request.name}$", "$options": "i"}}
+                )
+                if existing_service:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Service with name '{service_request.name}' already exists.",
+                    )
                 update_data["name"] = service_request.name
 
             if service_request.status is not None:

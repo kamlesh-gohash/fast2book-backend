@@ -33,9 +33,11 @@ class CategoryManager:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
-            existing_category = await category_collection.find_one({"name": category_request.name})
+            existing_categorys = await category_collection.find_one(
+                {"name": {"$regex": f"^{category_request.name}$", "$options": "i"}}
+            )
 
-            if existing_category:
+            if existing_categorys:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Category with name '{category_request.name}' already exists.",
@@ -168,6 +170,15 @@ class CategoryManager:
             # Prepare the update data
             update_data = {}
             if category_request.name:
+                existing_categorys = await category_collection.find_one(
+                    {"name": {"$regex": f"^{category_request.name}$", "$options": "i"}}
+                )
+
+                if existing_categorys:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Category with name '{category_request.name}' already exists.",
+                    )
                 update_data["name"] = category_request.name
             if category_request.status:
                 update_data["status"] = category_request.status.value
@@ -196,6 +207,7 @@ class CategoryManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )

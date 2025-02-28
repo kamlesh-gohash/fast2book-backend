@@ -51,6 +51,7 @@ async def book_appointment(
     slot: str = Query(..., description="Time slot in 'HH:MM - HH:MM' format"),
     vendor_id: str = Query(..., description="Vendor ID"),
     service_id: str = Query(..., description="Service ID"),
+    vendor_user_id: Optional[str] = Query(None, description="Vendor User ID (optional)"),  # New optional parameter
     token: str = Depends(get_token_from_header),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
@@ -63,6 +64,7 @@ async def book_appointment(
             slot=slot,
             vendor_id=vendor_id,
             service_id=service_id,
+            vendor_user_id=vendor_user_id,
         )
 
         return success({"message": "Booking details fetched successfully", "data": result})
@@ -70,6 +72,7 @@ async def book_appointment(
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except Exception as ex:
+        print(ex, "ex")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -296,6 +299,7 @@ async def booking_payment(
             booking_date=booking_data.booking_date,
             service_id=booking_data.service_id,
             category_id=booking_data.category_id,
+            vendor_user_id=booking_data.vendor_user_id,
         )
 
         return success({"message": "Payment initiated successfully", "data": result})

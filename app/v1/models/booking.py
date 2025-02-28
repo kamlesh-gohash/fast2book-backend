@@ -49,6 +49,7 @@ class Bookings(BaseModel):
     booking_cancel_reason: Optional[str] = None
     reaschulding_reason: Optional[str] = None
     payment_id: Optional[str] = None
+    vendor_user_id: Optional[str] = None
 
     class Settings:
         name = "bookings"
