@@ -37,6 +37,9 @@ class BlogManager:
             result = await blog_collection.insert_one(blog_data)
             blog_data["_id"] = str(result.inserted_id)
 
+            # Format the response
+            blog_data["id"] = str(blog_data["_id"])
+            blog_data.pop("_id")
             # Return the inserted blog data
             return blog_data
         except Exception as e:

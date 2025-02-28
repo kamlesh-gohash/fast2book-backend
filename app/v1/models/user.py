@@ -70,6 +70,25 @@ def default_availability_slots():
     return [{"day": day, "time_slots": time_slots} for day in days]
 
 
+# def default_availability_slots():
+#     def format_time(hour):
+#         if hour == 12:
+#             return f"12:00 PM"
+#         elif hour > 12:
+#             return f"{hour - 12}:00 PM"
+#         else:
+#             return f"{hour}:00 AM"
+
+#     time_slots = [
+#         {"start_time": format_time(hour), "end_time": format_time(hour + 1), "max_seat": 10}
+#         for hour in range(9, 17)
+#     ]
+
+#     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+#     return [{"day": day, "time_slots": time_slots} for day in days]
+
+
 class NotificationType(str, Enum):
     PAYMENT_CONFIRMATION = "payment_confirmation"
     BOOKING_CONFIRMATION = "booking_confirmation"
@@ -157,6 +176,8 @@ class User(Document, BaseModel):
     secondary_phone_number: Optional[int] = None
     availability_slots: Optional[List[DaySlot]] = None  # Set as Optional, no default value
     notification_settings: Dict[str, bool] = Field(default_factory=dict)
+    vendor_id: Optional[PydanticObjectId] = None
+    provider: Optional[str] = None
 
     class Settings:
         name = "users"

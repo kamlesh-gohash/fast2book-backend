@@ -35,6 +35,95 @@ razorpay_client = razorpay.Client(auth=(os.getenv("RAZOR_PAY_KEY_ID"), os.getenv
 
 class BookingManager:
 
+    # async def book_appointment(
+    #     self,
+    #     request: Request,
+    #     token: str,
+    #     booking_date: str = Query(..., description="Booking date in YYYY-MM-DD format"),
+    #     slot: str = Query(..., description="Time slot in 'HH:MM - HH:MM' format"),
+    #     vendor_id: str = Query(..., description="Vendor ID"),
+    #     service_id: str = Query(..., description="Service ID"),
+    # ):
+    #     try:
+    #         # Get current user
+    #         current_user = await get_current_user(request=request, token=token)
+    #         if not current_user:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    #         # Fetch vendor details
+    #         vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+    #         if not vendor:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+    #         # Fetch category details
+    #         category_id = vendor.get("category_id")
+    #         category = await category_collection.find_one({"_id": ObjectId(category_id)})
+    #         if not category:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+
+    #         # Fetch service details
+    #         service = await services_collection.find_one({"_id": ObjectId(service_id)})
+    #         if not service:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+    #         # Fetch vendor user details
+    #         if vendor["business_type"] == "business":
+    #             vendor_user = await user_collection.find_one({"created_by": vendor["user_id"]})
+    #         else:
+    #             vendor_user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
+    #         if not vendor_user:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+
+    #         amount = vendor.get("fees")
+    #         payment_method = "Razorpay"
+    #         payment_config = await payment_collection.find_one({"name": payment_method})
+    #         if not payment_config:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+    #         admin_charge_type = payment_config.get("charge_type")  # 'percentage' or 'fixed'
+    #         admin_charge_value = payment_config.get("charge_value")  # e.g., 10 for 10% or 50 for $50
+
+    #         if admin_charge_type == "percentage":
+    #             admin_charge = (admin_charge_value / 100) * amount
+    #         elif admin_charge_type == "fixed":
+    #             admin_charge = admin_charge_value
+    #         else:
+    #             admin_charge = 0
+
+    #         total_amount = amount + admin_charge
+    #         # Prepare response data
+    #         response_data = {
+    #             "vendor": {
+    #                 "id": str(vendor.get("_id")),
+    #                 "business_name": vendor.get("business_name"),
+    #                 "name": vendor_user.get("first_name"),
+    #                 "last_name": vendor_user.get("last_name"),
+    #                 "fees": vendor.get("fees", 0),
+    #                 "location": vendor.get("location"),
+    #                 "specialization": vendor.get("specialization"),
+    #                 "is_payment_required": vendor.get("is_payment_required", False),
+    #             },
+    #             "category": {
+    #                 "id": str(category.get("_id")),
+    #                 "name": category.get("name"),
+    #             },
+    #             "service": {
+    #                 "id": str(service.get("_id")),
+    #                 "name": service.get("name"),
+    #             },
+    #             "booking_date": booking_date,
+    #             "time_slot": slot,
+    #             "platform_fee": admin_charge,
+    #             "total_amount": total_amount,
+    #         }
+
+    #         return response_data
+
+    #     except HTTPException as http_ex:
+    #         raise http_ex
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #             detail=f"An unexpected error occurred: {str(ex)}",
+    #         )
     async def book_appointment(
         self,
         request: Request,
@@ -43,6 +132,7 @@ class BookingManager:
         slot: str = Query(..., description="Time slot in 'HH:MM - HH:MM' format"),
         vendor_id: str = Query(..., description="Vendor ID"),
         service_id: str = Query(..., description="Service ID"),
+        vendor_user_id: Optional[str] = Query(None, description="Vendor User ID (optional)"),  # New optional parameter
     ):
         try:
             # Get current user
@@ -52,8 +142,10 @@ class BookingManager:
 
             # Fetch vendor details
             vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+            print(vendor, "vendor")
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
             # Fetch category details
             category_id = vendor.get("category_id")
             category = await category_collection.find_one({"_id": ObjectId(category_id)})
@@ -66,12 +158,20 @@ class BookingManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
 
             # Fetch vendor user details
-            if vendor["business_type"] == "business":
-                vendor_user = await user_collection.find_one({"created_by": vendor["user_id"]})
-            else:
-                vendor_user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
-            if not vendor_user:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+            if (
+                vendor_user_id and vendor_user_id.lower() != "null"
+            ):  # If vendor_user_id is provided, fetch that specific user
+                print(vendor_user_id, "vendor_user_id")
+                vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
+                if not vendor_user:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+            else:  # Default to the vendor's primary user
+                if vendor["business_type"] == "business":
+                    vendor_user = await user_collection.find_one({"vendor_id": ObjectId(vendor["_id"])})
+                else:
+                    vendor_user = await user_collection.find_one({"vendor_id": ObjectId(vendor["_id"])})
+                if not vendor_user:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
 
             amount = vendor.get("fees")
             payment_method = "Razorpay"
@@ -89,6 +189,7 @@ class BookingManager:
                 admin_charge = 0
 
             total_amount = amount + admin_charge
+
             # Prepare response data
             response_data = {
                 "vendor": {
@@ -113,13 +214,16 @@ class BookingManager:
                 "time_slot": slot,
                 "platform_fee": admin_charge,
                 "total_amount": total_amount,
+                "vendor_user_id": str(vendor_user.get("_id")) if vendor_user else None,
             }
+            print(response_data, "response_data")
 
             return response_data
 
         except HTTPException as http_ex:
             raise http_ex
         except Exception as ex:
+            print(ex, "ex")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
@@ -249,8 +353,8 @@ class BookingManager:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
-            user_id = str(current_user.id)
-            vendor = await vendor_collection.find_one({"user_id": user_id})
+            user_id = str(current_user.vendor_id)
+            vendor = await vendor_collection.find_one({"_id": ObjectId(user_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
@@ -320,15 +424,18 @@ class BookingManager:
                 vendor_id = booking["vendor_id"]
                 vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
                 if vendor:
-                    vendor_user_id = vendor["user_id"]
+                    vendor_user_id = vendor["_id"]
                     booking["business_name"] = vendor["business_name"]
                     booking["business_type"] = vendor["business_type"]
 
                 # Fetch vendor user details
-                vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
-                if vendor_user:
-                    booking["vendor_email"] = vendor_user["email"]
-                    booking["vendor_name"] = vendor_user["first_name"]
+
+                vendor_user = await user_collection.find_one({"vendor_id": ObjectId(vendor_id)})
+                if vendor.get("business_type") == "business":
+                    vendor_user = await user_collection.find_one({"created_by": str(vendor_user.get("_id"))})
+                    print(vendor_user, "vendor_userkkkkkkkkkkk")
+                booking["vendor_email"] = vendor_user["email"]
+                booking["vendor_name"] = vendor_user["first_name"]
 
                 # Fetch category details
                 category_id = booking["category_id"]
@@ -463,6 +570,7 @@ class BookingManager:
                 booking["vendor_id"] = str(booking["vendor_id"])
                 booking["category_id"] = str(booking["category_id"])
                 booking["service_id"] = str(booking["service_id"])
+                booking["vendor_user_id"] = str(booking["vendor_user_id"])
 
                 category = await category_collection.find_one({"_id": ObjectId(booking["category_id"])})
                 booking["category_name"] = category.get("name") if category else None
@@ -473,10 +581,14 @@ class BookingManager:
                 booking["service_image_url"] = service.get("service_image_url")
 
                 vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
+                vendor_user = await user_collection.find_one({"_id": ObjectId(booking["vendor_user_id"])})
+                print(vendor_user, "vendor_user")
                 if vendor:
-                    booking["vendor_name"] = vendor.get("business_name")
+                    booking["vendor__first_name"] = vendor_user.get("first_name")
+                    booking["venodr_last_name"] = vendor_user.get("last_name")
                     booking["vendor_location"] = vendor.get("location")
                     booking["specialization"] = vendor.get("specialization")
+                    booking["business_name"] = vendor.get("business_name")
 
                 booking_datetime = tz.localize(
                     datetime.strptime(
@@ -635,9 +747,9 @@ class BookingManager:
                         booking["business_name"] = vendor.get("business_name")  # Fetch business name
                         booking["business_type"] = vendor.get("business_type")
 
-                        vendor_user_id = vendor.get("user_id")  # Use .get() to avoid KeyError
+                        vendor_user_id = vendor.get("_id")  # Use .get() to avoid KeyError
                         if vendor_user_id:  # Only query if vendor_user_id exists
-                            vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
+                            vendor_user = await user_collection.find_one({"vendor_id": ObjectId(vendor_user_id)})
                             if vendor_user:
                                 booking["vendor_email"] = vendor_user.get("email")
                                 booking["vendor_name"] = vendor_user.get("first_name")
@@ -760,6 +872,7 @@ class BookingManager:
         booking_date: str,
         service_id: str,
         category_id: str,
+        vendor_user_id: Optional[str] = None,
     ):
         try:
             # Step 1: Get current user
@@ -791,6 +904,7 @@ class BookingManager:
                 "amount": vendor.get("fees", 0),
                 "booking_status": "panding",
                 "payment_status": "paid" if not is_payment_required else "panding",  # Set payment status
+                "vendor_user_id": vendor_user_id if vendor_user_id else None,
                 "created_at": datetime.utcnow(),
             }
 
@@ -1064,7 +1178,8 @@ class BookingManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor found")
 
             vendor_business_type = vendor.get("business_type")
-            vendor_user_id = vendor.get("user_id")
+            user_data = await user_collection.find_one({"vendor_id": ObjectId(vendor_id)})
+            vendor_user_id = booking.get("vendor_user_id")
 
             if not vendor_user_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor user ID found")
@@ -1072,7 +1187,7 @@ class BookingManager:
             # Fetch the user whose slots will be used
             if vendor_business_type == "business":
                 # Fetch the user(s) created by the vendor
-                created_users = await user_collection.find({"created_by": str(vendor_user_id)}).to_list(length=None)
+                created_users = await user_collection.find({"created_by": str(user_data["_id"])}).to_list(length=None)
                 if not created_users:
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND, detail="No users created by this vendor found"

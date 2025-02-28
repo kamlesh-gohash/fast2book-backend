@@ -46,7 +46,8 @@ class CostumerManager:
                 raise HTTPException(
                     status_code=404, detail="customer with this email or phone already exists in the database."
                 )
-
+            email = create_costumer_request.email.lower()
+            create_costumer_request.email = email
             otp = generate_otp()
 
             # if create_costumer_request.email:
@@ -252,11 +253,9 @@ class CostumerManager:
             costumer = await user_collection.find_one({"_id": ObjectId(id)})
             if not costumer:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Costumer not found")
-
             # Prepare update data
             update_data = {}
             bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-
             # Update image if provided
             if update_costumer_request.user_image:
                 image_name = update_costumer_request.user_image
@@ -273,8 +272,19 @@ class CostumerManager:
             if update_costumer_request.last_name is not None:
                 update_data["last_name"] = update_costumer_request.last_name
             if update_costumer_request.email is not None:
-                update_data["email"] = update_costumer_request.email
+                email = update_costumer_request.email.lower()
+                user_with_email = await User.find_one(User.email == email)
+                if user_with_email and str(user_with_email.id) != id:  # Ensure it's not the same user
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists with this email"
+                    )
+                update_data["email"] = email
             if update_costumer_request.phone is not None:
+                user_with_phone = await User.find_one(User.phone == update_costumer_request.phone)
+                if user_with_phone and str(user_with_phone.id) != id:  # Ensure it's not the same user
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists with this phone"
+                    )
                 update_data["phone"] = update_costumer_request.phone
             if update_costumer_request.status is not None:
                 update_data["status"] = update_costumer_request.status
@@ -301,7 +311,7 @@ class CostumerManager:
                 "last_name": updated_costumer.get("last_name", "").capitalize(),
                 "email": updated_costumer.get("email", ""),
                 "phone": updated_costumer.get("phone", ""),
-                "gender": updated_costumer.get("gender", "").capitalize(),
+                "gender": updated_costumer.get("gender", ""),
                 "status": updated_costumer.get("status", ""),
                 "user_image": updated_costumer.get("user_image", ""),
                 "user_image_url": file_url,
