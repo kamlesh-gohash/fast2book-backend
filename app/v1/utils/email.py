@@ -231,7 +231,7 @@ async def send_email(to_email: str, source: str, context: dict = None):
     msg["To"] = to_email
     subject_map = {
         "Activation_code": "Your Activation Code",
-        "Forgot_Password": "Forgot Password",
+        "Forgot Password": "Forgot Password",
         "Resend OTP": "Resend OTP",
         "Account created": "Account created",
         "Login With Otp": "Login With Otp",

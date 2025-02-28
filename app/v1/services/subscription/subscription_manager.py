@@ -252,13 +252,13 @@ class SubscriptionManager:
             elif plan_request.period.lower() == "yearly":
                 interval = 1
             elif plan_request.period.lower() == "daily":
-                interval = 1
+                interval = 7
             elif plan_request.period.lower() == "weekly":
                 interval = 1
             else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid period. Allowed values are 'monthly' or 'yearly'.",
+                    detail="Invalid period. Allowed values are 'daily' or 'weekly' or 'monthly' or 'yearly'.",
                 )
             razorpay_plan_data = {
                 "period": plan_request.period,
@@ -270,9 +270,10 @@ class SubscriptionManager:
                     "currency": plan_request.currency,
                 },
             }
-
+            print(razorpay_plan_data, "razorpay_plan_data")
             try:
                 razorpay_plan = razorpay_client.plan.create(data=razorpay_plan_data)
+                print(razorpay_plan, "razorpay_plan")
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
             except razorpay.errors.BadRequestError as e:
@@ -305,7 +306,7 @@ class SubscriptionManager:
             await plan_collection.insert_one(insert_data)
 
             inserted_plan = await plan_collection.find_one({"razorpay_plan_id": razorpay_plan["id"]})
-
+            print(inserted_plan, "inserted_plan")
             return {
                 "id": str(inserted_plan["_id"]),
                 "name": inserted_plan["name"],

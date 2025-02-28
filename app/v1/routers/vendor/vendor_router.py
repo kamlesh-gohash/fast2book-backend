@@ -777,6 +777,24 @@ async def get_plan_list(
         )
 
 
+@router.get("/get-all-plans", status_code=status.HTTP_200_OK)
+async def get_all_plans(
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.get_all_plan_list()
+        return success({"message": "plan list found successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
 @router.get("/get-plan/{plan_id}", status_code=status.HTTP_200_OK)
 async def get_plan(
     request: Request,

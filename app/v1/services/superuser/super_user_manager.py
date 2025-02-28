@@ -183,11 +183,15 @@ class SuperUserManager:
             otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
             user.otp_expires = otp_expiration_time
             await user.save()
-            await send_email(email, otp)
+            source = "Resend OTP"
+            to_email = email
+            context = {"otp": otp}
+            await send_email(to_email, source, context)
             return {"message": "OTP resent successfully"}
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -275,10 +279,20 @@ class SuperUserManager:
                 )
             # if current_user.user_role != 2:
             #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page ")
+
+            email = super_user_create_request.email.lower()
+            super_user_create_request.email = email
             # Check if the user already exists
             user = await User.find_one(User.email == super_user_create_request.email)
             if user is not None:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists with this email"
+                )
+            user = await User.find_one(User.phone == super_user_create_request.phone)
+            if user is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists with this phone"
+                )
             # Hash the password
             hashed_password = bcrypt.hashpw(super_user_create_request.password.encode("utf-8"), bcrypt.gensalt())
             # Create the user object
@@ -414,11 +428,12 @@ class SuperUserManager:
             if not ObjectId.is_valid(id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid admin ID: '{id}'")
 
+            email = update_super_user_request.email.lower()
+            update_super_user_request.email = email
             # Check if the costumer exists
             costumer = await user_collection.find_one({"_id": ObjectId(id)})
             if not costumer:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="adnin not found")
-
             # Prepare update data
             update_data = {}
             if update_super_user_request.first_name is not None:
@@ -426,8 +441,21 @@ class SuperUserManager:
             if update_super_user_request.last_name is not None:
                 update_data["last_name"] = update_super_user_request.last_name
             if update_super_user_request.email is not None:
-                update_data["email"] = update_super_user_request.email
+                # Check if the new email already exists (only if the email is being updated)
+                email = update_super_user_request.email.lower()
+                user_with_email = await User.find_one(User.email == email)
+                if user_with_email and str(user_with_email.id) != id:  # Ensure it's not the same user
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists with this email"
+                    )
+                update_data["email"] = email
             if update_super_user_request.phone is not None:
+                # Check if the new phone already exists (only if the phone is being updated)
+                user_with_phone = await User.find_one(User.phone == update_super_user_request.phone)
+                if user_with_phone and str(user_with_phone.id) != id:  # Ensure it's not the same user
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists with this phone"
+                    )
                 update_data["phone"] = update_super_user_request.phone
             if update_super_user_request.status is not None:
                 update_data["status"] = update_super_user_request.status
@@ -528,7 +556,7 @@ class SuperUserManager:
                 vendor_user_name = None
                 if vendor:  # Check if vendor exists
                     vendor_user_name = await user_collection.find_one(
-                        {"_id": ObjectId(vendor["user_id"])}, {"first_name": 1}
+                        {"vendor_id": ObjectId(vendor["_id"])}, {"first_name": 1}
                     )
                 category = await category_collection.find_one({"_id": ObjectId(booking["category_id"])}, {"name": 1})
                 service = await services_collection.find_one({"_id": ObjectId(booking["service_id"])}, {"name": 1})

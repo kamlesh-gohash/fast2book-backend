@@ -56,6 +56,7 @@ class CreateBookingRequest(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     booking_order_id: Optional[str] = None
     amount: Optional[float] = None
+    vendor_user_id: Optional[str] = None
 
     def validate(self):
         try:
