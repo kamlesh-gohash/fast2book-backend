@@ -249,7 +249,9 @@ async def super_user_list(
     try:
         query_params = request.query_params
         statuss = query_params.get("query[status]")
-        result = await user_manager.super_user_list(request=request, token=token, page=page, limit=limit, search=search, statuss=statuss)
+        result = await user_manager.super_user_list(
+            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
+        )
 
         return success({"message": "Super user list", "data": result})
     except HTTPException as http_ex:

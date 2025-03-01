@@ -5,10 +5,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
+import pytz
 
 from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
-import pytz
+
 # from app.v1.utils.token import generate_jwt_token
 from fastapi import Body, HTTPException, Path, Request, status
 
@@ -94,7 +95,14 @@ class CostumerManager:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     async def customer_list(
-        self, request: Request, token: str, page: int, limit: int, search: str = None, statuss: str = None ,role: str = "user"
+        self,
+        request: Request,
+        token: str,
+        page: int,
+        limit: int,
+        search: str = None,
+        statuss: str = None,
+        role: str = "user",
     ):
         try:
             current_user = await get_current_user(request=request, token=token)
@@ -156,7 +164,7 @@ class CostumerManager:
             result = await user_collection.find(query, projection).skip(skip).limit(limit).to_list(length=limit)
             # Format costumer data
             costumer_data = []
-            ist_timezone = pytz.timezone('Asia/Kolkata')  # IST timezone
+            ist_timezone = pytz.timezone("Asia/Kolkata")  # IST timezone
 
             for costumer in result:
                 costumer["id"] = str(costumer.pop("_id"))
@@ -241,7 +249,7 @@ class CostumerManager:
             if isinstance(created_at, datetime):
                 created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
 
-                ist_timezone = pytz.timezone('Asia/Kolkata')
+                ist_timezone = pytz.timezone("Asia/Kolkata")
                 created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
                 result["created_at"] = created_at_ist.isoformat()
             else:

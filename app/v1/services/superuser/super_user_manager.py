@@ -4,10 +4,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
+import pytz
 
 from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
-import pytz
+
 # from app.v1.utils.token import generate_jwt_token
 from fastapi import Body, HTTPException, Path, Request, status
 from pymongo import ASCENDING, DESCENDING
@@ -329,7 +330,14 @@ class SuperUserManager:
             )
 
     async def super_user_list(
-        self, request: Request, token: str, page: int, limit: int, search: str = None,statuss: str = None ,role: str = "admin"
+        self,
+        request: Request,
+        token: str,
+        page: int,
+        limit: int,
+        search: str = None,
+        statuss: str = None,
+        role: str = "admin",
     ):
         try:
             current_user = await get_current_user(request=request, token=token)
@@ -375,8 +383,8 @@ class SuperUserManager:
 
             # Format costumer data
             admin_data = []
-            ist_timezone = pytz.timezone('Asia/Kolkata') 
-                
+            ist_timezone = pytz.timezone("Asia/Kolkata")
+
             for admin in result:
                 created_at = admin.get("created_at")
                 if isinstance(created_at, datetime):

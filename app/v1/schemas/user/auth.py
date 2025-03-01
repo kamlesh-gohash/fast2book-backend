@@ -1,11 +1,11 @@
 from datetime import datetime
 from typing import List, Optional
-from fastapi import HTTPException
 
 import bcrypt
 import zon
 
-from pydantic import BaseModel, EmailStr, Field, validator, root_validator,ValidationError
+from fastapi import HTTPException
+from pydantic import BaseModel, EmailStr, Field, ValidationError, root_validator, validator
 
 from app.v1.models.user import *
 from app.v1.utils.response.response_format import validation_error
@@ -155,7 +155,7 @@ class ResendOtpRequest(BaseModel):
 forgot_password_validator = zon.record(
     {
         "email": zon.string().email().optional(),  # Optional email validation
-        "phone": zon.number().int().min(1000000000).max(9999999999).optional(), 
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),
     }
 ).refine(
     lambda data: data.get("email") or data.get("phone"),  # At least one required

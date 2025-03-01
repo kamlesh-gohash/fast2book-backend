@@ -22,7 +22,9 @@ async def support_list(
     try:
         query_params = request.query_params
         statuss = query_params.get("query[status]")
-        result = await support_manager.support_list(request=request, token=token, page=page, limit=limit,search=search ,statuss=statuss)
+        result = await support_manager.support_list(
+            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
+        )
         return success({"message": "Support List found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

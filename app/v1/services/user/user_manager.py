@@ -92,10 +92,7 @@ class UserManager:
                 }
 
                 # Update the user in the database
-                await user_collection.update_one(
-                    {"_id": ObjectId(existing_user["_id"])},
-                    {"$set": update_data}
-                )
+                await user_collection.update_one({"_id": ObjectId(existing_user["_id"])}, {"$set": update_data})
 
                 # Return the updated user data
                 updated_user = await user_collection.find_one({"_id": ObjectId(existing_user["_id"])})
@@ -222,7 +219,7 @@ class UserManager:
                         {"email": email},
                         {"$set": {"otp": otp, "otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
                     )
-                    
+
                     source = "Login With Otp"
                     context = {"otp": otp}
                     to_email = email
@@ -409,7 +406,7 @@ class UserManager:
                 # if user.notification_settings and not user.notification_settings.get("forgot_password", False):
                 #     print("kkkkkkkkkkkkkkkkk")
                 #     raise HTTPException(status_code=403, detail="Forgot password notifications are disabled for this user.")
-    
+
                 source = "Forgot Password"
                 context = {"otp": otp}
                 # Send OTP to the user's email
@@ -496,7 +493,9 @@ class UserManager:
             if datetime.utcnow() > user.get("otp_expires"):
                 raise HTTPException(status_code=400, detail="OTP has expired.")
             user.get("is_active") == True
-            await user_collection.update_one({"phone": phone}, {"$set": {"is_active": True, "otp": None, "otp_expires": None}})
+            await user_collection.update_one(
+                {"phone": phone}, {"$set": {"is_active": True, "otp": None, "otp_expires": None}}
+            )
             user_data = user.copy()  # Since `user` is a dictionary, use `copy()`
             user_data["id"] = str(user_data.pop("_id"))
             user_data.pop("password", None)

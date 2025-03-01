@@ -1,7 +1,9 @@
 # from app.v1.utils.token import generate_jwt_token
+import pytz
+
 from bson import ObjectId
 from fastapi import HTTPException, Request, status
-import pytz
+
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import support_collection
 from app.v1.models.support import *
@@ -9,8 +11,15 @@ from app.v1.models.support import *
 
 class SupportManager:
 
-    async def support_list(self, request: Request, token: str, page: int, limit: int, search: str = None,
-                           statuss: str = None,):
+    async def support_list(
+        self,
+        request: Request,
+        token: str,
+        page: int,
+        limit: int,
+        search: str = None,
+        statuss: str = None,
+    ):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -43,7 +52,7 @@ class SupportManager:
 
             # Format the results
             formatted_support = []
-            ist_timezone = pytz.timezone('Asia/Kolkata')
+            ist_timezone = pytz.timezone("Asia/Kolkata")
             for item in support:
                 created_at = item.get("created_at")
                 if isinstance(created_at, datetime):

@@ -8,8 +8,9 @@ from app.v1.models.payment import PaymentType
 
 
 class PaymentManager:
-    async def payment_type_list(self, request: Request, token: str, page: int, limit: int, search: str = None,
-                                statuss: str = None):
+    async def payment_type_list(
+        self, request: Request, token: str, page: int, limit: int, search: str = None, statuss: str = None
+    ):
         try:
             # Get the current user
             current_user = await get_current_user(request=request, token=token)

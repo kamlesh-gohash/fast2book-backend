@@ -4,9 +4,10 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
+import pytz
 
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
-import pytz
+
 # from app.v1.utils.token import generate_jwt_token
 from fastapi import Body, HTTPException, Path, Request, status
 from slugify import slugify
@@ -99,7 +100,7 @@ class CategoryManager:
                 query["status"] = statuss
             active_categories = await category_collection.find({**query}).skip(skip).limit(limit).to_list(length=100)
             category_data = []
-            ist_timezone = pytz.timezone('Asia/Kolkata')  # IST timezone
+            ist_timezone = pytz.timezone("Asia/Kolkata")  # IST timezone
             for category in active_categories:
                 # Convert created_at to IST
                 created_at = category.get("created_at")
@@ -110,13 +111,15 @@ class CategoryManager:
                 else:
                     category["created_at"] = str(created_at)
 
-                category_data.append({
-                    "id": str(category["_id"]),
-                    "name": category["name"],
-                    "slug": category.get("slug"),  # Use .get() to avoid KeyError
-                    "status": category["status"],
-                    "created_at": category["created_at"],
-                })
+                category_data.append(
+                    {
+                        "id": str(category["_id"]),
+                        "name": category["name"],
+                        "slug": category.get("slug"),  # Use .get() to avoid KeyError
+                        "status": category["status"],
+                        "created_at": category["created_at"],
+                    }
+                )
             total_categories = await category_collection.count_documents({})
             total_pages = (total_categories + limit - 1) // limit
             return {"data": category_data, "total_items": total_categories, "total_pages": total_pages}

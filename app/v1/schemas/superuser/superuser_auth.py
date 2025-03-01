@@ -4,7 +4,7 @@ from typing import List, Optional
 import bcrypt
 import zon
 
-from pydantic import BaseModel, EmailStr, Field, validator, root_validator
+from pydantic import BaseModel, EmailStr, Field, root_validator, validator
 
 from app.v1.models.user import *
 from app.v1.utils.response.response_format import validation_error
@@ -181,7 +181,7 @@ class SuperUserCreateRequest(BaseModel):
     @root_validator(pre=True)
     def check_required_fields(cls, values):
         # Define required fields
-        required_fields = ["first_name", "last_name", "password", "email", "phone","gender"]
+        required_fields = ["first_name", "last_name", "password", "email", "phone", "gender"]
         missing_fields = []
 
         # Check for missing required fields

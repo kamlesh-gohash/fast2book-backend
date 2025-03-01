@@ -27,7 +27,9 @@ async def payment(
     try:
         query_params = request.query_params
         statuss = query_params.get("query[status]")
-        result = await payment_manager.payment_type_list(request=request, token=token, page=page, limit=limit,search=search ,statuss=statuss)
+        result = await payment_manager.payment_type_list(
+            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
+        )
         return success({"message": "Payment List found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response

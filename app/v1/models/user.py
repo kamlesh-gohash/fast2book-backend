@@ -3,10 +3,11 @@ import os
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
-from fastapi import HTTPException
+
 from bcrypt import gensalt, hashpw
 from beanie import PydanticObjectId  # Import PydanticObjectId
 from beanie import Document, Indexed, before_event
+from fastapi import HTTPException
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.v1.config.constants import SECRET_KEY

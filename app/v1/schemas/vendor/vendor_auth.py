@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 import bcrypt
 import zon
 
-from pydantic import BaseModel, EmailStr, Field, validator, root_validator
+from pydantic import BaseModel, EmailStr, Field, root_validator, validator
 
 from app.v1.models.user import *
 from app.v1.models.vendor import *
@@ -101,6 +101,7 @@ class VendorCreateRequest(BaseModel):
             )
 
         return values
+
     @validator("roles", pre=True, always=True)
     def ensure_vendor_role(cls, roles):
         """
@@ -319,6 +320,7 @@ class SignUpVendorRequest(BaseModel):
             )
 
         return values
+
     @validator("roles", pre=True, always=True)
     def ensure_vendor_role(cls, roles):
         """

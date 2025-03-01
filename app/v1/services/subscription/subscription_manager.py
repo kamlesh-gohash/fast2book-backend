@@ -5,9 +5,10 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
+import pytz
 import razorpay
 import razorpay.errors
-import pytz
+
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
@@ -85,8 +86,9 @@ class SubscriptionManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def subscription_list(self, request: Request, token: str, page: int, limit: int, search: str = None,
-                                statuss: str = None):
+    async def subscription_list(
+        self, request: Request, token: str, page: int, limit: int, search: str = None, statuss: str = None
+    ):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -111,7 +113,7 @@ class SubscriptionManager:
             subscriptions = await subscription_collection.find(query).skip(skip).limit(limit).to_list(length=None)
             subscription_data = []
 
-            ist_timezone = pytz.timezone('Asia/Kolkata')  # IST timezone
+            ist_timezone = pytz.timezone("Asia/Kolkata")  # IST timezone
             for subscription in subscriptions:
                 created_at = subscription.get("created_at")
                 if isinstance(created_at, datetime):

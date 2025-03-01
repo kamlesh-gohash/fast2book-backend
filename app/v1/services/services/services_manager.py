@@ -4,11 +4,13 @@ import random
 from datetime import datetime, timedelta
 from typing import Optional
 
+import pytz
+
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
 from fastapi import Body, HTTPException, Path, Request, status
-import pytz
+
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import category_collection, services_collection
 from app.v1.models.category import Category
@@ -98,7 +100,9 @@ class ServicesManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def service_list(self, request: Request, token: str, page: int, limit: int, search: str = None, statuss: str = None):
+    async def service_list(
+        self, request: Request, token: str, page: int, limit: int, search: str = None, statuss: str = None
+    ):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -136,7 +140,7 @@ class ServicesManager:
             services = await services_collection.find(query).skip(skip).limit(limit).to_list(length=None)
             service_data = []
 
-            ist_timezone = pytz.timezone('Asia/Kolkata')  # IST timezone
+            ist_timezone = pytz.timezone("Asia/Kolkata")  # IST timezone
             for service in services:
                 category = await category_collection.find_one({"_id": service["category_id"]})
                 category_name = category["name"] if category else "Unknown Category"

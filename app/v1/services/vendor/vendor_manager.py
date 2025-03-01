@@ -5,9 +5,10 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
+import pytz
 import razorpay
 import requests
-import pytz
+
 from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from dateutil.relativedelta import relativedelta
@@ -269,7 +270,14 @@ class VendorManager:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def vendor_list(
-        self, request: Request, token: str, page: int, limit: int, search: str = None,statuss: str = None, role: str = "vendor"
+        self,
+        request: Request,
+        token: str,
+        page: int,
+        limit: int,
+        search: str = None,
+        statuss: str = None,
+        role: str = "vendor",
     ):
         try:
             # Verify current user
@@ -329,9 +337,8 @@ class VendorManager:
 
                 # Fetch vendor-specific data
                 vendor_details = await vendor_collection.find_one({"_id": ObjectId(vendor_user_id)})
-                
 
-                ist_timezone = pytz.timezone('Asia/Kolkata') 
+                ist_timezone = pytz.timezone("Asia/Kolkata")
                 created_at = vendor_details.get("created_at")
                 if isinstance(created_at, datetime):
                     created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
@@ -584,7 +591,9 @@ class VendorManager:
                 )
 
             if user_update_data:
-                await user_collection.update_one({"vendor_id": ObjectId(id), "roles": {"$in": ["vendor"]}}, {"$set": user_update_data})
+                await user_collection.update_one(
+                    {"vendor_id": ObjectId(id), "roles": {"$in": ["vendor"]}}, {"$set": user_update_data}
+                )
 
             if vendor_update_data:
                 await vendor_collection.update_one(

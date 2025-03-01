@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Optional
 
 import bcrypt
-import requests
 import pytz
+import requests
+
 from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
@@ -69,7 +70,7 @@ class BlogManager:
 
             # Format the response with category name, status, and created_at
             blog_data = []
-            ist_timezone = pytz.timezone('Asia/Kolkata')  # IST timezone
+            ist_timezone = pytz.timezone("Asia/Kolkata")  # IST timezone
             for blog in active_blogs:
                 # Convert created_at and updated_at to IST
                 created_at = blog.get("created_at")
@@ -89,20 +90,22 @@ class BlogManager:
                 else:
                     blog["updated_at"] = str(updated_at)
 
-                blog_data.append({
-                    "id": str(blog["_id"]),
-                    "title": blog["title"],
-                    "content": blog["content"],
-                    "blog_url": blog["blog_url"],
-                    "blog_image": blog["blog_image"],
-                    "blog_image_url": blog["blog_image_url"],
-                    "author_name": blog["author_name"],
-                    "category": blog["category"],
-                    "tags": blog["tags"],
-                    "status": blog["status"],
-                    "created_at": blog["created_at"],
-                    "updated_at": blog["updated_at"],
-                })
+                blog_data.append(
+                    {
+                        "id": str(blog["_id"]),
+                        "title": blog["title"],
+                        "content": blog["content"],
+                        "blog_url": blog["blog_url"],
+                        "blog_image": blog["blog_image"],
+                        "blog_image_url": blog["blog_image_url"],
+                        "author_name": blog["author_name"],
+                        "category": blog["category"],
+                        "tags": blog["tags"],
+                        "status": blog["status"],
+                        "created_at": blog["created_at"],
+                        "updated_at": blog["updated_at"],
+                    }
+                )
             total_blogs = await blog_collection.count_documents({})
             total_pages = (total_blogs + limit - 1) // limit
             # Return the formatted response

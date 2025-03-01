@@ -5,10 +5,10 @@ from typing import Optional
 import bcrypt
 import zon
 
-from pydantic import BaseModel, EmailStr, Field, validator, root_validator
+from pydantic import BaseModel, EmailStr, Field, root_validator, validator
 
 from app.v1.models.category import StatusEnum
-from app.v1.models.user import StatusEnum , CustomValidationError
+from app.v1.models.user import CustomValidationError, StatusEnum
 from app.v1.utils.response.response_format import validation_error
 
 
@@ -78,6 +78,7 @@ class CostumerCreateRequest(BaseModel):
             )
 
         return values
+
     @validator("roles", pre=True, always=True)
     def ensure_user_role(cls, roles):
         """
