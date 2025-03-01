@@ -1,10 +1,11 @@
 from datetime import datetime
 from typing import List, Optional
+from fastapi import HTTPException
 
 import bcrypt
 import zon
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, validator, root_validator,ValidationError
 
 from app.v1.models.user import *
 from app.v1.utils.response.response_format import validation_error
@@ -43,15 +44,41 @@ class SignUpRequest(BaseModel):
     password: str
     otp: Optional[str] = None  # Make OTP optional
     otp_expires: Optional[datetime] = None
+    is_active: bool = Field(default=False)
     notification_settings: Dict[str, bool] = Field(default_factory=dict)
 
+    @root_validator(pre=True)
+    def check_required_fields(cls, values):
+        # Define required fields
+        required_fields = ["first_name", "last_name", "gender", "password"]
+        missing_fields = []
+
+        # Check for missing required fields
+        for field in required_fields:
+            if field not in values or values[field] is None:
+                missing_fields.append(field)
+
+        if missing_fields:
+            # Raise a custom exception with the validation error
+            raise CustomValidationError(
+                detail={
+                    "status": "VALIDATION_ERROR",
+                    "message": f"The following fields are required: {', '.join(missing_fields)}",
+                    "data": None,
+                }
+            )
+
+        return values
+
     def validate(self):
+        # Validate using zon schema
         try:
             data = self.dict()
             signup_validator.validate(data)
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
+
         return None
 
 
@@ -128,7 +155,7 @@ class ResendOtpRequest(BaseModel):
 forgot_password_validator = zon.record(
     {
         "email": zon.string().email().optional(),  # Optional email validation
-        "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional phone validation
+        "phone": zon.number().int().min(1000000000).max(9999999999).optional(), 
     }
 ).refine(
     lambda data: data.get("email") or data.get("phone"),  # At least one required

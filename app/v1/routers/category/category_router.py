@@ -51,8 +51,10 @@ async def category_list(
     # if validation_result:
     #     return validation_result
     try:
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
         result = await category_manager.category_list(
-            request=request, token=token, page=page, limit=limit, search=search
+            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
         )
         return success({"message": "Category List found successfully", "data": result})
     except HTTPException as http_ex:

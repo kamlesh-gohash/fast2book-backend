@@ -5,10 +5,10 @@ from typing import Optional
 import bcrypt
 import zon
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, validator, root_validator
 
 from app.v1.models.category import StatusEnum
-from app.v1.models.user import StatusEnum
+from app.v1.models.user import StatusEnum , CustomValidationError
 from app.v1.utils.response.response_format import validation_error
 
 
@@ -21,7 +21,7 @@ class StatusEnum(str, Enum):
 class Gender(str, Enum):
     male = "male"
     female = "female"
-    other = "other"
+    other = "don't_want_to_disclose"
 
 
 class Role(str, Enum):
@@ -56,6 +56,28 @@ class CostumerCreateRequest(BaseModel):
 
     password: str
 
+    @root_validator(pre=True)
+    def check_required_fields(cls, values):
+        # Define required fields
+        required_fields = ["first_name", "last_name", "gender", "password", "email"]
+        missing_fields = []
+
+        # Check for missing required fields
+        for field in required_fields:
+            if field not in values or values[field] is None:
+                missing_fields.append(field)
+
+        if missing_fields:
+            # Raise a custom exception with the validation error
+            raise CustomValidationError(
+                detail={
+                    "status": "VALIDATION_ERROR",
+                    "message": f"The following fields are required: {', '.join(missing_fields)}",
+                    "data": None,
+                }
+            )
+
+        return values
     @validator("roles", pre=True, always=True)
     def ensure_user_role(cls, roles):
         """

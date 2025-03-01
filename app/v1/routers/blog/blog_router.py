@@ -38,6 +38,7 @@ async def create_blog(create_blog_request: Blog, blog_manager: BlogManager = Dep
 
 @router.get("/blog-list", status_code=status.HTTP_200_OK)
 async def blog_list(
+    request: Request,
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search term to filter categories by name or category name"),
@@ -47,7 +48,9 @@ async def blog_list(
     # if validation_result:
     #     return validation_result
     try:
-        result = await blog_manager.blog_list(page, limit, search)
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
+        result = await blog_manager.blog_list(page, limit, search, statuss)
         return success({"message": "Blog List found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response

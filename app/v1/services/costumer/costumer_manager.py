@@ -8,7 +8,7 @@ import bcrypt
 
 from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
-
+import pytz
 # from app.v1.utils.token import generate_jwt_token
 from fastapi import Body, HTTPException, Path, Request, status
 
@@ -94,7 +94,7 @@ class CostumerManager:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     async def customer_list(
-        self, request: Request, token: str, page: int, limit: int, search: str = None, role: str = "user"
+        self, request: Request, token: str, page: int, limit: int, search: str = None, statuss: str = None ,role: str = "user"
     ):
         try:
             current_user = await get_current_user(request=request, token=token)
@@ -127,6 +127,13 @@ class CostumerManager:
                     {"phone": search_regex},
                 ]
 
+            if statuss:
+                statuss = statuss.strip()
+                if not statuss:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status cannot be empty")
+                status_regex = {"$regex": statuss, "$options": "i"}
+                query["status"] = status_regex
+
             # Fields to include in the result
             projection = {
                 "id": 1,
@@ -149,6 +156,8 @@ class CostumerManager:
             result = await user_collection.find(query, projection).skip(skip).limit(limit).to_list(length=limit)
             # Format costumer data
             costumer_data = []
+            ist_timezone = pytz.timezone('Asia/Kolkata')  # IST timezone
+
             for costumer in result:
                 costumer["id"] = str(costumer.pop("_id"))
                 costumer["first_name"] = costumer["first_name"].capitalize()
@@ -156,8 +165,14 @@ class CostumerManager:
                 costumer["email"] = costumer["email"]
                 costumer["phone"] = costumer["phone"]
                 created_at = costumer.get("created_at")
+                # if isinstance(created_at, datetime):
+                #     costumer["created_at"] = created_at.isoformat()
+                # else:
+                #     costumer["created_at"] = str(created_at)
                 if isinstance(created_at, datetime):
-                    costumer["created_at"] = created_at.isoformat()
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    costumer["created_at"] = created_at_ist.isoformat()
                 else:
                     costumer["created_at"] = str(created_at)
                 costumer_data.append(costumer)
@@ -219,8 +234,16 @@ class CostumerManager:
 
             # Format created_at field
             created_at = result.get("created_at")
+            # if isinstance(created_at, datetime):
+            #     result["created_at"] = created_at.isoformat()  # Convert datetime to ISO 8601 string
+            # else:
+            #     result["created_at"] = str(created_at)
             if isinstance(created_at, datetime):
-                result["created_at"] = created_at.isoformat()  # Convert datetime to ISO 8601 string
+                created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+
+                ist_timezone = pytz.timezone('Asia/Kolkata')
+                created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                result["created_at"] = created_at_ist.isoformat()
             else:
                 result["created_at"] = str(created_at)
 

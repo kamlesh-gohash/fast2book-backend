@@ -8,7 +8,8 @@ from app.v1.models.payment import PaymentType
 
 
 class PaymentManager:
-    async def payment_type_list(self, request: Request, token: str, page: int, limit: int):
+    async def payment_type_list(self, request: Request, token: str, page: int, limit: int, search: str = None,
+                                statuss: str = None):
         try:
             # Get the current user
             current_user = await get_current_user(request=request, token=token)
@@ -22,6 +23,13 @@ class PaymentManager:
                 )
             skip = max((page - 1) * limit, 0)
             query = {}
+            if search:
+                search_regex = {"$regex": search, "$options": "i"}  # Case-insensitive search
+                query["$or"] = [
+                    {"name": search_regex},
+                ]
+            if statuss:
+                query["status"] = statuss
             payment_types = await payment_collection.find(query).skip(skip).limit(limit).to_list(None)
             if not payment_types:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No payment types found")

@@ -73,20 +73,14 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
 async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)):
     """Get the current authenticated user from either a JWT token or a Google ID token."""
-    print(request, token, "token and request")
     try:
         # Check if the token is a Google ID token
         if token.startswith("google_"):
-            print(token, "token")
             # Extract the actual Google ID token
             google_token = token.replace("google_", "")
-            print(google_token, "google token")
-            # Verify the Google ID token
             id_info = id_token.verify_oauth2_token(google_token, requests.Request(), GOOGLE_CLIENT_ID)
-            print(id_info, "id info")
             # Validate the issuer
             if id_info["iss"] not in ["accounts.google.com", "https://accounts.google.com"]:
-                print(id_info["iss"], "id info iss")
                 raise HTTPException(status_code=401, detail="Invalid Google token issuer.")
 
             # Extract email from Google ID token
@@ -108,7 +102,6 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
             return user
 
         else:
-            print("google eles")
             # Handle JWT token
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             sub = payload.get("sub")

@@ -7,7 +7,7 @@ from typing import Optional
 import bcrypt
 import razorpay
 import razorpay.errors
-
+import pytz
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
@@ -85,7 +85,8 @@ class SubscriptionManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def subscription_list(self, request: Request, token: str, page: int, limit: int, search: str = None):
+    async def subscription_list(self, request: Request, token: str, page: int, limit: int, search: str = None,
+                                statuss: str = None):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -104,9 +105,21 @@ class SubscriptionManager:
                     {"title": search_regex},  # Search by service name
                 ]
 
+            if statuss:
+                query["status"] = statuss
+
             subscriptions = await subscription_collection.find(query).skip(skip).limit(limit).to_list(length=None)
             subscription_data = []
+
+            ist_timezone = pytz.timezone('Asia/Kolkata')  # IST timezone
             for subscription in subscriptions:
+                created_at = subscription.get("created_at")
+                if isinstance(created_at, datetime):
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    subscription["created_at"] = created_at_ist.isoformat()
+                else:
+                    subscription["created_at"] = str(created_at)
                 subscription_data.append(
                     {
                         "id": str(subscription["_id"]),
@@ -270,10 +283,8 @@ class SubscriptionManager:
                     "currency": plan_request.currency,
                 },
             }
-            print(razorpay_plan_data, "razorpay_plan_data")
             try:
                 razorpay_plan = razorpay_client.plan.create(data=razorpay_plan_data)
-                print(razorpay_plan, "razorpay_plan")
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
             except razorpay.errors.BadRequestError as e:
@@ -306,7 +317,6 @@ class SubscriptionManager:
             await plan_collection.insert_one(insert_data)
 
             inserted_plan = await plan_collection.find_one({"razorpay_plan_id": razorpay_plan["id"]})
-            print(inserted_plan, "inserted_plan")
             return {
                 "id": str(inserted_plan["_id"]),
                 "name": inserted_plan["name"],

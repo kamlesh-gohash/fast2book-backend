@@ -72,7 +72,6 @@ async def book_appointment(
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except Exception as ex:
-        print(ex, "ex")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -325,7 +324,6 @@ async def verify_payment(request: Request, payload: dict):
         params = {"razorpay_order_id": razorpay_order_id, "razorpay_payment_id": razorpay_payment_id}
         razorpay_client.utility.verify_payment_signature({**params, "razorpay_signature": razorpay_signature})
         payment_details = razorpay_client.payment.fetch(razorpay_payment_id)
-        print(payment_details, "payment_details")
         payment_status = payment_details.get("status")
         payment_method = payment_details.get("method")
 

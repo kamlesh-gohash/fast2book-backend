@@ -52,8 +52,10 @@ async def customer_list(
     costumer_manager: CostumerManager = Depends(get_costumer_manager),
 ):
     try:
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
         result = await costumer_manager.customer_list(
-            request=request, token=token, page=page, limit=limit, search=search
+            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
         )
         return success({"message": "customer List found successfully", "data": result})
     except HTTPException as http_ex:

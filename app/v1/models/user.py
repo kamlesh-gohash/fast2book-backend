@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
-
+from fastapi import HTTPException
 from bcrypt import gensalt, hashpw
 from beanie import PydanticObjectId  # Import PydanticObjectId
 from beanie import Document, Indexed, before_event
@@ -16,7 +16,7 @@ from app.v1.config.constants import SECRET_KEY
 class Gender(str, Enum):
     male = "male"
     female = "female"
-    other = "other"
+    other = "don't_want_to_disclose"
 
 
 class Location(BaseModel):
@@ -212,3 +212,8 @@ class User(Document, BaseModel):
     #     salted_password = f"{SECRET_KEY}{password}"
     #     hashed_password = hashpw(salted_password.encode("utf-8"), gensalt())
     #     return hashed_password.decode("utf-8")
+
+
+class CustomValidationError(HTTPException):
+    def __init__(self, detail: dict):
+        super().__init__(status_code=422, detail=detail)

@@ -7,7 +7,7 @@ from typing import Optional
 import bcrypt
 import razorpay
 import requests
-
+import pytz
 from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from dateutil.relativedelta import relativedelta
@@ -250,7 +250,6 @@ class VendorManager:
                     "specialization": create_vendor_request.specialization,  # Add specialization
                 },
             }
-            print(response_data, "response_data")
 
             # Send email to the vendor
             login_link = "http://192.168.29.173:3000/vendor-admin/sign-in"
@@ -270,7 +269,7 @@ class VendorManager:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def vendor_list(
-        self, request: Request, token: str, page: int, limit: int, search: str = None, role: str = "vendor"
+        self, request: Request, token: str, page: int, limit: int, search: str = None,statuss: str = None, role: str = "vendor"
     ):
         try:
             # Verify current user
@@ -308,14 +307,16 @@ class VendorManager:
                     {"phone": search_regex},
                 ]
 
+            if statuss:
+                query["status"] = statuss
+
             # Fetch vendor data
             vendors = await user_collection.find(query).skip(skip).limit(limit).to_list(length=limit)
-            print(vendors, "vendors")
             vendor_data = []
+
             for vendor in vendors:
                 # Fetch associated vendor details
                 vendor_id = str(vendor.pop("_id"))
-                print(vendor_id, "vendor_id")
                 vendor["id"] = vendor_id
                 # Capitalize names and format email
                 vendor["first_name"] = vendor["first_name"].capitalize()
@@ -328,7 +329,14 @@ class VendorManager:
 
                 # Fetch vendor-specific data
                 vendor_details = await vendor_collection.find_one({"_id": ObjectId(vendor_user_id)})
-                print(vendor_details, "vendor_details")
+                
+
+                ist_timezone = pytz.timezone('Asia/Kolkata') 
+                created_at = vendor_details.get("created_at")
+                if isinstance(created_at, datetime):
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    vendor_details["created_at"] = created_at_ist.isoformat()
                 if vendor_details:
                     vendor["business_name"] = vendor_details.get("business_name")
                     vendor["business_type"] = vendor_details.get("business_type")
@@ -454,7 +462,7 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid vendor ID: '{id}'")
 
             # Fetch the vendor from the user collection
-            vendor = await user_collection.find_one({"vendor_id": ObjectId(id)})
+            vendor = await user_collection.find_one({"vendor_id": ObjectId(id), "roles": {"$in": ["vendor"]}})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
@@ -482,6 +490,8 @@ class VendorManager:
                         status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists with this email"
                     )
                 user_update_data["email"] = email
+            if update_vendor_request.gender is not None:
+                user_update_data["gender"] = update_vendor_request.gender
             if update_vendor_request.phone is not None:
                 # Check if the new phone already exists (only if the phone is being updated)
                 user_with_phone = await User.find_one(User.phone == update_vendor_request.phone)
@@ -574,7 +584,7 @@ class VendorManager:
                 )
 
             if user_update_data:
-                await user_collection.update_one({"_id": ObjectId(id)}, {"$set": user_update_data})
+                await user_collection.update_one({"vendor_id": ObjectId(id), "roles": {"$in": ["vendor"]}}, {"$set": user_update_data})
 
             if vendor_update_data:
                 await vendor_collection.update_one(
@@ -585,7 +595,7 @@ class VendorManager:
 
             # Fetch updated vendor details
             updated_vendor = await vendor_collection.find_one({"_id": ObjectId(id)})
-            updated_user = await user_collection.find_one({"vendor_id": ObjectId(id)})
+            updated_user = await user_collection.find_one({"vendor_id": ObjectId(id), "roles": {"$in": ["vendor"]}})
 
             # Return the combined response
             return {
@@ -689,6 +699,17 @@ class VendorManager:
                 )
 
             if vendor_request.is_login_with_otp:
+                if not vendor.get("is_active", False):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Please verify your email to activate your account",
+                    )
+
+                if vendor.get("status") == "inactive":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Your account is inactive, please contact admin",
+                    )
                 otp = generate_otp()
                 otp_expires = datetime.utcnow() + timedelta(minutes=10)
                 await user_collection.update_one(
@@ -723,7 +744,6 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Vendor user is not active")
 
             vendor_data = await vendor_collection.find_one({"_id": ObjectId(vendor["vendor_id"])})
-            print(vendor_data, "vendor_data")
             if not vendor_data:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor details not found")
 
@@ -849,7 +869,6 @@ class VendorManager:
 
             return new_vendor_user
         except Exception as ex:
-            print(ex)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def vendor_profile(self, request: Request, token: str):
@@ -1239,7 +1258,7 @@ class VendorManager:
                     new_availability_slots.append(day_slot_data)
 
                 await user_collection.update_one(
-                    {"vendor_id": ObjectId(current_user.vendor_id)},
+                    {"created_by": ObjectId(current_user.vendor_id)},
                     {"$set": {"availability_slots": new_availability_slots}},
                 )
 
@@ -1275,7 +1294,6 @@ class VendorManager:
             # Return updated data
 
             updated_vendor = await user_collection.find_one({"vendor_id": ObjectId(vendor["_id"])})
-            print(updated_vendor, "updated_vendor")
             if not updated_vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
             updated_vendor["id"] = str(updated_vendor.pop("_id", ""))
@@ -1601,11 +1619,9 @@ class VendorManager:
                 )
 
             user_data = await user_collection.find_one({"_id": ObjectId(vendor_id)})
-            print(user_data, "user_data")
             if not user_data:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
             vendor = await vendor_collection.find_one({"_id": ObjectId(user_data["vendor_id"])})
-            print(vendor, "vendorbbbbbbbbbbbbb")
             if not vendor:
 
                 # vendor_user = await user_collection.find_one({"created_by": str(vendor_id), "roles": "vendor_user"})
@@ -1621,7 +1637,6 @@ class VendorManager:
             # availability_slots = user_data.get("availability_slots", [])
             business_type = vendor.get("business_type", "individual")
             if business_type == "individual":
-                print(user_data, "user_datasssssssssss")
                 availability_slots = user_data.get("availability_slots", [])
                 return {
                     # "vendor_id": vendor["user_id"],

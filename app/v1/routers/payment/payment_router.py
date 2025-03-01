@@ -21,10 +21,13 @@ async def payment(
     token: str = Depends(get_token_from_header),
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    search: str = Query(None, description="Search term for name or category_name"),
     payment_manager: PaymentManager = Depends(get_payment_manager),
 ):
     try:
-        result = await payment_manager.payment_type_list(request=request, token=token, page=page, limit=limit)
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
+        result = await payment_manager.payment_type_list(request=request, token=token, page=page, limit=limit,search=search ,statuss=statuss)
         return success({"message": "Payment List found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response

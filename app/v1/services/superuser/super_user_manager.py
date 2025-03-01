@@ -7,7 +7,7 @@ import bcrypt
 
 from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
-
+import pytz
 # from app.v1.utils.token import generate_jwt_token
 from fastapi import Body, HTTPException, Path, Request, status
 from pymongo import ASCENDING, DESCENDING
@@ -191,7 +191,6 @@ class SuperUserManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -330,7 +329,7 @@ class SuperUserManager:
             )
 
     async def super_user_list(
-        self, request: Request, token: str, page: int, limit: int, search: str = None, role: str = "admin"
+        self, request: Request, token: str, page: int, limit: int, search: str = None,statuss: str = None ,role: str = "admin"
     ):
         try:
             current_user = await get_current_user(request=request, token=token)
@@ -363,6 +362,11 @@ class SuperUserManager:
                     {"phone": search_regex},
                 ]
 
+            if statuss:
+                statuss = statuss.strip()
+                if not statuss:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status cannot be empty")
+                query["status"] = statuss
             # Fields to include in the result
             projection = {"_id": 1, "first_name": 1, "last_name": 1, "email": 1, "phone": 1, "status": 1}
 
@@ -371,12 +375,20 @@ class SuperUserManager:
 
             # Format costumer data
             admin_data = []
+            ist_timezone = pytz.timezone('Asia/Kolkata') 
+                
             for admin in result:
+                created_at = admin.get("created_at")
+                if isinstance(created_at, datetime):
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    admin["created_at"] = created_at_ist.isoformat()
                 admin["id"] = str(admin.pop("_id"))  # Convert ObjectId to string
                 admin["first_name"] = admin["first_name"].capitalize()
                 admin["last_name"] = admin["last_name"].capitalize()
                 admin["email"] = admin["email"].lower()
                 admin["status"] = admin.get("status", "unknown")
+                admin["created_at"] = admin["created_at"]
                 admin_data.append(admin)
 
             # Fetch total count for the query

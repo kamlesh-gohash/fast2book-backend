@@ -76,7 +76,9 @@ async def vendor_list(
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.vendor_list(request=request, token=token, page=page, limit=limit, search=search)
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
+        result = await vendor_manager.vendor_list(request=request, token=token, page=page, limit=limit, search=search, statuss=statuss)
         return success({"message": "Vendor List found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
