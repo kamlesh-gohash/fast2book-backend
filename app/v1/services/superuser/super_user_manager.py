@@ -386,17 +386,17 @@ class SuperUserManager:
             ist_timezone = pytz.timezone("Asia/Kolkata")
 
             for admin in result:
-                created_at = admin.get("created_at")
-                if isinstance(created_at, datetime):
-                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
-                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
-                    admin["created_at"] = created_at_ist.isoformat()
+                # created_at = admin.get("created_at")
+                # if isinstance(created_at, datetime):
+                #     created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                #     created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                #     admin["created_at"] = created_at_ist.isoformat()
                 admin["id"] = str(admin.pop("_id"))  # Convert ObjectId to string
                 admin["first_name"] = admin["first_name"].capitalize()
                 admin["last_name"] = admin["last_name"].capitalize()
                 admin["email"] = admin["email"].lower()
                 admin["status"] = admin.get("status", "unknown")
-                admin["created_at"] = admin["created_at"]
+                # admin["created_at"] = admin["created_at"]
                 admin_data.append(admin)
 
             # Fetch total count for the query
