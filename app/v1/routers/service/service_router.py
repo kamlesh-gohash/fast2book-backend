@@ -51,7 +51,11 @@ async def service_list(
     service_manager: "ServicesManager" = Depends(get_services_manager),
 ):
     try:
-        result = await service_manager.service_list(request=request, token=token, page=page, limit=limit, search=search)
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
+        result = await service_manager.service_list(
+            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
+        )
         return success({"message": "Service List found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

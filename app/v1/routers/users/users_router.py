@@ -468,7 +468,6 @@ async def google_login(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

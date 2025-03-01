@@ -46,6 +46,7 @@ class UserManager:
     async def create_user(self, user: User) -> dict:
         """Create a new user in the database."""
         try:
+            # Check if a user with the same email or phone already exists
             existing_user = await user_collection.find_one(
                 {
                     "$or": [
@@ -56,41 +57,82 @@ class UserManager:
             )
 
             if existing_user:
-                raise HTTPException(
-                    status_code=404, detail="User with this email or phone already exists in the database."
-                )
+                # If the user exists and is already active, raise an error
+                if existing_user.get("is_active", False):
+                    raise HTTPException(
+                        status_code=400, detail="User with this email or phone already exists and is active."
+                    )
+
+                # If the user exists but is not active, update their data and send a new OTP
+                email = user.email.lower()
+                user.email = email
+                otp = generate_otp()
+                expiry_time = datetime.utcnow() + timedelta(minutes=10)
+                expiry_minutes = 10
+
+                # Send OTP to email if provided
+                if user.email:
+                    source = "Activation_code"
+                    context = {"otp": otp, "to_email": user.email}
+                    to_email = user.email
+                    await send_email(to_email, source, context)
+
+                # Send OTP to phone if provided
+                if user.phone:
+                    to_phone = user.phone
+                    await send_sms_on_phone(to_phone, otp, expiry_minutes)
+
+                # Update the existing user with new data
+                update_data = {
+                    "otp": otp,
+                    "otp_expires": expiry_time,
+                    "password": hashpw(user.password.encode("utf-8"), gensalt()).decode("utf-8"),
+                    "roles": user.roles if user.roles else [Role.user],
+                    "notification_settings": DEFAULT_NOTIFICATION_PREFERENCES,
+                }
+
+                # Update the user in the database
+                await user_collection.update_one({"_id": ObjectId(existing_user["_id"])}, {"$set": update_data})
+
+                # Return the updated user data
+                updated_user = await user_collection.find_one({"_id": ObjectId(existing_user["_id"])})
+                updated_user["_id"] = str(updated_user["_id"])
+                return updated_user
+
+            # If the user does not exist, create a new user
             email = user.email.lower()
             user.email = email
             otp = generate_otp()
             expiry_time = datetime.utcnow() + timedelta(minutes=10)
-            expiry_time = datetime.utcnow() + timedelta(minutes=10)
             expiry_minutes = 10
+
+            # Send OTP to email if provided
             if user.email:
                 source = "Activation_code"
                 context = {"otp": otp, "to_email": user.email}
                 to_email = user.email
                 await send_email(to_email, source, context)
+
+            # Send OTP to phone if provided
             if user.phone:
                 to_phone = user.phone
+                await send_sms_on_phone(to_phone, otp, expiry_minutes)
 
-                await send_sms_on_phone(
-                    to_phone, otp, expiry_minutes
-                )  # Uncomment this line when implementing SMS functionality
-
+            # Set user fields
             user.otp = otp
             user.otp_expires = expiry_time
-
             user.password = hashpw(user.password.encode("utf-8"), gensalt()).decode("utf-8")
             if not user.roles:
                 user.roles = [Role.user]
-            # user.otp_expires = otp_expiration_time
             user.notification_settings = DEFAULT_NOTIFICATION_PREFERENCES
-            print(user, "user in create user")
+            user.is_active = False  # New users are not active until OTP verification
+
+            # Insert the new user into the database
             user_dict = user.dict()
             result = await user_collection.insert_one(user_dict)
-            print(result, "result in create user")
             user_dict["_id"] = str(result.inserted_id)
             return user_dict
+
         except HTTPException as e:
             raise e
         except Exception as ex:
@@ -160,11 +202,24 @@ class UserManager:
                         status_code=status.HTTP_401_UNAUTHORIZED, detail="user does not exist with this email"
                     )
                 if is_login_with_otp:
+                    if not result.get("is_active", False):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Please verify your email to activate your account",
+                        )
+
+                    # Check if the user's status is inactive
+                    if result.get("status") == "inactive":
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Your account is inactive, please contact admin",
+                        )
                     otp = generate_otp()
                     await user_collection.update_one(
                         {"email": email},
                         {"$set": {"otp": otp, "otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
                     )
+
                     source = "Login With Otp"
                     context = {"otp": otp}
                     to_email = email
@@ -190,7 +245,7 @@ class UserManager:
                 if not user.is_active:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Please verify your email or phone to activate your account",
+                        detail="Please verify your email to activate your account",
                     )
                 if user.status == "inactive":
                     raise HTTPException(
@@ -212,6 +267,18 @@ class UserManager:
                 if not result:
                     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid phone number")
                 if is_login_with_otp:
+                    if not result.get("is_active", False):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Please verify your email to activate your account",
+                        )
+
+                    # Check if the user's status is inactive
+                    if result.get("status") == "inactive":
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Your account is inactive, please contact admin",
+                        )
                     otp = generate_otp()
                     await user_collection.update_one(
                         {"phone": phone},
@@ -243,7 +310,7 @@ class UserManager:
                 if not user.is_active:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Please verify your email or phone to activate your account",
+                        detail="Please verify your phone to activate your account",
                     )
                 if user.status == "inactive":
                     raise HTTPException(
@@ -324,7 +391,18 @@ class UserManager:
                 user = await User.find_one(User.email == email)
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found with the provided email.")
+                if not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Please verify your email to activate your account.",
+                    )
 
+                # Check if the user's status is inactive
+                if user.status == "inactive":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Your account is inactive, please contact admin.",
+                    )
                 # if user.notification_settings and not user.notification_settings.get("forgot_password", False):
                 #     print("kkkkkkkkkkkkkkkkk")
                 #     raise HTTPException(status_code=403, detail="Forgot password notifications are disabled for this user.")
@@ -345,6 +423,18 @@ class UserManager:
                 user = await user_collection.find_one({"phone": phone})
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found with the provided phone.")
+                if not user.get("is_active", False):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Please verify your phone to activate your account.",
+                    )
+
+                # Check if the user's status is inactive
+                if user.get("status") == "inactive":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Your account is inactive, please contact admin.",
+                    )
 
                 # Send OTP to the user's phone
                 to_phone = phone
@@ -375,6 +465,8 @@ class UserManager:
             if datetime.utcnow() > user.otp_expires:
                 raise HTTPException(status_code=400, detail="OTP has expired.")
             user.is_active = True
+            user.otp = None
+            user.otp_expires = None
             await user.save()
             user_data = user.dict(by_alias=True)
             user_data["id"] = str(user_data.pop("_id"))
@@ -401,7 +493,9 @@ class UserManager:
             if datetime.utcnow() > user.get("otp_expires"):
                 raise HTTPException(status_code=400, detail="OTP has expired.")
             user.get("is_active") == True
-            await user_collection.update_one({"phone": phone}, {"$set": {"is_active": True}})
+            await user_collection.update_one(
+                {"phone": phone}, {"$set": {"is_active": True, "otp": None, "otp_expires": None}}
+            )
             user_data = user.copy()  # Since `user` is a dictionary, use `copy()`
             user_data["id"] = str(user_data.pop("_id"))
             user_data.pop("password", None)
@@ -1673,7 +1767,6 @@ class UserManager:
 
     async def google_login(self, request: Request, token: str):
         try:
-            print("hhhhhhhhhhhhhhhhh")
             current_user = await get_current_user(request=request, token=token)
 
             if not current_user:
@@ -1683,7 +1776,6 @@ class UserManager:
         except HTTPException as ex:
             raise
         except Exception as ex:
-            print(ex, "ex")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

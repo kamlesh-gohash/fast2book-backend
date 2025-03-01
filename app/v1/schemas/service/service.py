@@ -14,9 +14,9 @@ from app.v1.utils.response.response_format import validation_error
 
 
 class StatusEnum(str, Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    DRAFT = "draft"
+    Active = "active"
+    Inactive = "inactive"
+    Draft = "draft"
 
 
 # Validators
@@ -37,7 +37,7 @@ class CreateServiceRequest(BaseModel):
     service_image: Optional[str] = None
     service_image_url: Optional[str] = None
     category_id: str
-    status: StatusEnum = StatusEnum.ACTIVE
+    status: StatusEnum = StatusEnum.Active
 
     @validator("category_id", pre=True)
     def validate_category_id(cls, v):

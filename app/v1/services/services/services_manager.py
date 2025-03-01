@@ -4,6 +4,8 @@ import random
 from datetime import datetime, timedelta
 from typing import Optional
 
+import pytz
+
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
@@ -98,7 +100,9 @@ class ServicesManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def service_list(self, request: Request, token: str, page: int, limit: int, search: str = None):
+    async def service_list(
+        self, request: Request, token: str, page: int, limit: int, search: str = None, statuss: str = None
+    ):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -130,11 +134,23 @@ class ServicesManager:
                 if category:
                     query["$or"].append({"category_id": category["_id"]})
 
+            if statuss:
+                query["status"] = statuss
+
             services = await services_collection.find(query).skip(skip).limit(limit).to_list(length=None)
             service_data = []
+
+            ist_timezone = pytz.timezone("Asia/Kolkata")  # IST timezone
             for service in services:
                 category = await category_collection.find_one({"_id": service["category_id"]})
                 category_name = category["name"] if category else "Unknown Category"
+                created_at = service.get("created_at")
+                if isinstance(created_at, datetime):
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    service["created_at"] = created_at_ist.isoformat()
+                else:
+                    service["created_at"] = str(created_at)
                 service_data.append(
                     {
                         "id": str(service["_id"]),

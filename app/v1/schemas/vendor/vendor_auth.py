@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 import bcrypt
 import zon
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, root_validator, validator
 
 from app.v1.models.user import *
 from app.v1.models.vendor import *
@@ -78,6 +78,29 @@ class VendorCreateRequest(BaseModel):
     is_dashboard_created: bool = Field(default=False)
     status: StatusEnum = Field(default=StatusEnum.Active)
     password: str
+
+    @root_validator(pre=True)
+    def check_required_fields(cls, values):
+        # Define required fields
+        required_fields = ["first_name", "last_name", "gender", "password", "email", "phone"]
+        missing_fields = []
+
+        # Check for missing required fields
+        for field in required_fields:
+            if field not in values or values[field] is None:
+                missing_fields.append(field)
+
+        if missing_fields:
+            # Raise a custom exception with the validation error
+            raise CustomValidationError(
+                detail={
+                    "status": "VALIDATION_ERROR",
+                    "message": f"The following fields are required: {', '.join(missing_fields)}",
+                    "data": None,
+                }
+            )
+
+        return values
 
     @validator("roles", pre=True, always=True)
     def ensure_vendor_role(cls, roles):
@@ -275,6 +298,29 @@ class SignUpVendorRequest(BaseModel):
     availability_slots: Optional[List[DaySlot]] = None  # Set as Optional, no default value
     password: str
 
+    @root_validator(pre=True)
+    def check_required_fields(cls, values):
+        # Define required fields
+        required_fields = ["first_name", "last_name", "gender", "password"]
+        missing_fields = []
+
+        # Check for missing required fields
+        for field in required_fields:
+            if field not in values or values[field] is None:
+                missing_fields.append(field)
+
+        if missing_fields:
+            # Raise a custom exception with the validation error
+            raise CustomValidationError(
+                detail={
+                    "status": "VALIDATION_ERROR",
+                    "message": f"The following fields are required: {', '.join(missing_fields)}",
+                    "data": None,
+                }
+            )
+
+        return values
+
     @validator("roles", pre=True, always=True)
     def ensure_vendor_role(cls, roles):
         """
@@ -315,6 +361,29 @@ class VendorUserCreateRequest(BaseModel):
     status: StatusEnum = Field(default=StatusEnum.Active)
     roles: list[Role] = [Role.vendor_user]
     created_by: Optional[str] = None
+
+    @root_validator(pre=True)
+    def check_required_fields(cls, values):
+        # Define required fields
+        required_fields = ["first_name", "last_name", "gender", "email"]
+        missing_fields = []
+
+        # Check for missing required fields
+        for field in required_fields:
+            if field not in values or values[field] is None:
+                missing_fields.append(field)
+
+        if missing_fields:
+            # Raise a custom exception with the validation error
+            raise CustomValidationError(
+                detail={
+                    "status": "VALIDATION_ERROR",
+                    "message": f"The following fields are required: {', '.join(missing_fields)}",
+                    "data": None,
+                }
+            )
+
+        return values
 
     def validate(self):
         try:
@@ -394,6 +463,29 @@ class VendorSubscriptionRequest(BaseModel):
     quantity: int = 1
     start_at: Optional[datetime] = None
     expire_by: Optional[datetime] = None
+
+    @root_validator(pre=True)
+    def check_required_fields(cls, values):
+        # Define required fields
+        required_fields = ["plan_id", "total_count", "quantity"]
+        missing_fields = []
+
+        # Check for missing required fields
+        for field in required_fields:
+            if field not in values or values[field] is None:
+                missing_fields.append(field)
+
+        if missing_fields:
+            # Raise a custom exception with the validation error
+            raise CustomValidationError(
+                detail={
+                    "status": "VALIDATION_ERROR",
+                    "message": f"The following fields are required: {', '.join(missing_fields)}",
+                    "data": None,
+                }
+            )
+
+        return values
 
     def validate(self):
         try:

@@ -49,6 +49,7 @@ class PermissionManager:
                 processed_admin = {
                     "id": str(admin["_id"]),
                     "email": admin.get("email"),
+                    "name": admin.get("first_name") + " " + admin.get("last_name"),
                 }
                 processed_admin_list.append(processed_admin)
 
