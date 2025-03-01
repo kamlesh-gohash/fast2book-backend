@@ -16,10 +16,15 @@ async def support_list(
     token: str = Depends(get_token_from_header),
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    search: str = Query(None, description="Search query"),
     support_manager: SupportManager = Depends(get_support_manager),
 ):
     try:
-        result = await support_manager.support_list(request=request, token=token, page=page, limit=limit)
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
+        result = await support_manager.support_list(
+            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
+        )
         return success({"message": "Support List found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

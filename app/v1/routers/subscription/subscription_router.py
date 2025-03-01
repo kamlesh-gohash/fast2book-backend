@@ -50,8 +50,10 @@ async def subscription_list(
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
     try:
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
         result = await subscription_manager.subscription_list(
-            request=request, token=token, page=page, limit=limit, search=search
+            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
         )
         return success({"message": "Subscription List found successfully", "data": result})
     except HTTPException as http_ex:

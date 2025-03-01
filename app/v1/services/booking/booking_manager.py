@@ -160,7 +160,6 @@ class BookingManager:
             if (
                 vendor_user_id and vendor_user_id.lower() != "null"
             ):  # If vendor_user_id is provided, fetch that specific user
-                print(vendor_user_id, "vendor_user_id")
                 vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
                 if not vendor_user:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
@@ -578,7 +577,6 @@ class BookingManager:
 
                 vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
                 vendor_user = await user_collection.find_one({"_id": ObjectId(booking["vendor_user_id"])})
-                print(vendor_user, "vendor_user")
                 if vendor:
                     booking["vendor__first_name"] = vendor_user.get("first_name")
                     booking["venodr_last_name"] = vendor_user.get("last_name")
@@ -622,7 +620,6 @@ class BookingManager:
         except HTTPException:
             raise
         except Exception as ex:
-            print(ex, "ex")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def cancel_booking(self, request: Request, token: str, id: str, cancel_request: CancelBookingRequest):

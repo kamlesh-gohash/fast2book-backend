@@ -1,4 +1,6 @@
 # from app.v1.utils.token import generate_jwt_token
+import pytz
+
 from bson import ObjectId
 from fastapi import HTTPException, Request, status
 
@@ -9,7 +11,15 @@ from app.v1.models.support import *
 
 class SupportManager:
 
-    async def support_list(self, request: Request, token: str, page: int, limit: int):
+    async def support_list(
+        self,
+        request: Request,
+        token: str,
+        page: int,
+        limit: int,
+        search: str = None,
+        statuss: str = None,
+    ):
         try:
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
@@ -26,6 +36,11 @@ class SupportManager:
             # Query to fetch all support data (or add filters as needed)
             query = {}  # Fetch all data
 
+            if search:
+                query["name"] = {"$regex": search, "$options": "i"}
+
+            if statuss:
+                query["status"] = statuss
             # Optionally, filter by specific fields
             # query = {"status": "active"}  # Example filter
 
@@ -37,7 +52,13 @@ class SupportManager:
 
             # Format the results
             formatted_support = []
+            ist_timezone = pytz.timezone("Asia/Kolkata")
             for item in support:
+                created_at = item.get("created_at")
+                if isinstance(created_at, datetime):
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    item["created_at"] = created_at_ist.isoformat()
                 item["id"] = str(item.pop("_id", ""))
                 formatted_support.append(item)
 

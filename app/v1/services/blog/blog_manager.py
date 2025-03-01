@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Optional
 
 import bcrypt
+import pytz
+import requests
 
 from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
@@ -47,7 +49,7 @@ class BlogManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to create blog: {str(e)}"
             )
 
-    async def blog_list(self, page: int = 1, limit: int = 10, search: str = None) -> dict:
+    async def blog_list(self, page: int = 1, limit: int = 10, search: str = None, statuss: str = None) -> dict:
         """
         Get list of all active categories.
         """
@@ -62,26 +64,48 @@ class BlogManager:
                 query["$or"] = [
                     {"title": search_regex},  # Search by category name (if the category is loaded)
                 ]
+            if statuss:
+                query["status"] = statuss
             active_blogs = await blog_collection.find(query).skip(skip).limit(limit).to_list(length=100)
 
             # Format the response with category name, status, and created_at
-            blog_data = [
-                {
-                    "id": str(blog["_id"]),
-                    "title": blog["title"],
-                    "content": blog["content"],
-                    "blog_url": blog["blog_url"],
-                    "blog_image": blog["blog_image"],
-                    "blog_image_url": blog["blog_image_url"],
-                    "author_name": blog["author_name"],
-                    "category": blog["category"],
-                    "tags": blog["tags"],
-                    "status": blog["status"],
-                    "created_at": blog["created_at"],
-                    "updated_at": blog["updated_at"],
-                }
-                for blog in active_blogs
-            ]
+            blog_data = []
+            ist_timezone = pytz.timezone("Asia/Kolkata")  # IST timezone
+            for blog in active_blogs:
+                # Convert created_at and updated_at to IST
+                created_at = blog.get("created_at")
+                updated_at = blog.get("updated_at")
+
+                if isinstance(created_at, datetime):
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    blog["created_at"] = created_at_ist.isoformat()
+                else:
+                    blog["created_at"] = str(created_at)
+
+                if isinstance(updated_at, datetime):
+                    updated_at_utc = updated_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    updated_at_ist = updated_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    blog["updated_at"] = updated_at_ist.isoformat()
+                else:
+                    blog["updated_at"] = str(updated_at)
+
+                blog_data.append(
+                    {
+                        "id": str(blog["_id"]),
+                        "title": blog["title"],
+                        "content": blog["content"],
+                        "blog_url": blog["blog_url"],
+                        "blog_image": blog["blog_image"],
+                        "blog_image_url": blog["blog_image_url"],
+                        "author_name": blog["author_name"],
+                        "category": blog["category"],
+                        "tags": blog["tags"],
+                        "status": blog["status"],
+                        "created_at": blog["created_at"],
+                        "updated_at": blog["updated_at"],
+                    }
+                )
             total_blogs = await blog_collection.count_documents({})
             total_pages = (total_blogs + limit - 1) // limit
             # Return the formatted response

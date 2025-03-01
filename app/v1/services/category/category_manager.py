@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
+import pytz
 
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
@@ -71,7 +72,7 @@ class CategoryManager:
             )
 
     async def category_list(
-        self, request: Request, token: str, page: int = 1, limit: int = 10, search: str = None
+        self, request: Request, token: str, page: int = 1, limit: int = 10, search: str = None, statuss: str = None
     ) -> dict:
         """
         Get list of all active categories.
@@ -95,17 +96,30 @@ class CategoryManager:
                     {"slug": search_regex},
                     {"category_name": search_regex},
                 ]
+            if statuss:
+                query["status"] = statuss
             active_categories = await category_collection.find({**query}).skip(skip).limit(limit).to_list(length=100)
-            category_data = [
-                {
-                    "id": str(category["_id"]),
-                    "name": category["name"],
-                    "slug": category["slug"] if "slug" in category else None,
-                    "status": category["status"],
-                    "created_at": category["created_at"],
-                }
-                for category in active_categories
-            ]
+            category_data = []
+            ist_timezone = pytz.timezone("Asia/Kolkata")  # IST timezone
+            for category in active_categories:
+                # Convert created_at to IST
+                created_at = category.get("created_at")
+                if isinstance(created_at, datetime):
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    category["created_at"] = created_at_ist.isoformat()
+                else:
+                    category["created_at"] = str(created_at)
+
+                category_data.append(
+                    {
+                        "id": str(category["_id"]),
+                        "name": category["name"],
+                        "slug": category.get("slug"),  # Use .get() to avoid KeyError
+                        "status": category["status"],
+                        "created_at": category["created_at"],
+                    }
+                )
             total_categories = await category_collection.count_documents({})
             total_pages = (total_categories + limit - 1) // limit
             return {"data": category_data, "total_items": total_categories, "total_pages": total_pages}
@@ -207,7 +221,6 @@ class CategoryManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
