@@ -107,7 +107,7 @@ class SuperUserManager:
             user = await User.find_one(User.email == email)
             if user is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if user.user_role != 2:
+            if "admin" not in user.roles and user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
             # Generate OTP
             otp = generate_otp()
@@ -132,13 +132,15 @@ class SuperUserManager:
             user = await User.find_one(User.email == email)
             if user is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if user.user_role != 2:
+            if "admin" not in user.roles and user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
             if user.otp != otp:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP")
             if datetime.utcnow() > user.otp_expires:
                 raise HTTPException(status_code=400, detail="OTP has expired.")
             user.is_active = True
+            user.otp = None
+            user.otp_expires = None
             await user.save()
             user_data = user.dict()
             user_data.pop("password", None)
@@ -159,7 +161,7 @@ class SuperUserManager:
             user = await User.find_one(User.email == email)
             if user is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if user.user_role != 2:
+            if "admin" not in user.roles and user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
             hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
             user.password = hashed_password
@@ -177,7 +179,7 @@ class SuperUserManager:
             user = await User.find_one(User.email == email)
             if user is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if user.user_role != 2:
+            if "admin" not in user.roles and user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
             otp = generate_otp()
             user.otp = otp
@@ -201,7 +203,7 @@ class SuperUserManager:
             user = await User.find_one(User.email == email)
             if user is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if user.user_role != 2:
+            if "admin" not in user.roles and user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
             user_data = user.dict()
             user_data.pop("password", None)
@@ -219,7 +221,7 @@ class SuperUserManager:
             user = await User.find_one(User.email == email)
             if user is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-            if user.user_role != 2:
+            if "admin" not in user.roles and user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not superuser")
             user_data = user.dict()
             return {"user_data": user_data}
@@ -235,7 +237,7 @@ class SuperUserManager:
             user = await User.find_one(User.email == email)
             if user is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-            if user.user_role != 2:
+            if "admin" not in user.roles and user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not superuser")
             if old_password is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Old Password required")
@@ -422,11 +424,11 @@ class SuperUserManager:
             query = {"_id": ObjectId(id), "roles": {"$in": ["admin"]}}
             admin = await user_collection.find_one(query)
             if admin is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
             admin["id"] = str(admin.pop("_id"))  # Convert ObjectId to string
             admin["first_name"] = admin["first_name"].capitalize()
             admin["last_name"] = admin["last_name"].capitalize()
-            admin["email"] = admin["email"].lower()
+            admin["email"] = admin["email"]
             admin["status"] = admin.get("status", "unknown")
             return admin
         except Exception as ex:
@@ -453,7 +455,7 @@ class SuperUserManager:
             # Check if the costumer exists
             costumer = await user_collection.find_one({"_id": ObjectId(id)})
             if not costumer:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="adnin not found")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Adnin not found")
             # Prepare update data
             update_data = {}
             if update_super_user_request.first_name is not None:
@@ -488,13 +490,13 @@ class SuperUserManager:
             # Fetch updated costumer data
             updated_costumer = await user_collection.find_one({"_id": ObjectId(id)})
             if not updated_costumer:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="admin not found")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin not found")
 
             # Convert _id to string and format other fields
             updated_costumer["id"] = str(updated_costumer.pop("_id"))
             updated_costumer["first_name"] = updated_costumer["first_name"].capitalize()
             updated_costumer["last_name"] = updated_costumer["last_name"].capitalize()
-            updated_costumer["email"] = updated_costumer["email"].lower()
+            updated_costumer["email"] = updated_costumer["email"]
             updated_costumer["phone"] = updated_costumer["phone"]
             updated_costumer["status"] = updated_costumer["status"]
 
@@ -514,7 +516,7 @@ class SuperUserManager:
                 )
             result = await user_collection.delete_one({"_id": ObjectId(id)})
             if not result:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
             return {"data": None}
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
