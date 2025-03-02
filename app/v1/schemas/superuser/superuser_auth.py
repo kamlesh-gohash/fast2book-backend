@@ -151,12 +151,6 @@ class SuperUserChangePassword(BaseModel):
         return None
 
 
-class StatusEnum(str, Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    DRAFT = "draft"
-
-
 create_super_user_validator = zon.record(
     {
         "first_name": zon.string().min(1).max(50),
@@ -175,13 +169,13 @@ class SuperUserCreateRequest(BaseModel):
     gender: Gender = Field(default=Gender.male)
     roles: List[Role] = Field(default=["admin"])
     phone: str
-    status: StatusEnum = StatusEnum.ACTIVE
+    status: StatusEnum = StatusEnum.Active
     password: str
 
     @root_validator(pre=True)
     def check_required_fields(cls, values):
         # Define required fields
-        required_fields = ["first_name", "last_name", "password", "email", "phone", "gender"]
+        required_fields = ["first_name", "last_name", "password", "email", "phone"]
         missing_fields = []
 
         # Check for missing required fields
