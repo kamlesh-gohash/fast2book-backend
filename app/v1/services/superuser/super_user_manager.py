@@ -396,7 +396,7 @@ class SuperUserManager:
                 admin["id"] = str(admin.pop("_id"))  # Convert ObjectId to string
                 admin["first_name"] = admin["first_name"].capitalize()
                 admin["last_name"] = admin["last_name"].capitalize()
-                admin["email"] = admin["email"].lower()
+                admin["email"] = admin["email"]
                 admin["status"] = admin.get("status", "unknown")
                 # admin["created_at"] = admin["created_at"]
                 admin_data.append(admin)
@@ -442,17 +442,13 @@ class SuperUserManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
-                )
+            if "admin" not in current_user.roles and current_user.user_role != 2:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not superuser")
             # Validate costumer ID
             if not ObjectId.is_valid(id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid admin ID: '{id}'")
 
-            email = update_super_user_request.email.lower()
-            update_super_user_request.email = email
-            # Check if the costumer exists
+            # Check if the costumer
             costumer = await user_collection.find_one({"_id": ObjectId(id)})
             if not costumer:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Adnin not found")
