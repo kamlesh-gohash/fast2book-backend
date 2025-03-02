@@ -358,7 +358,16 @@ class SubscriptionManager:
 
             plans = await plan_collection.find(query).skip(skip).limit(limit).to_list(length=None)
             plan_data = []
+            ist_timezone = pytz.timezone("Asia/Kolkata")
             for plan in plans:
+                created_at = plan.get("created_at")
+                if isinstance(created_at, datetime):
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    plan["created_at"] = created_at_ist.isoformat()
+                else:
+                    plan["created_at"] = str(created_at)
+
                 plan_data.append(
                     {
                         "id": str(plan["_id"]),
