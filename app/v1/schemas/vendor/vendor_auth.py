@@ -301,7 +301,7 @@ class SignUpVendorRequest(BaseModel):
     @root_validator(pre=True)
     def check_required_fields(cls, values):
         # Define required fields
-        required_fields = ["first_name", "last_name", "gender", "password"]
+        required_fields = ["first_name", "last_name", "password"]
         missing_fields = []
 
         # Check for missing required fields
