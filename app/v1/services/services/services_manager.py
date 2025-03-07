@@ -60,9 +60,11 @@ class ServicesManager:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Service with name '{service_request.name}' already exists.",
                 )
-            image_name = service_request.service_image
-            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+            file_url = None
+            if service_request.service_image:
+                image_name = service_request.service_image
+                bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
             # Prepare service data
             service_data = {
                 "name": service_request.name,

@@ -21,59 +21,83 @@ class StatusEnum(str, Enum):
     Draft = "draft"
 
 
-create_subscription_request = zon.record(
-    {
-        "name": zon.string(),
-        "description": zon.string(),
-        "amount": zon.number(),
-        "currency": zon.string(),
-        "period": zon.string(),
-        "interval": zon.number(),
-    }
-)
+# create_subscription_request = zon.record(
+#     {
+#         "name": zon.string(),
+#         "description": zon.string(),
+#         "amount": zon.number(),
+#         "currency": zon.string(),
+#         "period": zon.string(),
+#         "interval": zon.number(),
+#     }
+# )
+
+
+# class CreateSubscriptionRequest(BaseModel):
+#     name: str
+#     description: str
+#     amount: float
+#     currency: str = "INR"
+#     period: str
+#     interval: int
+#     features: List[FeatureItem]
+#     status: StatusEnum = StatusEnum.Active
+
+#     @validator("status")
+#     def validate_status(cls, v):
+#         if v not in StatusEnum.__members__.values():
+#             raise ValueError(f"Invalid status. Valid options are {', '.join(StatusEnum.__members__.keys())}")
+#         return v
+
+#     def validate(self):
+#         """Validates the service request using the zon validator."""
+#         try:
+#             create_subscription_request.validate(
+#                 {
+#                     "name": self.name,
+#                     "description": self.description,
+#                     "amount": self.amount,
+#                     "currency": self.currency,
+#                     "period": self.period,
+#                     "interval": self.interval,
+#                     "features": self.features,
+#                     "status": self.status.value,
+#                 }
+#             )
+#         except zon.error.ZonError as e:
+#             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+#             return validation_error({"message": f"Validation Error: {error_message}"})
+#         return None
+
+
+class AmountItem(BaseModel):
+    type: str  # e.g., "Weekly", "Monthly", "Yearly"
+    value: float  # e.g., 100
+
+
+class FeatureItem(BaseModel):
+    item: str
 
 
 class CreateSubscriptionRequest(BaseModel):
-    # title: str
-    # one_month_price: float
-    # three_months_price: float
-    # yearly_price: float
-    # features: List[FeatureItem]
-    # status: StatusEnum = StatusEnum.ACTIVE
     name: str
     description: str
-    amount: float
     currency: str = "INR"
-    period: str
-    interval: int
+    amountsArray: List[AmountItem]  # List of amounts for different periods
     features: List[FeatureItem]
-    status: StatusEnum = StatusEnum.Active
+    interval: int
 
-    @validator("status")
-    def validate_status(cls, v):
-        if v not in StatusEnum.__members__.values():
-            raise ValueError(f"Invalid status. Valid options are {', '.join(StatusEnum.__members__.keys())}")
+    @validator("currency")
+    def validate_currency(cls, v):
+        if v not in ["INR", "USD", "EUR"]:  # Add more currencies if needed
+            raise ValueError("Invalid currency")
         return v
 
-    def validate(self):
-        """Validates the service request using the zon validator."""
-        try:
-            create_subscription_request.validate(
-                {
-                    "name": self.name,
-                    "description": self.description,
-                    "amount": self.amount,
-                    "currency": self.currency,
-                    "period": self.period,
-                    "interval": self.interval,
-                    "features": self.features,
-                    "status": self.status.value,
-                }
-            )
-        except zon.error.ZonError as e:
-            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
-            return validation_error({"message": f"Validation Error: {error_message}"})
-        return None
+    @validator("interval")
+    def validate_interval(cls, v):
+        if v not in [1, 1, 1, 1, 1]:  # 1 for daily, 7 for weekly, 30 for monthly, 365 for yearly
+            raise ValueError("Invalid interval")
+        return v
 
 
 list_subscription_validator = zon.record({})
