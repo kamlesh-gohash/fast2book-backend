@@ -2288,8 +2288,6 @@ class VendorManager:
                     detail=f"Failed to create Razorpay order: {str(e)}",
                 )
             vendor_update_data = {
-                "manage_plan": vendor_subscription_request.plan_id,
-                "razorpay_subscription_id": razorpay_subscription["id"],
                 "razorpay_order_id": razorpay_order["id"],
             }
 
@@ -2342,7 +2340,11 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
             if is_active:
-                vendor_update_data = {"razorpay_subscription_id": subscription_id, "is_subscription": True}
+                vendor_update_data = {
+                    "razorpay_subscription_id": subscription_id,
+                    "is_subscription": True,
+                    "manage_plan": subscription_details.get("plan_id"),
+                }
                 await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
             # if result.modified_count == 0:
             #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
@@ -2785,7 +2787,7 @@ class VendorManager:
             # Deduct the remaining amount from the new plan's cost
             new_plan_amount = int(new_plan_details["item"]["amount"])
             adjusted_amount = new_plan_amount - remaining_amount
-
+            print(adjusted_amount, "adjusted amount")
             # Create a new subscription with the upgraded plan
             razorpay_subscription_data = {
                 "plan_id": upgrade_subscription_request.plan_id,
@@ -2813,6 +2815,7 @@ class VendorManager:
                 },
                 "payment_capture": 1,
             }
+            print(order_data, "order data")
 
             try:
                 razorpay_order = razorpay_client.order.create(data=order_data)
@@ -2824,8 +2827,6 @@ class VendorManager:
 
             # Update the vendor's subscription details
             vendor_update_data = {
-                "manage_plan": upgrade_subscription_request.plan_id,
-                "razorpay_subscription_id": razorpay_subscription["id"],
                 "razorpay_order_id": razorpay_order["id"],
             }
 
