@@ -12,6 +12,7 @@ __all__ = [
     "get_support_manager",
     "get_permission_manager",
     "get_razor_pay_manager",
+    "get_video_manager",
 ]
 
 from app.v1.dependencies.blog_manange import get_blog_manager
@@ -27,3 +28,4 @@ from app.v1.dependencies.super_user_manager import get_super_user_manager
 from app.v1.dependencies.support_manager import get_support_manager
 from app.v1.dependencies.user_manager import get_user_manager
 from app.v1.dependencies.vendor_manager import get_vendor_manager
+from app.v1.dependencies.video_manager import get_video_manager

@@ -161,6 +161,33 @@ async def delete_service(
         )
 
 
+# @router.post("/create-plan", status_code=status.HTTP_200_OK)
+# async def create_plan(
+#     request: Request,
+#     plan_request: CreateSubscriptionRequest,
+#     token: str = Depends(get_token_from_header),
+#     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
+# ):
+#     # Validate the service request
+#     validation_result = plan_request.validate()
+#     if validation_result:
+#         return validation_result
+
+#     try:
+#         # Create the service
+#         result = await subscription_manager.plan_create(request=request, token=token, plan_request=plan_request)
+#         return success({"message": "Plan created successfully", "data": result})
+#     except HTTPException as http_ex:
+#         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+#     except ValueError as ex:
+#         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+#     except Exception as ex:
+#         return internal_server_error(
+#             {"message": "An unexpected error occurred", "error": str(ex)},
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#         )
+
+
 @router.post("/create-plan", status_code=status.HTTP_200_OK)
 async def create_plan(
     request: Request,
@@ -168,10 +195,6 @@ async def create_plan(
     token: str = Depends(get_token_from_header),
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
-    # Validate the service request
-    validation_result = plan_request.validate()
-    if validation_result:
-        return validation_result
 
     try:
         # Create the service
