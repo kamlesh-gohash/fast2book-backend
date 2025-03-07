@@ -14,6 +14,7 @@ from app.v1.routers.superuser import super_user_router
 from app.v1.routers.support import support_router
 from app.v1.routers.users import users_router
 from app.v1.routers.vendor import vendor_router
+from app.v1.routers.video import video_router
 
 
 router = APIRouter(prefix="/v1")
@@ -31,3 +32,4 @@ router.include_router(payment_router.router, prefix="/payment", tags=["Payment"]
 router.include_router(support_router.router, prefix="/support", tags=["Support"])
 router.include_router(permission_router.router, prefix="/permission", tags=["Permission"])
 router.include_router(razor_pay.router, prefix="/razorpay", tags=["RazorPay"])
+router.include_router(video_router.router, prefix="/video", tags=["Video"])

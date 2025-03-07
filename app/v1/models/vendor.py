@@ -71,7 +71,6 @@ class Vendor(Document):
     # availability_slots: Optional[Link["SlotRequest"]] = None
     fees: float = Field(default=0.0)
     location: Optional[Location] = Field(None, description="Location details of the vendor")
-    specialization: Optional[str] = None
     razorpay_customer_id: Optional[str] = None
     razorpay_account_id: Optional[str] = None
     is_subscription: bool = Field(default=False)

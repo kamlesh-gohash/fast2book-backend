@@ -168,10 +168,10 @@ class CostumerManager:
 
             for costumer in result:
                 costumer["id"] = str(costumer.pop("_id"))
-                costumer["first_name"] = costumer["first_name"].capitalize()
-                costumer["last_name"] = costumer["last_name"].capitalize()
-                costumer["email"] = costumer["email"]
-                costumer["phone"] = costumer["phone"]
+                costumer["first_name"] = costumer.get("first_name", "").capitalize()
+                costumer["last_name"] = costumer.get("last_name", "").capitalize()
+                costumer["email"] = costumer.get("email", "")
+                costumer["phone"] = costumer.get("phone", "")
                 created_at = costumer.get("created_at")
                 # if isinstance(created_at, datetime):
                 #     costumer["created_at"] = created_at.isoformat()
