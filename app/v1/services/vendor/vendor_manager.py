@@ -28,6 +28,8 @@ from app.v1.models import (
     slots_collection,
     user_collection,
     vendor_collection,
+    vendor_ratings_collection,
+    vendor_services_collection,
 )
 from app.v1.models.slots import *
 from app.v1.models.vendor import Vendor
@@ -140,9 +142,13 @@ class VendorManager:
                 }
                 for service in valid_services
             ]
-            image_name = create_vendor_request.user_image
-            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+            user_image_url = None
+            if create_vendor_request.user_image:
+                # If user_image is provided, generate the URL
+                image_name = create_vendor_request.user_image
+                bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+                user_image_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+
             vendor_data = {
                 # "vendor_image": create_vendor_request.vendor_image,
                 # "vendor_image_url": file_url,
@@ -167,7 +173,6 @@ class VendorManager:
                 "manage_offer": create_vendor_request.manage_offer,
                 "is_payment_verified": create_vendor_request.is_payment_verified,
                 "is_payment_required": create_vendor_request.is_payment_required,
-                "fees": create_vendor_request.fees,
                 "status": create_vendor_request.status,
                 "is_subscription": create_vendor_request.is_subscription,
                 "created_at": datetime.utcnow(),
@@ -189,10 +194,12 @@ class VendorManager:
                 "gender": create_vendor_request.gender,
                 "roles": create_vendor_request.roles,
                 "user_image": create_vendor_request.user_image,
-                "user_image_url": file_url,
+                "user_image_url": user_image_url,
                 "password": hashed_password,
                 "status": create_vendor_request.status,
+                "fees": create_vendor_request.fees,
                 "is_dashboard_created": create_vendor_request.is_dashboard_created,
+                "specialization": create_vendor_request.specialization,
                 "vendor_id": ObjectId(vendor_result.inserted_id),
                 # "otp": otp,
                 # "otp_expiration_time": otp_expiration_time,
@@ -206,7 +213,21 @@ class VendorManager:
             # print(bucket_name, "bucket_name")
             # file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
             # Prepare Vendor data
+            vendor_service_data = {
+                "vendor_id": ObjectId(vendor_result.inserted_id),
+                "vendor_user_id": ObjectId(user_result.inserted_id),
+                "services": [
+                    {
+                        "service_id": ObjectId(service["id"]),
+                        "service_name": service["name"],
+                        "service_image": service["service_image"],
+                        "service_image_url": service["service_image_url"],
+                    }
+                    for service in create_vendor_request_dict["services"]
+                ],
+            }
 
+            vendor_service = await vendor_services_collection.insert_one(vendor_service_data)
             response_data = {
                 "first_name": create_vendor_request.first_name,
                 "last_name": create_vendor_request.last_name,
@@ -216,6 +237,7 @@ class VendorManager:
                 "roles": create_vendor_request.roles,
                 "password": plain_text_password,
                 "status": create_vendor_request.status,
+                "fees": create_vendor_request.fees,
                 "id": str(user_result.inserted_id),
                 "vendor_data": {
                     "vendor_id": str(vendor_result.inserted_id),
@@ -242,13 +264,11 @@ class VendorManager:
                     "manage_offer": create_vendor_request.manage_offer,
                     "is_payment_verified": create_vendor_request.is_payment_verified,
                     "is_payment_required": create_vendor_request.is_payment_required,
-                    "fees": create_vendor_request.fees,
                     # "razorpay_account_id": sub_account["id"],
                     "created_at": vendor_data["created_at"],
                     "location": (
                         create_vendor_request.location.dict() if create_vendor_request.location else None
                     ),  # Add location
-                    "specialization": create_vendor_request.specialization,  # Add specialization
                 },
             }
 
@@ -330,8 +350,12 @@ class VendorManager:
                 vendor["first_name"] = vendor["first_name"].capitalize()
                 vendor["last_name"] = vendor["last_name"].capitalize()
                 vendor["email"] = vendor["email"].lower()
-                vendor["user_image"] = vendor.get("user_image", "")  # Default to empty string if missing
-                vendor["user_image_url"] = vendor.get("user_image_url", "")  # Default to empty string if missing
+                vendor["user_image"] = vendor.get("user_image", "")
+                if vendor["user_image"] is not None:
+                    vendor["user_image_url"] = vendor.get("user_image_url", "")
+                else:
+                    vendor["user_image_url"] = None
+                vendor["specialization"] = vendor.get("specialization", [])
                 vendor_user_id = vendor.get("vendor_id")
                 vendor.pop("vendor_id")
 
@@ -357,7 +381,6 @@ class VendorManager:
                     vendor["is_payment_verified"] = vendor_details.get("is_payment_verified", False)
                     vendor["status"] = vendor_details.get("status", "N/A")
                     vendor["location"] = vendor_details.get("location")
-                    vendor["specialization"] = vendor_details.get("specialization")
                     vendor["is_payment_required"] = vendor_details.get("is_payment_required", False)
                     vendor["created_at"] = vendor_details.get("created_at")
                     vendor["id"] = str(vendor_details.get("_id"))
@@ -386,10 +409,11 @@ class VendorManager:
                 "total_pages": total_pages,
             }
 
+        except HTTPException as e:
+            raise e
         except Exception as ex:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=str(ex),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
     async def get_vendor(self, request: Request, token: str, id: str):
@@ -414,9 +438,14 @@ class VendorManager:
             result["email"] = result.get("email", "")
             result["phone"] = result.get("phone", "Unknown")
             result["user_image"] = result.get("user_image", "")  # Default to empty string if missing
-            result["user_image_url"] = result.get("user_image_url", "")  # Default to empty string if missing
+            if result["user_image"] is not None:
+                result["user_image_url"] = result.get("user_image_url", "")
+            else:
+                result["user_image_url"] = None  # Default to empty string if missing
             result["gender"] = result.get("gender", "Unknown")
+            result["specialization"] = result.get("specialization", [])
             result["created_by"] = result.get("created_by", "Unknown")
+            result["fees"] = result.get("fees")
             result.pop("vendor_id")
             vendor_details = await vendor_collection.find_one({"_id": ObjectId(id)})
             if vendor_details:
@@ -433,7 +462,6 @@ class VendorManager:
                     result["category_name"] = "Unknown"
                 result["services"] = vendor_details.get("services", [])
                 result["service_details"] = vendor_details.get("service_details", [])
-                result["fees"] = vendor_details.get("fees", [])
                 result["manage_plan"] = vendor_details.get("manage_plan", False)
                 result["manage_fee_and_gst"] = vendor_details.get("manage_fee_and_gst", False)
                 result["manage_offer"] = vendor_details.get("manage_offer", False)
@@ -441,7 +469,6 @@ class VendorManager:
                 result["is_payment_required"] = vendor_details.get("is_payment_required", False)
                 result["status"] = vendor_details.get("status", "N/A")
                 result["location"] = vendor_details.get("location")
-                result["specialization"] = vendor_details.get("specialization")
                 result["created_at"] = vendor_details.get("created_at")
                 result["id"] = str(vendor_details.get("_id"))
                 vendor_details.pop("_id", None)
@@ -449,8 +476,12 @@ class VendorManager:
             result.pop("password", None)
 
             return result
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def update_vendor(self, request: Request, token: str, id: str, update_vendor_request: UpdateVendorRequest):
         try:
@@ -499,6 +530,10 @@ class VendorManager:
                 user_update_data["email"] = email
             if update_vendor_request.gender is not None:
                 user_update_data["gender"] = update_vendor_request.gender
+            if update_vendor_request.specialization is not None:
+                user_update_data["specialization"] = update_vendor_request.specialization
+            if update_vendor_request.fees is not None:
+                user_update_data["fees"] = update_vendor_request.fees
             if update_vendor_request.phone is not None:
                 # Check if the new phone already exists (only if the phone is being updated)
                 user_with_phone = await User.find_one(User.phone == update_vendor_request.phone)
@@ -565,7 +600,16 @@ class VendorManager:
                         detail="One or more services are invalid for the selected category.",
                     )
 
-                vendor_update_data["services"] = [
+                # vendor_update_data["services"] = [
+                #     {
+                #         "id": str(service["_id"]),
+                #         "name": service["name"],
+                #         "service_image": service["service_image"],
+                #         "service_image_url": service["service_image_url"],
+                #     }
+                #     for service in valid_services
+                # ]
+                updated_services = [
                     {
                         "id": str(service["_id"]),
                         "name": service["name"],
@@ -574,6 +618,36 @@ class VendorManager:
                     }
                     for service in valid_services
                 ]
+
+                # Update vendor collection with the new services
+                vendor_update_data["services"] = updated_services
+
+                # Update the vendor_services_collection with the updated services
+                vendor_service_update_result = await vendor_services_collection.update_one(
+                    {"vendor_id": ObjectId(id)},
+                    {"$set": {"services": updated_services}},
+                )
+            # if update_vendor_request.rating is not None:
+            #     rating_data = {
+            #         "vendor_id": ObjectId(id),
+            #         "vendor_user_id": ObjectId(vendor.get("_id")),  # Assuming current_user has an 'id' field
+            #         "rating": update_vendor_request.rating,
+            #         "review": update_vendor_request.reviews,
+            #     }
+
+            #     # Insert or update the rating in the vendor_rating_collection
+            #     await vendor_ratings_collection.update_one(
+            #         {"vendor_id": ObjectId(id), "vendor_user_id": ObjectId(vendor.get("_id"))},
+            #         {"$set": rating_data},
+            #         upsert=True,
+            #     )
+
+            #     # Calculate the average rating for the vendor
+            #     ratings = await vendor_ratings_collection.find({"vendor_id": ObjectId(id)}).to_list(None)
+            #     total_ratings = len(ratings)
+            #     if total_ratings > 0:
+            #         average_rating = sum(rating["rating"] for rating in ratings) / total_ratings
+            #         vendor_update_data["rating"] = average_rating
 
             if update_vendor_request.specialization is not None:
                 vendor_update_data["specialization"] = update_vendor_request.specialization
@@ -627,14 +701,18 @@ class VendorManager:
                 "manage_fee_and_gst": updated_vendor.get("manage_fee_and_gst"),
                 "manage_offer": updated_vendor.get("manage_offer"),
                 "location": updated_vendor.get("location"),
-                "specialization": updated_vendor.get("specialization"),
+                "specialization": updated_user.get("specialization"),
                 "is_payment_required": updated_vendor.get("is_payment_required"),
-                "fees": updated_vendor.get("fees"),
+                "fees": updated_user.get("fees"),
                 "status": updated_vendor.get("status"),
             }
 
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def delete_vendor(self, request: Request, token: str, id: str):
         try:
@@ -651,8 +729,12 @@ class VendorManager:
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
             return {"data": None}
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def get_service_by_category(self, request: Request, token: str, id: str):
         try:
@@ -679,8 +761,12 @@ class VendorManager:
             ]
 
             return {"services": formatted_services}
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def vendor_sign_in(
         self,
@@ -806,8 +892,12 @@ class VendorManager:
 
             return response
 
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def vendor_sign_up(self, vendor_request: SignUpVendorRequest):
         try:
@@ -819,7 +909,68 @@ class VendorManager:
                 existing_vendor = await user_collection.find_one({"phone": vendor_request.phone})
 
             if existing_vendor:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Vendor already exists")
+                if existing_vendor.get("is_active", False):
+                    raise HTTPException(
+                        status_code=400, detail="User with this email or phone already exists and is active."
+                    )
+
+                # If the user exists but is not active, update their data and send a new OTP
+                if vendor_request.email:  # Check if email is provided
+                    email = vendor_request.email.lower()
+                    vendor_request.email = email
+                otp = generate_otp()
+                expiry_time = datetime.utcnow() + timedelta(minutes=10)
+                expiry_minutes = 10
+
+                # Send OTP to email if provided
+                if vendor_request.email:
+                    source = "Activation_code"
+                    context = {"otp": otp, "to_email": vendor_request.email}
+                    to_email = vendor_request.email
+                    await send_email(to_email, source, context)
+
+                # Send OTP to phone if provided
+                if vendor_request.phone:
+                    to_phone = vendor_request.phone
+                    await send_sms_on_phone(to_phone, otp, expiry_minutes)
+
+                # Update the existing user with new data
+                user_data = {
+                    "otp": otp,
+                    "otp_expires": expiry_time,
+                    "password": hashpw(vendor_request.password.encode("utf-8"), gensalt()).decode("utf-8"),
+                    "first_name": vendor_request.first_name,
+                    "last_name": vendor_request.last_name,
+                }
+
+                # Update the user in the database
+                await user_collection.update_one({"_id": ObjectId(existing_vendor["_id"])}, {"$set": user_data})
+
+                # Update the vendor in the database
+                vendor_data = {
+                    "is_dashboard_created": True,
+                    "business_name": vendor_request.business_name,
+                    "business_type": vendor_request.business_type,
+                    "is_subscription": False,
+                }
+                await vendor_collection.update_one(
+                    {"_id": ObjectId(existing_vendor["vendor_id"])}, {"$set": vendor_data}
+                )
+                # Return the updated user data
+
+                update_data = {
+                    "first_name": vendor_request.first_name,
+                    "last_name": vendor_request.last_name,
+                    "email": vendor_request.email,
+                    "phone": int(vendor_request.phone) if vendor_request.phone else None,
+                    "otp": otp,
+                    "otp_expires": datetime.utcnow() + timedelta(minutes=10),
+                    "roles": vendor_request.roles,
+                    "is_dashboard_created": vendor_request.is_dashboard_created,
+                    "business_name": vendor_request.business_name,
+                    "business_type": vendor_request.business_type,
+                }
+                return update_data
 
             hashed_password = bcrypt.hashpw(vendor_request.password.encode("utf-8"), bcrypt.gensalt())
             vendor_request.is_dashboard_created = True
@@ -833,6 +984,8 @@ class VendorManager:
             }
 
             vendor_result = await vendor_collection.insert_one(vendor_data)
+            if vendor_result.inserted_id is None:
+                raise HTTPException(status_code=500, detail="Failed to create vendor")
 
             new_vendor_user = {
                 "first_name": vendor_request.first_name,
@@ -852,6 +1005,9 @@ class VendorManager:
                 new_vendor_user["availability_slots"] = default_availability_slots()
 
             result = await user_collection.insert_one(new_vendor_user)
+            if result.inserted_id is None:
+                raise HTTPException(status_code=500, detail="Failed to create user")
+
             user_id = str(result.inserted_id)
 
             new_vendor_user["id"] = user_id
@@ -877,8 +1033,12 @@ class VendorManager:
                 await send_sms_on_phone(to_phone, otp, expiry_minutes)
 
             return new_vendor_user
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def vendor_profile(self, request: Request, token: str):
         try:
@@ -910,17 +1070,28 @@ class VendorManager:
 
             vendor["created_by"] = vendor.get("created_by", "Unknown")
             vendor["user_image"] = vendor.get("user_image", "")
-            vendor["user_image_url"] = vendor.get("user_image_url", "")
+            if vendor["user_image"] is not None:
+
+                vendor["user_image_url"] = vendor.get("user_image_url", "")
+            else:
+                vendor["user_image_url"] = None
+            vendor["fees"] = vendor.get("fees", "")
+            vendor["specialization"] = vendor.get("specialization", "")
             vendor.pop("vendor_id", None)
             if vendor_data:
                 vendor_data["id"] = str(vendor_data.pop("_id"))
                 vendor_data["is_payment_required"] = vendor_data.get("is_payment_required", False)
+                vendor_data["location"] = vendor_data.get("location", "")
                 vendor_data.pop("_id", None)
                 vendor.update(vendor_data)
 
             return vendor
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def update_profile(self, request: Request, token: str, update_vendor_request: UpdateVendorRequest):
         try:
@@ -962,6 +1133,10 @@ class VendorManager:
                         status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists with this phone"
                     )
                 user_data["phone"] = update_vendor_request.phone
+            if update_vendor_request.specialization is not None:
+                user_data["specialization"] = update_vendor_request.specialization
+            if update_vendor_request.fees is not None:
+                user_data["fees"] = update_vendor_request.fees
             if update_vendor_request.user_image:
                 image_name = update_vendor_request.user_image
                 file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
@@ -979,7 +1154,8 @@ class VendorManager:
 
             vendor_query = {"_id": ObjectId(current_user.vendor_id)}
             vendor_data = {}
-
+            if update_vendor_request.location is not None:
+                vendor_data["location"] = update_vendor_request.location.dict()
             if update_vendor_request.business_type is not None:
                 vendor_data["business_type"] = update_vendor_request.business_type
             if update_vendor_request.fees is not None:
@@ -1028,7 +1204,16 @@ class VendorManager:
                     )
 
                 # Add services details to the update data
-                vendor_data["services"] = [
+                # vendor_data["services"] = [
+                #     {
+                #         "id": str(service["_id"]),
+                #         "name": service["name"],
+                #         "service_image": service["service_image"],
+                #         "service_image_url": service["service_image_url"],
+                #     }
+                #     for service in valid_services
+                # ]
+                updated_services = [
                     {
                         "id": str(service["_id"]),
                         "name": service["name"],
@@ -1037,6 +1222,15 @@ class VendorManager:
                     }
                     for service in valid_services
                 ]
+
+                # Update vendor collection with the new services
+                vendor_data["services"] = updated_services
+
+                # Update the vendor_services_collection with the updated services
+                vendor_service_update_result = await vendor_services_collection.update_one(
+                    {"vendor_id": ObjectId(id)},
+                    {"$set": {"services": updated_services}},
+                )
 
             if update_vendor_request.service_details is not None:
                 vendor_data["service_details"] = update_vendor_request.service_details
@@ -1066,6 +1260,8 @@ class VendorManager:
                 "phone": updated_user.get("phone"),
                 "user_image": updated_user.get("user_image"),
                 "user_image_url": updated_user.get("user_image_url"),
+                "specialization": updated_user.get("specialization"),
+                "fees": updated_user.get("fees"),
                 "vendor_details": {
                     "business_details": updated_vendor.get("business_details"),
                     "business_name": updated_vendor.get("business_name"),
@@ -1081,13 +1277,18 @@ class VendorManager:
                     "manage_offer": updated_vendor.get("manage_offer"),
                     "is_payment_required": updated_vendor.get("is_payment_required"),
                     "availability_slots": updated_vendor.get("availability_slots"),
+                    "location": updated_vendor.get("location"),
                     "status": updated_vendor.get("status"),
                 },
             }
             return response_data
 
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def create_vendor_user(
         self, request: Request, token: str, vendor_user_create_request: VendorUserCreateRequest
@@ -1126,6 +1327,14 @@ class VendorManager:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="A user with the provided email already exists.",
                 )
+
+            # Handling image URL logic
+            image_name = vendor_user_create_request.user_image
+            file_url = None
+            if image_name:
+                bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+
             vendor_user_create_request.category = vendor.get("category_name")
             services = vendor_user_create_request.services
             if not isinstance(services, list):
@@ -1141,18 +1350,22 @@ class VendorManager:
                 )
             valid_services = [service for service in vendor_services if ObjectId(service["id"]) in service_ids]
 
+            # Create the new vendor user
             new_vendor_user = {
                 "first_name": vendor_user_create_request.first_name,
                 "last_name": vendor_user_create_request.last_name,
                 "email": vendor_user_create_request.email,
                 "fees": vendor_user_create_request.fees,
-                "gander": vendor_user_create_request.gander,
+                "gender": vendor_user_create_request.gender,
                 "phone": vendor_user_create_request.phone,
                 "roles": vendor_user_create_request.roles,
                 "status": vendor_user_create_request.status,
                 "created_by": str(current_user.id),
                 "vendor_id": ObjectId(current_user.vendor_id),
                 "category": vendor_user_create_request.category,
+                "user_image": vendor_user_create_request.user_image,
+                "user_image_url": file_url,
+                "specialization": vendor_user_create_request.specialization,
                 "services": [
                     {
                         "id": str(service["id"]),
@@ -1165,15 +1378,40 @@ class VendorManager:
                 "availability_slots": default_availability_slots(),
             }
 
+            # Insert the new vendor user
             result = await user_collection.insert_one(new_vendor_user)
+
+            # Create vendor service record
+            vendor_service_data = {
+                "vendor_id": ObjectId(vendor["_id"]),  # Vendor ObjectId
+                "vendor_user_id": ObjectId(result.inserted_id),
+                "services": [
+                    {
+                        "service_id": ObjectId(service["id"]),
+                        "service_name": service["name"],
+                        "service_image": service["service_image"],
+                        "service_image_url": service["service_image_url"],
+                    }
+                    for service in valid_services
+                ],
+            }
+
+            # Insert into vendor services collection
+            await vendor_services_collection.insert_one(vendor_service_data)
+
+            # Add ID to the response and clean up unnecessary fields
             new_vendor_user["id"] = str(result.inserted_id)
             new_vendor_user.pop("_id", None)
             new_vendor_user.pop("vendor_id", None)
 
             return new_vendor_user
 
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def vendor_users_list(
         self,
@@ -1223,8 +1461,12 @@ class VendorManager:
             total_users = await user_collection.count_documents(query)
             total_pages = (total_users + limit - 1) // limit
             return {"data": formatted_users, "total_items": total_users, "total_pages": total_pages}
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def set_individual_vendor_availability(
         self, request: Request, token: str, slots: List[DaySlot], vendor_user_id: Optional[str] = None
@@ -1310,8 +1552,12 @@ class VendorManager:
 
             return updated_vendor
 
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def get_vendor_availability(self, request: Request, token: str, vendor_user_id: str = None):
         try:
@@ -1336,8 +1582,12 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
             availability_slots = vendor_user.get("availability_slots", [])
             return availability_slots
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def update_vendor_availability(self, request: Request, token: str, slots: List[DaySlot]):
         try:
@@ -1381,8 +1631,12 @@ class VendorManager:
             updated_vendor["id"] = str(updated_vendor.pop("_id"))
             return updated_vendor
 
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def delete_vendor_availability(
         self, request: Request, token: str, day: str, start_time: Optional[str] = None
@@ -1740,11 +1994,11 @@ class VendorManager:
                 "data": vendor_data,
             }
 
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            # Log the error for debugging and re-raise with a 500 status
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"An unexpected error occurred: {str(ex)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
     async def vendor_user_list_for_slot(self, request: Request, token: str, vendor_id: str):
@@ -1803,35 +2057,63 @@ class VendorManager:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
+
             valid_roles = ["admin", "user", "vendor"]
             if role not in valid_roles:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Invalid role: '{role}'. Valid roles are: {valid_roles}.",
                 )
+
             if not ObjectId.is_valid(id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid vendor user ID")
+
             vendor_user = await user_collection.find_one({"_id": ObjectId(id)})
             if not vendor_user:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+
             if vendor_user.get("created_by") != str(current_user.id):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You are not authorized to update this user"
                 )
+
             update_data = {key: value for key, value in vendor_user_request.dict().items() if value is not None}
             if not update_data:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields provided for update"
                 )
+
+            # Check if services are being updated
+            if "services" in update_data:
+                # If services are updated, we need to update them in the vendor_service_collection as well
+                new_services = update_data["services"]
+                vendor_services = vendor_user.get("services", [])
+
+                # Get the current vendor service document
+                vendor_service_data = await vendor_services_collection.find_one({"vendor_user_id": ObjectId(id)})
+                if vendor_service_data:
+                    # Update the services in the vendor_service collection
+                    vendor_service_data["services"] = [
+                        {
+                            "service_id": ObjectId(service["id"]),
+                            "service_name": service["name"],
+                            "service_image": service["service_image"],
+                            "service_image_url": service["service_image_url"],
+                        }
+                        for service in new_services
+                    ]
+                    await vendor_services_collection.update_one(
+                        {"vendor_user_id": ObjectId(id)}, {"$set": {"services": vendor_service_data["services"]}}
+                    )
+
+            # Update the user document with the new data
             result = await user_collection.update_one({"_id": ObjectId(id)}, {"$set": update_data})
-            # if result.modified_count == 0:
-            #     raise HTTPException(
-            #         status_code=status.HTTP_404_NOT_FOUND, detail="No changes were made to the vendor user"
-            #     )
+
             updated_user = await user_collection.find_one({"_id": ObjectId(id)})
             if updated_user:
                 updated_user["id"] = str(updated_user.pop("_id"))
                 updated_user.pop("vendor_id", "")
+
             return updated_user
 
         except HTTPException as e:
@@ -1935,92 +2217,6 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    # async def create_vendor_subscription(
-    #     self, request: Request, token: str, vendor_subscription_request: VendorSubscriptionRequest
-    # ):
-    #     try:
-    #         # Get current user
-    #         current_user = await get_current_user(request=request, token=token)
-    #         if not current_user:
-    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-    #         # Check if the user has the "vendor" role
-    #         if "vendor" not in [role.value for role in current_user.roles]:
-    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page ")
-
-    #         # Fetch the vendor details
-    #         current_user_id = str(current_user.id)
-    #         vendor = await vendor_collection.find_one({"user_id": current_user_id})
-    #         if not vendor:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-
-    #         # Fetch the plan details from Razorpay
-    #         plan_details = razorpay_client.plan.fetch(vendor_subscription_request.plan_id)
-
-    #         interval = plan_details.get("interval", 1)
-    #         period = plan_details.get("period", "monthly").lower()
-
-    #         # Validate the period
-    #         if period not in ["daily", "weekly", "monthly", "yearly"]:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
-    #             )
-
-    #         # Calculate the total_count based on the subscription duration
-    #         # For example, if the user wants a 1-year subscription and the plan is monthly,
-    #         # total_count = 12 (12 months in a year)
-    #         if period == "monthly":
-    #             total_count = vendor_subscription_request.total_count * 12
-    #         elif period == "yearly":
-    #             total_count = vendor_subscription_request.total_count
-    #         elif period == "weekly":
-    #             total_count = vendor_subscription_request.total_count * 52
-    #         elif period == "daily":
-    #             total_count = vendor_subscription_request.total_count * 365
-
-    #         # Prepare the subscription data for Razorpay
-    #         razorpay_subscription_data = {
-    #             "plan_id": vendor_subscription_request.plan_id,
-    #             "total_count": total_count,
-    #             "quantity": vendor_subscription_request.quantity,
-    #             "customer_notify": True,
-    #         }
-
-    #         try:
-    #             razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
-    #         except Exception as e:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #                 detail=f"Failed to create Razorpay subscription: {str(e)}",
-    #             )
-
-    #         vendor_update_data = {
-    #             "manage_plan": vendor_subscription_request.plan_id,
-    #             "razorpay_subscription_id": razorpay_subscription["id"],
-    #         }
-
-    #         result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
-    #         if result.modified_count == 0:
-    #             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
-
-    #         # Fetch the subscription details from Razorpay
-    #         razorpay_subscription_details = razorpay_client.subscription.fetch(razorpay_subscription["id"])
-
-    #         # Return the subscription details
-    #         return {
-    #             "subscription_id": razorpay_subscription["id"],
-    #             "subscription_url": razorpay_subscription["short_url"],
-    #             "start_at": datetime.now(),  # Subscription start time
-    #         }
-
-    #     except HTTPException as e:
-    #         raise e
-    #     except Exception as ex:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #             detail=f"An unexpected error occurred: {str(ex)}",
-    #         )
-
     async def create_vendor_subscription(
         self, request: Request, token: str, vendor_subscription_request: VendorSubscriptionRequest
     ):
@@ -2100,35 +2296,6 @@ class VendorManager:
             if result.modified_count == 0:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
 
-            # payment_link_data = {
-            #     "amount": order_data["amount"],
-            #     "currency": order_data["currency"],
-            #     "accept_partial": False,
-            #     "reference_id": razorpay_order["id"],
-            #     "description": f"Payment for subscription {razorpay_subscription['id']}",
-            #     "customer": {
-            #         "name": current_user.first_name,
-            #         "email": current_user.email,
-            #         # "contact": current_user.phone,
-            #     },
-            #     "notify": {
-            #         "sms": True,
-            #         "email": True,
-            #     },
-            #     "callback_url": "https://fast2book.com",
-            #     "callback_method": "get",
-            # }
-
-            # try:
-            #     payment_link = razorpay_client.payment_link.create(data=payment_link_data)
-            #     print(payment_link,'payment_link')
-            # except Exception as e:
-            #     raise HTTPException(
-            #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            #         detail=f"Failed to create payment link: {str(e)}",
-            #     )
-
-            # Return the payment link to the frontend
             return {
                 "subscription_id": razorpay_subscription["id"],
                 "order_id": razorpay_order["id"],
@@ -2173,9 +2340,9 @@ class VendorManager:
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            vendor_update_data = {"razorpay_subscription_id": subscription_id, "is_subscription": True}
-
-            result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
+            if is_active:
+                vendor_update_data = {"razorpay_subscription_id": subscription_id, "is_subscription": True}
+                await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
             # if result.modified_count == 0:
             #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
             # result["id"] = str(result["_id"])
@@ -2277,10 +2444,16 @@ class VendorManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
             plans = await plan_collection.find({"status": "active"}).to_list(length=100)
-
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            vendor_active_plan_id = str(vendor.get("manage_plan", ""))
             for plan in plans:
                 plan["id"] = str(plan["_id"])
+                plan_id = str(plan["razorpay_plan_id"])
+
                 plan.pop("_id", None)
+                plan["is_active_plan"] = plan_id == vendor_active_plan_id
 
             return plans
         except HTTPException as e:
@@ -2316,28 +2489,70 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
+
+            # Fetch the requested plan
             plan = await plan_collection.find_one({"_id": ObjectId(plan_id)})
             if not plan:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
 
+            # Convert _id to string
             plan["id"] = str(plan["_id"])
             plan.pop("_id", None)
 
-            payments = await payment_collection.find({"status": "active"}).to_list(length=100)
+            # Fetch vendor details
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
+            # Check if vendor has an active subscription
+            new_plan_price = plan.get("amount", 0)  # Get new plan price
+            discounted_price = new_plan_price  # Default price
+
+            if "manage_plan" in vendor and vendor["manage_plan"]:
+                # Fetch current plan details
+                current_plan = await plan_collection.find_one({"razorpay_plan_id": vendor["manage_plan"]})
+                if current_plan:
+                    current_plan_price = current_plan.get("amount", 0)
+
+                    subscription_id = vendor.get("razorpay_subscription_id")
+                    subscription = razorpay_client.subscription.fetch(subscription_id)
+                    subscription_end_date = subscription.get("current_end")  # Assume this field exists
+                    if subscription_end_date:
+                        subscription_end_date = datetime.fromtimestamp(
+                            subscription_end_date
+                        )  # Convert timestamp to datetime
+                        today = datetime.today()
+                        remaining_days = (subscription_end_date - today).days  # Calculate remaining days
+
+                        if remaining_days > 0:
+                            # Prorate the current plan cost
+                            daily_rate = current_plan_price / 30  # Assuming monthly plans have 30 days
+                            remaining_value = daily_rate * remaining_days
+
+                            # Deduct from the new plan price
+                            discounted_price = max(new_plan_price - remaining_value, 0)  # Ensure it doesn’t go negative
+
+            # Add the calculated price to the response
+            plan["amount"] = discounted_price
+
+            # Fetch active payments
+            payments = await payment_collection.find({"status": "active"}).to_list(length=100)
             for payment in payments:
                 payment["id"] = str(payment["_id"])
                 payment.pop("_id", None)
+
             plan["vendor"] = {
                 "id": str(current_user.id),
                 "first_name": current_user.first_name,
                 "email": current_user.email,
+                "phone": current_user.phone,
             }
             plan["payments"] = payments
 
             return plan
+
         except HTTPException as e:
             raise e
         except Exception as ex:
@@ -2411,8 +2626,12 @@ class VendorManager:
                 "canceled_bookings": canceled_bookings,
                 "reschedule_bookings": reschedule_bookings,
             }
+        except HTTPException as e:
+            raise e
         except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def get_vendor_bookings(self, request: Request, token: str):
         try:
@@ -2488,3 +2707,142 @@ class VendorManager:
             raise e
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_vendor_service(self, request: str, token: str):
+        try:
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+            service = vendor.get("services")
+
+            return service
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def upgrade_vendor_subscription(
+        self, request: Request, token: str, upgrade_subscription_request: VendorSubscriptionRequest
+    ):
+        try:
+            # Authenticate and authorize the user
+            current_user = await get_current_user(request=request, token=token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+
+            # Fetch the vendor's details
+            current_user_id = str(current_user.vendor_id)
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            # Check if the vendor has an active subscription
+            if not vendor.get("razorpay_subscription_id"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="No active subscription found to upgrade"
+                )
+
+            # Fetch the current subscription details from Razorpay
+            current_subscription_id = vendor["razorpay_subscription_id"]
+            try:
+                current_subscription = razorpay_client.subscription.fetch(current_subscription_id)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to fetch current subscription details: {str(e)}",
+                )
+
+            # Fetch the new plan details
+            new_plan_details = razorpay_client.plan.fetch(upgrade_subscription_request.plan_id)
+            if not new_plan_details:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="New plan not found")
+
+            # Calculate the remaining amount from the current subscription
+            current_plan_amount = int(current_subscription["plan"]["item"]["amount"])
+            current_plan_start_date = datetime.fromtimestamp(current_subscription["start_at"])
+            current_plan_period = current_subscription["plan"]["period"].lower()
+
+            # Calculate the unused portion of the current subscription
+            current_date = datetime.now()
+            days_used = (current_date - current_plan_start_date).days
+            total_days_in_plan = 30 if current_plan_period == "monthly" else 365  # Adjust based on the plan period
+            remaining_days = total_days_in_plan - days_used
+            remaining_amount = (current_plan_amount / total_days_in_plan) * remaining_days
+
+            # Deduct the remaining amount from the new plan's cost
+            new_plan_amount = int(new_plan_details["item"]["amount"])
+            adjusted_amount = new_plan_amount - remaining_amount
+
+            # Create a new subscription with the upgraded plan
+            razorpay_subscription_data = {
+                "plan_id": upgrade_subscription_request.plan_id,
+                "total_count": upgrade_subscription_request.total_count,
+                "quantity": upgrade_subscription_request.quantity,
+                "customer_notify": True,
+            }
+
+            try:
+                razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to create Razorpay subscription: {str(e)}",
+                )
+
+            # Create a new order for the adjusted amount
+            order_data = {
+                "amount": adjusted_amount,
+                "currency": "INR",
+                "receipt": f"sub_{razorpay_subscription['id']}",
+                "notes": {
+                    "subscription_id": razorpay_subscription["id"],
+                    "vendor_id": str(vendor["_id"]),
+                },
+                "payment_capture": 1,
+            }
+
+            try:
+                razorpay_order = razorpay_client.order.create(data=order_data)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to create Razorpay order: {str(e)}",
+                )
+
+            # Update the vendor's subscription details
+            vendor_update_data = {
+                "manage_plan": upgrade_subscription_request.plan_id,
+                "razorpay_subscription_id": razorpay_subscription["id"],
+                "razorpay_order_id": razorpay_order["id"],
+            }
+
+            result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
+            if result.modified_count == 0:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
+
+            return {
+                "subscription_id": razorpay_subscription["id"],
+                "order_id": razorpay_order["id"],
+                "amount": order_data["amount"],
+                "currency": order_data["currency"],
+            }
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )

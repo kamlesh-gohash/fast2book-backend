@@ -4,6 +4,8 @@ import os
 
 from typing import Optional
 
+import httpx
+
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from google.auth.exceptions import GoogleAuthError
@@ -11,7 +13,9 @@ from google.auth.transport import requests
 from google.oauth2 import id_token
 
 from app.v1.config.auth import oauth
-from app.v1.models import User
+from app.v1.models import User, user_collection
+from app.v1.models.user import *
+from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
 # OAuth2PasswordBearer handles the token extraction from Authorization header
@@ -134,6 +138,78 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         raise HTTPException(status_code=401, detail=f"Invalid Google token: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+async def get_current_user_by_google(
+    request: Request,
+    token: str,
+    email: str,
+    first_name: str,
+    last_name: str,
+    picture: str,
+):
+    """Get the current authenticated user from a Google OAuth access token."""
+    try:
+
+        # Use the Google tokeninfo endpoint to validate the OAuth access token
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"https://www.googleapis.com/oauth2/v1/tokeninfo?access_token={token}")
+            token_info = response.json()
+
+            # Check for errors in the response
+            if "error" in token_info:
+                raise HTTPException(status_code=401, detail="Invalid Google OAuth access token.")
+
+            # Validate the email in the token info
+            token_email = token_info.get("email")
+            if not token_email or token_email != email:
+                raise HTTPException(status_code=401, detail="Invalid Google token: Email mismatch.")
+
+            # Fetch or create the user in your database
+            user = await user_collection.find_one({"email": email})
+            if not user:
+                # Create a new user if they don't exist
+                user = {
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "picture": picture,
+                    "provider": "google",
+                    "is_active": True,
+                    "status": "active",
+                    "roles": ["user"],
+                    "notification_settings": DEFAULT_NOTIFICATION_PREFERENCES,
+                }
+                result = await user_collection.insert_one(user)
+                user_id = str(result.inserted_id)  # Convert ObjectId to string
+                user["id"] = user_id  # Add _id as a string to the response
+            else:
+                # Update the user if they already exist
+                await user_collection.update_one(
+                    {"email": email},
+                    {"$set": {"first_name": first_name, "last_name": last_name, "picture": picture}},
+                )
+
+            # Remove sensitive fields
+            user.pop("password", None)
+            user.pop("otp", None)
+            user["id"] = str(user["_id"])
+            user.pop("_id", None)
+
+            # Generate access and refresh tokens
+            access_token = create_access_token(data={"sub": email})
+            refresh_token = create_refresh_token(data={"sub": email})
+
+            return {
+                "user_data": user,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+            }
+
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to validate Google token: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 async def get_token_from_header(authorization: Optional[str] = Header(None)) -> str:

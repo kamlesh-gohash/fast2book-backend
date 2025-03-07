@@ -528,7 +528,7 @@ async def create_vendor_slots(
         result = await vendor_manager.create_vendor_slots(
             request=request, token=token, vendor_id=vendor_id, slots=slot_request.slots
         )
-        return success({"message": "Slots created successfully", "data": result})
+        return success({"message": "Slots Updated successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
@@ -872,6 +872,51 @@ async def get_vendor_bookings(
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-vendor-service", status_code=status.HTTP_200_OK)
+async def get_vendor_service(
+    request: Request,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.get_vendor_service(request=request, token=token)
+        return success({"message": "Vendor services", "data": result})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/upgrade-vendor-subscription", status_code=status.HTTP_200_OK)
+async def upgrade_vendor_subscription(
+    request: Request,
+    upgrade_subscription_request: VendorSubscriptionRequest,
+    token: str = Depends(get_token_from_header),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        # Pass data to vendor manager for processing
+        result = await vendor_manager.upgrade_vendor_subscription(
+            request=request, token=token, upgrade_subscription_request=upgrade_subscription_request
+        )
+        return success({"message": "Vendor subscription upgraded successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},

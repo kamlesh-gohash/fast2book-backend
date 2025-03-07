@@ -8,8 +8,10 @@ from bcrypt import gensalt, hashpw
 from beanie import PydanticObjectId  # Import PydanticObjectId
 from beanie import Document, Indexed, before_event
 from fastapi import HTTPException
+from motor.motor_asyncio import AsyncIOMotorClient  # Example for MongoDB
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.v1.config import DATABASE_NAME, DATABASE_URL
 from app.v1.config.constants import SECRET_KEY
 
 
@@ -154,7 +156,7 @@ class User(Document, BaseModel):
     user_image_url: Optional[str] = None
     otp: Optional[str] = None  # OTP field
     otp_expires: Optional[datetime] = None
-    password: str
+    password: Optional[str] = None
     user_role: int = Field(default=1)
     phone: Optional[int] = Field(default=None)
     is_deleted: bool = Field(default=False)
@@ -168,7 +170,7 @@ class User(Document, BaseModel):
     reset_password_expires: Optional[int] = None
     user_profile: Optional[str] = None
     gender: Gender = Field(default=Gender.male)
-    blood_group: Optional[BloodGroup] = None
+    blood_group: Optional[BloodGroup] = Field(default=None)  # Allow None as a valid value
     dob: Optional[str] = None
     status: StatusEnum = StatusEnum.Active
     roles: List[Role] = Field(default=["user"])
@@ -179,6 +181,14 @@ class User(Document, BaseModel):
     notification_settings: Dict[str, bool] = Field(default_factory=dict)
     vendor_id: Optional[PydanticObjectId] = None
     provider: Optional[str] = None
+    fees: float = Field(default=0.0)
+    specialization: Optional[str] = None
+
+    @field_validator("blood_group", mode="before")
+    def validate_blood_group(cls, value):
+        if value == "":
+            return None  # Convert empty string to None
+        return value
 
     class Settings:
         name = "users"

@@ -12,6 +12,7 @@ __all__ = [
     "SupportManager",
     "PermissionManager",
     "RazorPayManager",
+    "VideoManager",
 ]
 
 from app.v1.services.blog.blog_manager import BlogManager
@@ -27,3 +28,4 @@ from app.v1.services.superuser.super_user_manager import SuperUserManager
 from app.v1.services.support.support_manager import SupportManager
 from app.v1.services.user.user_manager import UserManager
 from app.v1.services.vendor.vendor_manager import VendorManager
+from app.v1.services.video.video_manager import VideoManager

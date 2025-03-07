@@ -20,12 +20,7 @@ async def upload_file(
 ):
     try:
         """Handles file uploads to S3 based on type."""
-        folder_mapping = {
-            "1": "services",
-            "2": "vendors",
-            "3": "blog",
-            "4": "costumers",
-        }
+        folder_mapping = {"1": "services", "2": "vendors", "3": "blog", "4": "users", "5": "thumbnails", "6": "video"}
 
         folder_name = folder_mapping.get(type, "other")
         bucket_name = os.getenv("AWS_S3_BUCKET_NAME")

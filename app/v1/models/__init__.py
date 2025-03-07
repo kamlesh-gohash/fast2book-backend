@@ -31,6 +31,9 @@ permission_collection = get_model("permissions")
 permission_assign_request = get_model("permission_assign_request")
 plan_collection = get_model("plans")
 booking_payments_collection = get_model("booking_payments")
+vendor_services_collection = get_model("vendor_services")
+vendor_ratings_collection = get_model("vendor_ratings")
+video_collection = get_model("videos")
 
 
 __all__ = {
@@ -49,4 +52,7 @@ __all__ = {
     "permission_assign_request": permission_assign_request,
     "plan_collection": plan_collection,
     "booking_payments_collection": booking_payments_collection,
+    "vendor_services_collection": vendor_services_collection,
+    "vendor_ratings_collection": vendor_ratings_collection,
+    "video_collection": video_collection,
 }
