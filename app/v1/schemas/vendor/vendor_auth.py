@@ -353,14 +353,17 @@ class VendorUserCreateRequest(BaseModel):
     first_name: str
     last_name: str
     email: EmailStr
+    user_image: Optional[str] = None
+    user_image_url: Optional[str] = None
     category: Optional[str] = None
     services: List[Service]
     phone: Optional[str] = None
-    fees: Optional[str] = None
-    gander: Gender = Field(default=Gender.male)
+    fees: Optional[float] = Field(default=0.0)
+    gender: Gender = Field(default=Gender.male)
     status: StatusEnum = Field(default=StatusEnum.Active)
     roles: list[Role] = [Role.vendor_user]
     created_by: Optional[str] = None
+    specialization: Optional[str] = None
 
     @root_validator(pre=True)
     def check_required_fields(cls, values):
@@ -434,8 +437,8 @@ class VendorUserUpdateRequest(BaseModel):
     category: Optional[str] = None
     services: Optional[List[Service]] = None
     phone: Optional[str] = None
-    fees: Optional[str] = None
-    gander: Optional[Gender] = None
+    fees: Optional[float] = None
+    gender: Optional[Gender] = None
     status: Optional[StatusEnum] = None
     roles: list[Role] = [Role.vendor_user]
 
@@ -490,6 +493,33 @@ class VendorSubscriptionRequest(BaseModel):
     def validate(self):
         try:
             vendor_subscription_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
+
+
+vendor_subscription_update_validator = zon.record(
+    {
+        "plan_id": zon.string().optional(),
+        "total_count": zon.string().optional(),
+        "quantity": zon.string().optional(),
+        "start_at": zon.string().optional(),
+        "expire_by": zon.string().optional(),
+    }
+)
+
+
+class UpdateVendorSubscriptionRequest(BaseModel):
+    plan_id: Optional[str] = None
+    total_count: Optional[int] = None
+    quantity: Optional[int] = None
+    start_at: Optional[datetime] = None
+    expire_by: Optional[datetime] = None
+
+    def validate(self):
+        try:
+            vendor_subscription_update_validator.validate(self.dict())
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})

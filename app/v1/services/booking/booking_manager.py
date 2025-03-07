@@ -171,21 +171,29 @@ class BookingManager:
                 if not vendor_user:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
 
-            amount = vendor.get("fees")
+            # Get the vendor user's fees
+            amount = vendor_user.get("fees", 0.0)  # Default to 0.0 if fees is None
+            if not isinstance(amount, (int, float)):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid fees value")
+
+            # Fetch payment configuration
             payment_method = "Razorpay"
             payment_config = await payment_collection.find_one({"name": payment_method})
             if not payment_config:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+
             admin_charge_type = payment_config.get("charge_type")  # 'percentage' or 'fixed'
             admin_charge_value = payment_config.get("charge_value")  # e.g., 10 for 10% or 50 for $50
 
+            # Calculate admin charge
             if admin_charge_type == "percentage":
                 admin_charge = (admin_charge_value / 100) * amount
             elif admin_charge_type == "fixed":
                 admin_charge = admin_charge_value
             else:
-                admin_charge = 0
+                admin_charge = 0.0
 
+            # Calculate total amount
             total_amount = amount + admin_charge
 
             # Prepare response data
@@ -195,9 +203,11 @@ class BookingManager:
                     "business_name": vendor.get("business_name"),
                     "name": vendor_user.get("first_name"),
                     "last_name": vendor_user.get("last_name"),
-                    "fees": vendor.get("fees", 0),
+                    "fees": str(amount),  # Convert float to string
                     "location": vendor.get("location"),
-                    "specialization": vendor.get("specialization"),
+                    "specialization": vendor_user.get("specialization"),
+                    "user_image": vendor_user.get("user_image", ""),
+                    "user_image_url": vendor_user.get("user_image_url", ""),
                     "is_payment_required": vendor.get("is_payment_required", False),
                 },
                 "category": {
@@ -210,8 +220,8 @@ class BookingManager:
                 },
                 "booking_date": booking_date,
                 "time_slot": slot,
-                "platform_fee": admin_charge,
-                "total_amount": total_amount,
+                "platform_fee": str(admin_charge),  # Convert float to string
+                "total_amount": str(total_amount),  # Convert float to string
                 "vendor_user_id": str(vendor_user.get("_id")) if vendor_user else None,
             }
 
@@ -580,8 +590,13 @@ class BookingManager:
                 if vendor:
                     booking["vendor__first_name"] = vendor_user.get("first_name")
                     booking["venodr_last_name"] = vendor_user.get("last_name")
+                    booking["vendor_email"] = vendor_user.get("email")
+                    booking["vendor_phone"] = vendor_user.get("phone")
+                    booking["user_image"] = vendor_user.get("user_image")
+                    booking["user_image_url"] = vendor_user.get("user_image_url")
+
                     booking["vendor_location"] = vendor.get("location")
-                    booking["specialization"] = vendor.get("specialization")
+                    booking["specialization"] = vendor_user.get("specialization")
                     booking["business_name"] = vendor.get("business_name")
 
                 booking_datetime = tz.localize(
@@ -885,6 +900,9 @@ class BookingManager:
             vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
+            if not vendor_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor User not found")
 
             is_payment_required = vendor.get("is_payment_required", True)
             booking_data = {
@@ -894,7 +912,7 @@ class BookingManager:
                 "category_id": ObjectId(category_id),
                 "time_slot": slot,
                 "booking_date": booking_date,
-                "amount": vendor.get("fees", 0),
+                "amount": vendor_user.get("fees", 0),
                 "booking_status": "panding",
                 "payment_status": "paid" if not is_payment_required else "panding",  # Set payment status
                 "vendor_user_id": vendor_user_id if vendor_user_id else None,
@@ -908,7 +926,7 @@ class BookingManager:
             # Step 7: Handle payment logic
             if is_payment_required:
                 # Process payment via Razorpay
-                amount = float(vendor.get("fees", 0))
+                amount = float(vendor_user.get("fees", 0))
                 payment_method = "Razorpay"
                 payment_config = await payment_collection.find_one({"name": payment_method})
                 if not payment_config:
@@ -988,7 +1006,7 @@ class BookingManager:
                     "vendor_name": vendor.get("name"),
                     "service_name": service.get("name"),
                     "category_name": category.get("name"),
-                    "amount": vendor.get("fees", 0),
+                    "amount": vendor_user.get("fees", 0),
                     "currency": "INR",
                     "payment_method": "None",
                     "booking_date": booking_date,
@@ -1005,7 +1023,7 @@ class BookingManager:
                 return {
                     "data": {
                         "order_id": str(booking_id),
-                        "amount": vendor.get("fees", 0),
+                        "amount": vendor_user.get("fees", 0),
                         "currency": "INR",
                         "payment_status": "paid",
                     }
@@ -1059,10 +1077,11 @@ class BookingManager:
 
             # Fetch vendor details
             vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
+
             if vendor:
                 booking["vendor_details"] = {
                     "business_name": vendor.get("business_name", "Unknown"),
-                    "business_address": vendor.get("business_address", "Unknown"),
+                    "business_address": vendor.get("location", "Unknown"),
                 }
             else:
                 booking["vendor_details"] = "Unknown"

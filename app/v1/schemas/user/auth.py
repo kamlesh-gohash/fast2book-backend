@@ -350,6 +350,8 @@ class UpdateProfileRequest(BaseModel):
     dob: Optional[str] = None
     address: Optional[Location] = Field(None, description="Location details of the vendor")
     secondary_phone_number: Optional[int] = None
+    costumer_details: Optional[str] = None
+    costumer_address: Optional[str] = None
 
     # @validator("address", pre=True)
     # def validate_address(cls, value):

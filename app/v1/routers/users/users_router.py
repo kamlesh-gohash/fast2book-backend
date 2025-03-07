@@ -16,7 +16,7 @@ from app.v1.models.support import Support
 from app.v1.schemas.user.auth import *
 from app.v1.services import UserManager
 from app.v1.services.support.support_manager import SupportManager
-from app.v1.utils.email import generate_otp, send_email, send_sms_on_phone
+from app.v1.utils.email import generate_otp, send_app_link, send_email, send_sms_on_phone
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
 from app.v1.utils.token import *
 
@@ -457,12 +457,10 @@ async def change_password(
 
 
 @router.post("/google-login", status_code=status.HTTP_200_OK)
-async def google_login(
-    request: Request, token: str = Depends(get_token_from_header), user_manager: UserManager = Depends(get_user_manager)
-):
+async def google_login(request: Request, payload: dict, user_manager: UserManager = Depends(get_user_manager)):
     try:
-        result = await user_manager.google_login(request=request, token=token)
-        return success({"message": "Google login successfully", "data": result})
+        result = await user_manager.google_login(request=request, payload=payload)
+        return success({"message": "Google login successful", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
@@ -472,72 +470,6 @@ async def google_login(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-
-
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = "http://localhost:3000/auth/google/callback"
-
-
-class GoogleToken(BaseModel):
-    code: str
-    state: str
-
-
-@router.get("/auth/google")
-async def google_login():
-    return {
-        "url": f"https://accounts.google.com/o/oauth2/auth?response_type=code&client_id={GOOGLE_CLIENT_ID}&redirect_uri={REDIRECT_URI}&scope=openid%20profile%20email&state=random_state"
-    }
-
-
-@router.post("/auth/google/callback")
-async def google_callback(token: GoogleToken):
-    try:
-        # Exchange the authorization code for tokens
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://oauth2.googleapis.com/token",
-                data={
-                    "code": token.code,
-                    "client_id": GOOGLE_CLIENT_ID,
-                    "client_secret": GOOGLE_CLIENT_SECRET,
-                    "redirect_uri": REDIRECT_URI,
-                    "grant_type": "authorization_code",
-                },
-            )
-            response.raise_for_status()
-            tokens = response.json()
-
-        # Verify the ID token
-        id_info = id_token.verify_oauth2_token(tokens["id_token"], requests.Request(), GOOGLE_CLIENT_ID)
-
-        # Validate the issuer
-        if id_info["iss"] not in ["accounts.google.com", "https://accounts.google.com"]:
-            raise HTTPException(status_code=401, detail="Invalid Google token issuer.")
-
-        # Extract email from Google ID token
-        email = id_info.get("email")
-        if not email:
-            raise HTTPException(status_code=401, detail="Invalid Google token: Missing email.")
-
-        # Fetch or create the user in your database
-        user = await User.get_user_by_email(email)
-        if not user:
-            # Create a new user if they don't exist
-            user = await User.create_user(
-                email=email,
-                first_name=id_info.get("name"),
-                user_image=id_info.get("picture"),
-                provider="google",
-            )
-
-        return {"message": "Google login successful", "user": user}
-
-    except GoogleAuthError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid Google token: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/blog-list", status_code=status.HTTP_200_OK)
@@ -611,8 +543,8 @@ async def send_link(email: str = Query(None), phone: str = Query(None)):
         if phone:
             to_phone = phone
             expiry_minutes = 10
-            otp = "https://fast2book.com/"
-            await send_sms_on_phone(to_phone, otp, expiry_minutes)
+            app_link = "https://fast2book.com/"
+            await send_app_link(to_phone, app_link)
 
         return success({"message": "Link sent successfully", "data": None})
 

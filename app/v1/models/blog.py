@@ -19,13 +19,13 @@ class StatusEnum(str, Enum):
 
 
 class Blog(BaseModel):
-    title: str = Field(..., min_length=1, max_length=100)
-    content: str = Field(..., min_length=1, max_length=5000)
+    title: str = Field(..., min_length=1, max_length=500)
+    content: str = Field(..., min_length=1)
     blog_url: Optional[str] = None
     blog_image: Optional[str] = None
     blog_image_url: Optional[str] = None  # Optional field
     author_name: Optional[str] = Field(None, min_length=3, max_length=255)
-    category: Optional[str] = Field(None, min_length=1, max_length=50)  # Category field is now optional
+    category: Optional[str] = Field(None, min_length=1, max_length=100)  # Category field is now optional
     tags: Optional[List[str]] = None  # Making tags optional
     status: StatusEnum = Field(default=StatusEnum.ACTIVE)
     created_at: datetime = Field(default_factory=datetime.utcnow)

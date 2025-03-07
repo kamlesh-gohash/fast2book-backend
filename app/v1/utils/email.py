@@ -270,7 +270,6 @@ async def send_email(to_email: str, source: str, context: dict = None):
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID", "your-access-key")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "your-secret-key")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-
 # Initialize SNS client
 sns_client = boto3.client(
     "sns", aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY, region_name=AWS_REGION
@@ -284,8 +283,19 @@ async def send_sms_on_phone(to_phone: str, otp: str, expiry_minutes: int = 10):
 
         # Send SMS
         response = sns_client.publish(PhoneNumber=formatted_phone, Message=message)
-
         return {"message": "OTP sent successfully", "otp": otp, "sns_response": response}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def send_app_link(to_phone: str, app_link: str):
+    try:
+        formatted_phone = f"+{to_phone}"
+        message = f"Your Fast2Book App Link is {app_link}. Do not share this with anyone. - Fast2Book"
+        # Send SMS
+        response = sns_client.publish(PhoneNumber=formatted_phone, Message=message)
+        return {"message": "OTP sent successfully", "otp": app_link, "sns_response": response}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
