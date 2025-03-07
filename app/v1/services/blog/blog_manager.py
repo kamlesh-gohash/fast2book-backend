@@ -29,9 +29,11 @@ class BlogManager:
     async def create_blog(self, create_blog_request: Blog) -> dict:
         try:
             blog_data = create_blog_request.dict()
-            image_name = create_blog_request.blog_image
-            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+            file_url = None
+            if create_blog_request.blog_image:
+                image_name = create_blog_request.blog_image
+                bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
 
             # Insert the blog data into the database
             blog_data["blog_image_url"] = file_url

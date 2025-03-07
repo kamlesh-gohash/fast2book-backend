@@ -68,11 +68,13 @@ class CostumerManager:
             create_costumer_request.phone = (
                 int(create_costumer_request.phone) if create_costumer_request.phone else None
             )
-            image_name = create_costumer_request.user_image
-            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
-            create_costumer_request.user_image = create_costumer_request.user_image
-            create_costumer_request.user_image_url = file_url
+            file_url = None
+            if create_costumer_request.user_image:
+                image_name = create_costumer_request.user_image
+                bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+                create_costumer_request.user_image = create_costumer_request.user_image
+                create_costumer_request.user_image_url = file_url
             # create_costumer_request.password = hashpw(create_costumer_request.password.encode('utf-8'), gensalt()).decode('utf-8')
             # print(create_costumer_request.password, 'create_costumer_request.password')
             create_costumer_request_dict = create_costumer_request.dict()

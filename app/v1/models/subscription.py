@@ -47,11 +47,6 @@ class FeatureItem(BaseModel):
 
 
 class Subscription(Document):
-    # title: str = Field(..., min_length=1, max_length=50)
-    # prices: dict[SubscriptionDuration, float]
-    # features: List[FeatureItem]
-    # status: StatusEnum = Field(default=StatusEnum.ACTIVE)
-    # created_at: datetime = Field(default_factory=datetime.utcnow)
     name: str
     description: str
     amount: float

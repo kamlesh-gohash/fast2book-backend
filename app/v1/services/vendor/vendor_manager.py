@@ -1228,7 +1228,7 @@ class VendorManager:
 
                 # Update the vendor_services_collection with the updated services
                 vendor_service_update_result = await vendor_services_collection.update_one(
-                    {"vendor_id": ObjectId(id)},
+                    {"vendor_id": ObjectId(current_user.vendor_id)},
                     {"$set": {"services": updated_services}},
                 )
 
@@ -1286,6 +1286,7 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )

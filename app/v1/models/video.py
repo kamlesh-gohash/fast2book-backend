@@ -28,9 +28,10 @@ class Video(Document):
     thumbnail_image_url: Optional[str] = None
     videoType: VideoType
     video_url: Optional[str] = None
-    video_file: Optional[UploadFile] = None
+    video_file: Optional[str] = None
     video_file_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    status: StatusEnum = Field(default=StatusEnum.Active)
 
     class Settings:
         name = "videos"

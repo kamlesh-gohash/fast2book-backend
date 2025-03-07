@@ -252,6 +252,92 @@ class SubscriptionManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
+    # async def plan_create(self, request: Request, token: str, plan_request: CreateSubscriptionRequest):
+    #     try:
+    #         current_user = await get_current_user(request=request, token=token)
+    #         if not current_user:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    #         if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+    #             )
+    #         if plan_request.period.lower() == "monthly":
+    #             interval = 1
+    #         elif plan_request.period.lower() == "yearly":
+    #             interval = 1
+    #         elif plan_request.period.lower() == "daily":
+    #             interval = 7
+    #         elif plan_request.period.lower() == "weekly":
+    #             interval = 1
+    #         else:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #                 detail="Invalid period. Allowed values are 'daily' or 'weekly' or 'monthly' or 'yearly'.",
+    #             )
+    #         razorpay_plan_data = {
+    #             "period": plan_request.period,
+    #             "interval": interval,
+    #             "item": {
+    #                 "name": plan_request.name,
+    #                 "description": plan_request.description,
+    #                 "amount": int(plan_request.amount * 100),
+    #                 "currency": plan_request.currency,
+    #             },
+    #         }
+    #         try:
+    #             razorpay_plan = razorpay_client.plan.create(data=razorpay_plan_data)
+    #         except Exception as e:
+    #             raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+    #         except razorpay.errors.BadRequestError as e:
+    #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Bad request: {str(e)}")
+    #         except razorpay.errors.GatewayError as e:
+    #             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Gateway error: {str(e)}")
+    #         except razorpay.errors.ServerError as e:
+    #             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Server error: {str(e)}")
+    #         except razorpay.errors.SignatureVerificationError as e:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_400_BAD_REQUEST, detail=f"Signature verification error: {str(e)}"
+    #             )
+    #         except Exception as e:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(e)}"
+    #             )
+    #         insert_data = {
+    #             "name": plan_request.name,
+    #             "description": plan_request.description,
+    #             "amount": plan_request.amount,
+    #             "currency": plan_request.currency,
+    #             "period": plan_request.period,
+    #             "interval": plan_request.interval,
+    #             "razorpay_plan_id": razorpay_plan["id"],
+    #             "features": [feature.to_dict() for feature in plan_request.features],
+    #             "created_at": datetime.utcnow(),
+    #             "status": plan_request.status,
+    #         }
+
+    #         await plan_collection.insert_one(insert_data)
+
+    #         inserted_plan = await plan_collection.find_one({"razorpay_plan_id": razorpay_plan["id"]})
+    #         return {
+    #             "id": str(inserted_plan["_id"]),
+    #             "name": inserted_plan["name"],
+    #             "description": inserted_plan["description"],
+    #             "amount": inserted_plan["amount"],
+    #             "currency": inserted_plan["currency"],
+    #             "period": inserted_plan["period"],
+    #             "interval": inserted_plan["interval"],
+    #             "features": inserted_plan["features"],
+    #             "razorpay_plan_id": inserted_plan["razorpay_plan_id"],
+    #             "created_at": inserted_plan["created_at"],
+    #             "status": inserted_plan["status"],
+    #         }
+
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+    #         )
+
     async def plan_create(self, request: Request, token: str, plan_request: CreateSubscriptionRequest):
         try:
             current_user = await get_current_user(request=request, token=token)
@@ -260,77 +346,95 @@ class SubscriptionManager:
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
-            if plan_request.period.lower() == "monthly":
-                interval = 1
-            elif plan_request.period.lower() == "yearly":
-                interval = 1
-            elif plan_request.period.lower() == "daily":
-                interval = 7
-            elif plan_request.period.lower() == "weekly":
-                interval = 1
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid period. Allowed values are 'daily' or 'weekly' or 'monthly' or 'yearly'.",
-                )
-            razorpay_plan_data = {
-                "period": plan_request.period,
-                "interval": interval,
-                "item": {
+
+            # Create plans for each amount in amountsArray
+            created_plans = []
+            for amount_item in plan_request.amountsArray:
+                period = amount_item.type.lower()
+                amount = amount_item.value
+
+                if period == "weekly":
+                    interval = 1
+                elif period == "monthly":
+                    interval = 1
+                elif period == "quarterly":
+                    interval = 1
+                elif period == "yearly":
+                    interval = 1
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid period: {period}. Allowed values are 'weekly', 'monthly', or 'yearly'.",
+                    )
+
+                razorpay_plan_data = {
+                    "period": period,
+                    "interval": interval,
+                    "item": {
+                        "name": plan_request.name,
+                        "description": plan_request.description,
+                        "amount": int(amount * 100),  # Convert to cents/pence
+                        "currency": plan_request.currency,
+                    },
+                }
+
+                try:
+                    razorpay_plan = razorpay_client.plan.create(data=razorpay_plan_data)
+                except razorpay.errors.BadRequestError as e:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Bad request: {str(e)}")
+                except razorpay.errors.GatewayError as e:
+                    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Gateway error: {str(e)}")
+                except razorpay.errors.ServerError as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Server error: {str(e)}"
+                    )
+                except razorpay.errors.SignatureVerificationError as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail=f"Signature verification error: {str(e)}"
+                    )
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"An unexpected error occurred: {str(e)}",
+                    )
+
+                insert_data = {
                     "name": plan_request.name,
                     "description": plan_request.description,
-                    "amount": int(plan_request.amount * 100),
+                    "amount": amount,
                     "currency": plan_request.currency,
-                },
-            }
-            try:
-                razorpay_plan = razorpay_client.plan.create(data=razorpay_plan_data)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-            except razorpay.errors.BadRequestError as e:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Bad request: {str(e)}")
-            except razorpay.errors.GatewayError as e:
-                raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Gateway error: {str(e)}")
-            except razorpay.errors.ServerError as e:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Server error: {str(e)}")
-            except razorpay.errors.SignatureVerificationError as e:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail=f"Signature verification error: {str(e)}"
-                )
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(e)}"
-                )
-            insert_data = {
-                "name": plan_request.name,
-                "description": plan_request.description,
-                "amount": plan_request.amount,
-                "currency": plan_request.currency,
-                "period": plan_request.period,
-                "interval": plan_request.interval,
-                "razorpay_plan_id": razorpay_plan["id"],
-                "features": [feature.to_dict() for feature in plan_request.features],
-                "created_at": datetime.utcnow(),
-                "status": plan_request.status,
-            }
+                    "period": period,
+                    "interval": interval,
+                    "razorpay_plan_id": razorpay_plan["id"],
+                    "features": [feature.dict() for feature in plan_request.features],
+                    "created_at": datetime.utcnow(),
+                    "status": "active",  # Default status
+                }
 
-            await plan_collection.insert_one(insert_data)
+                await plan_collection.insert_one(insert_data)
+                inserted_plan = await plan_collection.find_one({"razorpay_plan_id": razorpay_plan["id"]})
+                created_plans.append(inserted_plan)
 
-            inserted_plan = await plan_collection.find_one({"razorpay_plan_id": razorpay_plan["id"]})
             return {
-                "id": str(inserted_plan["_id"]),
-                "name": inserted_plan["name"],
-                "description": inserted_plan["description"],
-                "amount": inserted_plan["amount"],
-                "currency": inserted_plan["currency"],
-                "period": inserted_plan["period"],
-                "interval": inserted_plan["interval"],
-                "features": inserted_plan["features"],
-                "razorpay_plan_id": inserted_plan["razorpay_plan_id"],
-                "created_at": inserted_plan["created_at"],
-                "status": inserted_plan["status"],
+                "message": "Plans created successfully",
+                "data": [
+                    {
+                        "id": str(plan["_id"]),
+                        "name": plan["name"],
+                        "description": plan["description"],
+                        "amount": plan["amount"],
+                        "currency": plan["currency"],
+                        "period": plan["period"],
+                        "interval": plan["interval"],
+                        "features": plan["features"],
+                        "razorpay_plan_id": plan["razorpay_plan_id"],
+                        "created_at": plan["created_at"],
+                        "status": plan["status"],
+                    }
+                    for plan in created_plans
+                ],
             }
 
         except Exception as ex:
