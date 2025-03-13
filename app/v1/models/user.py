@@ -17,9 +17,9 @@ from app.v1.config.constants import SECRET_KEY
 
 # Enum for gender
 class Gender(str, Enum):
-    male = "male"
-    female = "female"
-    other = "don't_want_to_disclose"
+    Male = "Male"
+    Female = "Female"
+    Other = "Don't want to Disclose"
 
 
 class Location(BaseModel):
@@ -169,7 +169,7 @@ class User(Document, BaseModel):
     reset_password_token: Optional[str] = None
     reset_password_expires: Optional[int] = None
     user_profile: Optional[str] = None
-    gender: Gender = Field(default=Gender.male)
+    gender: Gender = Field(default=Gender.Male)
     blood_group: Optional[BloodGroup] = Field(default=None)  # Allow None as a valid value
     dob: Optional[str] = None
     status: StatusEnum = StatusEnum.Active
@@ -198,10 +198,7 @@ class User(Document, BaseModel):
         # Mock database lookup (replace with your actual DB query)
         try:
             user = await User.find_one({"email": sub})
-            if user:
-                return user
-            else:
-                return None
+            return user
         except Exception as e:
             return None
 

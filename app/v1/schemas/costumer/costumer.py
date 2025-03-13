@@ -19,9 +19,9 @@ class StatusEnum(str, Enum):
 
 
 class Gender(str, Enum):
-    male = "male"
-    female = "female"
-    other = "don't_want_to_disclose"
+    Male = "Male"
+    Female = "Female"
+    Other = "Don't want to Disclose"
 
 
 class Role(str, Enum):
@@ -36,6 +36,7 @@ costumer_create_validator = zon.record(
         "last_name": zon.string().min(1).max(50),
         "email": zon.string().email(),
         "phone": zon.number().int().min(1000000000).max(9999999999).optional(),
+        "gender": zon.string().min(1).max(50).optional(),
         "password": zon.string().min(6).max(20),
     }
 )
@@ -46,7 +47,7 @@ class CostumerCreateRequest(BaseModel):
     last_name: str
     email: EmailStr
     phone: Optional[int] = None
-    gender: Gender = Field(default=Gender.male)
+    gender: Optional[str] = None
     user_image: Optional[str] = None
     user_image_url: Optional[str] = None
     roles: list[Role] = [Role.user]
@@ -136,6 +137,7 @@ update_costumer_validator = zon.record(
         "last_name": zon.string().min(1).max(50).optional(),
         "email": zon.string().email().optional(),
         "phone": zon.number().int().min(1000000000).max(9999999999).optional(),
+        "gender": zon.string().min(1).max(50).optional(),
         "costumer_address": zon.string().optional(),
         "costumer_details": zon.string().optional(),
     }
@@ -150,7 +152,7 @@ class UpdateCostumerRequest(BaseModel):
     user_image_url: Optional[str] = None
     phone: Optional[int] = None
     status: StatusEnum = StatusEnum.ACTIVE
-    gender: Gender = Gender.male
+    gender: Optional[str] = None
     costumer_address: Optional[str] = None
     costumer_details: Optional[str] = None
 

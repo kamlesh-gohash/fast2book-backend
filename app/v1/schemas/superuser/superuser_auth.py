@@ -166,7 +166,7 @@ class SuperUserCreateRequest(BaseModel):
     first_name: str
     last_name: str
     email: str
-    gender: Gender = Field(default=Gender.male)
+    gender: Gender = Field(default=Gender.Male)
     roles: List[Role] = Field(default=["admin"])
     phone: str
     status: StatusEnum = StatusEnum.Active
