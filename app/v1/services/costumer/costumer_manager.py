@@ -333,7 +333,6 @@ class CostumerManager:
                 )
             await user_collection.update_one({"_id": ObjectId(id)}, {"$set": update_data})
 
-            # Fetch updated costumer data
             updated_costumer = await user_collection.find_one({"_id": ObjectId(id)})
             if not updated_costumer:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Costumer not found")
