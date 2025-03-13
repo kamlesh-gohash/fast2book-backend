@@ -349,8 +349,6 @@ class SubscriptionManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
-            # Since we're returning a single plan, only use the first amount in amountsArray
-            # or process all but return only the last one
             created_plan = None
 
             for amount_item in plan_request.amountsArray:
