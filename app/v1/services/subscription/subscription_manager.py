@@ -349,8 +349,10 @@ class SubscriptionManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
-            # Create plans for each amount in amountsArray
-            created_plans = []
+            # Since we're returning a single plan, only use the first amount in amountsArray
+            # or process all but return only the last one
+            created_plan = None
+
             for amount_item in plan_request.amountsArray:
                 period = amount_item.type.lower()
                 amount = amount_item.value
@@ -414,33 +416,111 @@ class SubscriptionManager:
                 }
 
                 await plan_collection.insert_one(insert_data)
-                inserted_plan = await plan_collection.find_one({"razorpay_plan_id": razorpay_plan["id"]})
-                created_plans.append(inserted_plan)
+                created_plan = await plan_collection.find_one({"razorpay_plan_id": razorpay_plan["id"]})
 
+            # Return a single dictionary with the plan details
             return {
-                "message": "Plans created successfully",
-                "data": [
-                    {
-                        "id": str(plan["_id"]),
-                        "name": plan["name"],
-                        "description": plan["description"],
-                        "amount": plan["amount"],
-                        "currency": plan["currency"],
-                        "period": plan["period"],
-                        "interval": plan["interval"],
-                        "features": plan["features"],
-                        "razorpay_plan_id": plan["razorpay_plan_id"],
-                        "created_at": plan["created_at"],
-                        "status": plan["status"],
-                    }
-                    for plan in created_plans
-                ],
+                "id": str(created_plan["_id"]),
+                "name": created_plan["name"],
+                "description": created_plan["description"],
+                "amount": created_plan["amount"],
+                "currency": created_plan["currency"],
+                "period": created_plan["period"],
+                "interval": created_plan["interval"],
+                "features": created_plan["features"],
+                "razorpay_plan_id": created_plan["razorpay_plan_id"],
+                "created_at": created_plan["created_at"],
+                "status": created_plan["status"],
             }
 
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
+
+    # async def plan_create(self, request: Request, token: str, plan_request: CreateSubscriptionRequest):
+    #     try:
+    #         current_user = await get_current_user(request=request, token=token)
+    #         if not current_user:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    #         if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+    #             )
+
+    #         base_amount = plan_request.amountsArray[0].value
+    #         base_period = plan_request.amountsArray[0].type.lower()
+    #         print(base_amount, "hhhhhhhhhhhhhhhhh")
+    #         razorpay_plan_data = {
+    #             "period": base_period,
+    #             "interval": 1,
+    #             "item": {
+    #                 "name": plan_request.name,
+    #                 "description": plan_request.description,
+    #                 "amount": int(base_amount * 100),  # Convert to cents/pence
+    #                 "currency": plan_request.currency,
+    #             },
+    #         }
+
+    #         try:
+    #             razorpay_plan = razorpay_client.plan.create(data=razorpay_plan_data)
+    #         except razorpay.errors.BadRequestError as e:
+    #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Bad request: {str(e)}")
+    #         except razorpay.errors.GatewayError as e:
+    #             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Gateway error: {str(e)}")
+    #         except razorpay.errors.ServerError as e:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Server error: {str(e)}"
+    #             )
+    #         except razorpay.errors.SignatureVerificationError as e:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_400_BAD_REQUEST, detail=f"Signature verification error: {str(e)}"
+    #             )
+    #         except Exception as e:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #                 detail=f"An unexpected error occurred: {str(e)}",
+    #             )
+
+    #         insert_data = {
+    #             "name": plan_request.name,
+    #             "description": plan_request.description,
+    #             "amounts": [
+    #                 {"type": amount_item.type, "value": amount_item.value}
+    #                 for amount_item in plan_request.amountsArray
+    #             ],
+    #             "currency": plan_request.currency,
+    #             "razorpay_plan_id": razorpay_plan["id"],
+    #             "features": [feature.dict() for feature in plan_request.features],
+    #             "created_at": datetime.utcnow(),
+    #             "status": "active",  # Default status
+    #         }
+    #         print(insert_data,"insert_data")
+
+    #         await plan_collection.insert_one(insert_data)
+    #         inserted_plan = await plan_collection.find_one({"razorpay_plan_id": razorpay_plan["id"]})
+
+    #         return {
+    #             "message": "Plan created successfully",
+    #             "data": {
+    #                 "id": str(inserted_plan["_id"]),
+    #                 "name": inserted_plan["name"],
+    #                 "description": inserted_plan["description"],
+    #                 "amounts": inserted_plan["amounts"],
+    #                 "currency": inserted_plan["currency"],
+    #                 "features": inserted_plan["features"],
+    #                 "razorpay_plan_id": inserted_plan["razorpay_plan_id"],
+    #                 "created_at": inserted_plan["created_at"],
+    #                 "period": base_period,
+    #                 "status": inserted_plan["status"],
+    #             },
+    #         }
+
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+    #         )
 
     async def plan_list(self, request: Request, token: str, page: int, limit: int, search: str):
         try:
@@ -497,3 +577,64 @@ class SubscriptionManager:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
+
+    # async def plan_list(self, request: Request, token: str, page: int, limit: int, search: str):
+    #     try:
+    #         current_user = await get_current_user(request=request, token=token)
+    #         if not current_user:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    #         if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+    #             )
+
+    #         query = {}
+    #         if search:
+    #             query["name"] = {"$regex": search, "$options": "i"}
+
+    #         total_count = await plan_collection.count_documents(query)
+    #         skip = (page - 1) * limit
+
+    #         plans = await plan_collection.find(query).skip(skip).limit(limit).to_list(length=None)
+    #         plan_data = []
+    #         ist_timezone = pytz.timezone("Asia/Kolkata")
+    #         for plan in plans:
+    #             created_at = plan.get("created_at")
+    #             if isinstance(created_at, datetime):
+    #                 created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+    #                 created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+    #                 plan["created_at"] = created_at_ist.isoformat()
+    #             else:
+    #                 plan["created_at"] = str(created_at)
+
+    #             # Handle the `amounts` field
+    #             amounts = plan.get("amounts", [])
+    #             base_amount = amounts[0]["value"] if amounts else 0  # Use the first amount as the base amount
+
+    #             plan_data.append(
+    #                 {
+    #                     "id": str(plan["_id"]),
+    #                     "name": plan["name"],
+    #                     "description": plan["description"],
+    #                     "amount": base_amount,  # Use the base amount
+    #                     "amounts": amounts,  # Include the full list of amounts
+    #                     "currency": plan["currency"],
+    #                     "period": plan.get("period", ""),  # Use get to avoid KeyError
+    #                     "interval": plan.get("interval", 1),  # Use get to avoid KeyError
+    #                     "features": plan.get("features", []),  # Use get to avoid KeyError
+    #                     "razorpay_plan_id": plan["razorpay_plan_id"],
+    #                     "created_at": plan["created_at"],
+    #                     "status": plan.get("status", "active"),  # Use get to avoid KeyError
+    #                 }
+    #             )
+
+    #         return {
+    #             "data": plan_data,
+    #             "total_items": total_count,
+    #             "total_pages": (total_count + limit - 1) // limit,
+    #         }
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+    #         )

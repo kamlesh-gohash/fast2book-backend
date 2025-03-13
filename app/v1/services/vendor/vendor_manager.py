@@ -1,10 +1,12 @@
 import base64
+import json
 import random
 
 from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
+import httpx
 import pytz
 import razorpay
 import requests
@@ -57,6 +59,33 @@ def serialize_mongo_document(document):
 
 
 VALID_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+PERIOD_TO_DURATION = {
+    "daily": 1,
+    "weekly": 7,
+    "monthly": 30,
+    "yearly": 365,
+}
+
+
+def calculate_remaining_amount(current_subscription, current_plan_details):
+    current_plan_amount = int(current_plan_details["item"]["amount"])
+    current_plan_start_date = datetime.fromtimestamp(current_subscription["created_at"])
+    current_plan_period = current_plan_details["period"].lower()
+    PERIOD_TO_DURATION = {
+        "weekly": 7,
+        "monthly": 30,
+        "yearly": 365,
+    }
+    total_days_in_plan = PERIOD_TO_DURATION.get(current_plan_period, 30)
+
+    # Calculate remaining days and amount
+    current_date = datetime.now()
+    subscription_end_date = current_plan_start_date + timedelta(days=total_days_in_plan)
+    remaining_days = max((subscription_end_date - current_date).days, 0)  # Ensure it doesn’t go negative
+    remaining_amount = (current_plan_amount / total_days_in_plan) * remaining_days
+
+    return remaining_amount, remaining_days
 
 
 def validate_time_format(time_str: str):
@@ -1154,8 +1183,8 @@ class VendorManager:
 
             vendor_query = {"_id": ObjectId(current_user.vendor_id)}
             vendor_data = {}
-            if update_vendor_request.location is not None:
-                vendor_data["location"] = update_vendor_request.location.dict()
+            # if update_vendor_request.location is not None:
+            #     vendor_data["location"] = update_vendor_request.location.dict()
             if update_vendor_request.business_type is not None:
                 vendor_data["business_type"] = update_vendor_request.business_type
             if update_vendor_request.fees is not None:
@@ -1227,9 +1256,12 @@ class VendorManager:
                 vendor_data["services"] = updated_services
 
                 # Update the vendor_services_collection with the updated services
-                vendor_service_update_result = await vendor_services_collection.update_one(
-                    {"vendor_id": ObjectId(current_user.vendor_id)},
-                    {"$set": {"services": updated_services}},
+                vendor_service_update_result = await vendor_services_collection.insert_one(
+                    {
+                        "vendor_id": ObjectId(current_user.vendor_id),
+                        "vendor_user_id": ObjectId(current_user.id),
+                        "services": updated_services,
+                    }
                 )
 
             if update_vendor_request.service_details is not None:
@@ -1286,7 +1318,6 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -2218,10 +2249,108 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    async def create_vendor_subscription(
+    # async def create_vendor_subscription(
+    #     self, request: Request, token: str, vendor_subscription_request: VendorSubscriptionRequest
+    # ):
+    #     try:
+    #         current_user = await get_current_user(request=request, token=token)
+    #         if not current_user:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    #         if "vendor" not in [role.value for role in current_user.roles]:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+    #             )
+
+    #         current_user_id = str(current_user.vendor_id)
+    #         vendor = await vendor_collection.find_one({"_id": ObjectId(current_user_id)})
+    #         if not vendor:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+    #         plan_details = razorpay_client.plan.fetch(vendor_subscription_request.plan_id)
+    #         print(plan_details,'plan_details')
+    #         if not plan_details:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+    #         interval = plan_details.get("interval", 1)
+    #         period = plan_details.get("period", "monthly").lower()
+    #         # period = vendor_subscription_request.type
+
+    #         if period not in ["daily", "weekly", "monthly", "yearly"]:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
+    #             )
+    #         if period == "monthly":
+    #             total_count = vendor_subscription_request.total_count * 12
+    #         elif period == "yearly":
+    #             total_count = vendor_subscription_request.total_count
+    #         elif period == "weekly":
+    #             total_count = vendor_subscription_request.total_count * 52
+    #         elif period == "daily":
+    #             total_count = vendor_subscription_request.total_count * 365
+
+    #         razorpay_subscription_data = {
+    #             "plan_id": vendor_subscription_request.plan_id,
+    #             "total_count": total_count,
+    #             "quantity": vendor_subscription_request.quantity,
+    #             "customer_notify": True,
+    #         }
+
+    #         try:
+    #             razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
+    #         except Exception as e:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #                 detail=f"Failed to create Razorpay subscription: {str(e)}",
+    #             )
+
+    #         order_data = {
+    #             "amount": int(plan_details["item"]["amount"]),
+    #             "currency": "INR",
+    #             "receipt": f"sub_{razorpay_subscription['id']}",
+    #             "notes": {
+    #                 "subscription_id": razorpay_subscription["id"],
+    #                 "vendor_id": str(vendor["_id"]),
+    #             },
+    #             "payment_capture": 1,
+    #         }
+
+    #         try:
+    #             razorpay_order = razorpay_client.order.create(data=order_data)
+    #         except Exception as e:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #                 detail=f"Failed to create Razorpay order: {str(e)}",
+    #             )
+    #         vendor_update_data = {
+    #             "razorpay_order_id": razorpay_order["id"],
+    #         }
+
+    #         result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
+    #         if result.modified_count == 0:
+    #             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
+
+    #         return {
+    #             "subscription_id": razorpay_subscription["id"],
+    #             "order_id": razorpay_order["id"],
+    #             "amount": order_data["amount"],
+    #             "currency": order_data["currency"],
+    #             # "paymnet_link_id": payment_link["id"],
+    #             # "payment_link": payment_link["short_url"],
+    #         }
+
+    #     except HTTPException as e:
+    #         raise e
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #             detail=f"An unexpected error occurred: {str(ex)}",
+    #         )
+
+    async def create_or_upgrade_vendor_subscription(
         self, request: Request, token: str, vendor_subscription_request: VendorSubscriptionRequest
     ):
         try:
+            # Authenticate and authorize the user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
@@ -2231,13 +2360,23 @@ class VendorManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
+            # Fetch the vendor's details
             current_user_id = str(current_user.vendor_id)
             vendor = await vendor_collection.find_one({"_id": ObjectId(current_user_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            # Fetch the new plan details
             plan_details = razorpay_client.plan.fetch(vendor_subscription_request.plan_id)
             if not plan_details:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+            # Ensure plan_details["item"] is a dictionary
+            if isinstance(plan_details["item"], str):
+                plan_details["item"] = json.loads(plan_details["item"])
+
+            # Now you can safely access plan_details["item"]["amount"]
+            new_plan_amount = int(plan_details["item"]["amount"])
 
             interval = plan_details.get("interval", 1)
             period = plan_details.get("period", "monthly").lower()
@@ -2246,6 +2385,7 @@ class VendorManager:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
                 )
+
             if period == "monthly":
                 total_count = vendor_subscription_request.total_count * 12
             elif period == "yearly":
@@ -2262,6 +2402,55 @@ class VendorManager:
                 "customer_notify": True,
             }
 
+            # Check if the vendor has an active subscription
+            if vendor.get("razorpay_subscription_id"):
+                # Fetch the current subscription details from Razorpay
+                current_subscription_id = vendor["razorpay_subscription_id"]
+                try:
+                    current_subscription = razorpay_client.subscription.fetch(current_subscription_id)
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to fetch current subscription details: {str(e)}",
+                    )
+
+                # Fetch the plan details for the current subscription
+                try:
+                    current_plan_id = current_subscription["plan_id"]
+                    if isinstance(current_plan_id, dict):
+                        current_plan_id = current_plan_id["id"]  # Extract the plan ID if it's a dictionary
+
+                    current_plan_details = razorpay_client.plan.fetch(current_plan_id)
+
+                    # Ensure current_plan_details["item"] is a dictionary
+                    if isinstance(current_plan_details["item"], str):
+                        current_plan_details["item"] = json.loads(current_plan_details["item"])
+
+                    # Calculate the remaining amount from the current subscription
+                    current_plan_amount = int(current_plan_details["item"]["amount"])
+                    current_plan_start_date = datetime.fromtimestamp(current_subscription["start_at"])
+                    current_plan_period = current_plan_details["period"].lower()
+
+                    total_days_in_plan = PERIOD_TO_DURATION.get(current_plan_period, 30)
+                    # Calculate the unused portion of the current subscription
+                    current_date = datetime.now()
+                    subscription_end_date = current_plan_start_date + timedelta(days=total_days_in_plan)
+                    days_used = (subscription_end_date - current_date).days
+                    remaining_days = (subscription_end_date - current_date).days
+                    remaining_amount = (current_plan_amount / total_days_in_plan) * remaining_days
+
+                    # Deduct the remaining amount from the new plan's cost
+                    adjusted_amount = max(new_plan_amount - remaining_amount, 0)  # Ensure it doesn’t go negative
+                    adjusted_amount = int(round(adjusted_amount))  # Round to the nearest integer
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to fetch or process current plan details: {str(e)}",
+                    )
+            else:
+                adjusted_amount = int(plan_details["item"]["amount"])
+
+            # Create a new subscription with the adjusted amount
             try:
                 razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
             except Exception as e:
@@ -2269,8 +2458,10 @@ class VendorManager:
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to create Razorpay subscription: {str(e)}",
                 )
+
+            # Create a new order for the adjusted amount
             order_data = {
-                "amount": int(plan_details["item"]["amount"]),
+                "amount": adjusted_amount,
                 "currency": "INR",
                 "receipt": f"sub_{razorpay_subscription['id']}",
                 "notes": {
@@ -2287,6 +2478,8 @@ class VendorManager:
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to create Razorpay order: {str(e)}",
                 )
+
+            # Update the vendor's subscription details
             vendor_update_data = {
                 "razorpay_order_id": razorpay_order["id"],
             }
@@ -2300,8 +2493,6 @@ class VendorManager:
                 "order_id": razorpay_order["id"],
                 "amount": order_data["amount"],
                 "currency": order_data["currency"],
-                # "paymnet_link_id": payment_link["id"],
-                # "payment_link": payment_link["short_url"],
             }
 
         except HTTPException as e:
@@ -2313,16 +2504,20 @@ class VendorManager:
             )
 
     async def verify_subscription_payment(self, request: Request, token: str, subscription_id: str):
+
         try:
+            # Get the current user
             current_user = await get_current_user(request=request, token=token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
+            # Check if the user has the "vendor" role
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
+            # Fetch subscription details from Razorpay
             try:
                 subscription_details = razorpay_client.subscription.fetch(subscription_id)
             except Exception as e:
@@ -2331,24 +2526,37 @@ class VendorManager:
                     detail=f"Failed to fetch Razorpay subscription: {str(e)}",
                 )
 
+            # Check subscription status (case-insensitive)
             subscription_status = subscription_details.get("status", "").lower()
-            is_active = subscription_status in ["Active", "authenticated"]
+            is_active = subscription_status in ["active", "authenticated", "completed", "created"]
 
+            # Fetch vendor details
             current_user_id = str(current_user.vendor_id)
             vendor = await vendor_collection.find_one({"_id": ObjectId(current_user_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
+            # If the subscription is active, proceed with cancellation of the existing plan and update with the new plan
             if is_active:
+                # Check if the vendor has an existing subscription
+                if vendor.get("razorpay_subscription_id"):
+                    existing_subscription_id = vendor["razorpay_subscription_id"]
+                    try:
+                        # Cancel the existing subscription
+                        razorpay_client.subscription.cancel(existing_subscription_id)
+                    except Exception as e:
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to cancel existing subscription: {str(e)}",
+                        )
+
+                # Update vendor details with the new subscription
                 vendor_update_data = {
                     "razorpay_subscription_id": subscription_id,
                     "is_subscription": True,
                     "manage_plan": subscription_details.get("plan_id"),
                 }
                 await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
-            # if result.modified_count == 0:
-            #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
-            # result["id"] = str(result["_id"])
 
             # Return the subscription status and details
             return {
@@ -2391,6 +2599,7 @@ class VendorManager:
 
             plan_id = subscription.get("plan_id")
             plan_details = razorpay_client.plan.fetch(plan_id)
+            plan_data = await plan_collection.find_one({"razorpay_plan_id": str(plan_id)})
 
             def format_timestamp(timestamp):
                 return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S") if timestamp else None
@@ -2412,7 +2621,7 @@ class VendorManager:
             plan_details["item"]["amount"] = format_amount(plan_details["item"].get("amount"))
             plan_details["item"]["unit_amount"] = format_amount(plan_details["item"].get("unit_amount"))
             plan_details["created_at"] = format_timestamp(plan_details.get("created_at"))
-
+            plan_details["features"] = plan_data.get("features")
             # Return the formatted data
             return {
                 "vendor": {
@@ -2495,50 +2704,62 @@ class VendorManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
-            # Fetch the requested plan
+            # Fetch the requested plan by ID
             plan = await plan_collection.find_one({"_id": ObjectId(plan_id)})
             if not plan:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
 
-            # Convert _id to string
-            plan["id"] = str(plan["_id"])
-            plan.pop("_id", None)
+            # Get the name of the plan
+            plan_name = plan.get("name")
+            if not plan_name:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan name not found")
+
+            # Fetch all plans with the same name
+            plans = await plan_collection.find({"name": plan_name}).to_list(length=100)
+            if not plans:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No plans found with the same name")
+
+            # Convert _id to string for each plan
+            for p in plans:
+                p["id"] = str(p["_id"])
+                p.pop("_id", None)
 
             # Fetch vendor details
             vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Check if vendor has an active subscription
-            new_plan_price = plan.get("amount", 0)  # Get new plan price
-            discounted_price = new_plan_price  # Default price
+            for p in plans:
+                new_plan_price = p.get("amount", 0)
+                discounted_price = new_plan_price
 
-            if "manage_plan" in vendor and vendor["manage_plan"]:
-                # Fetch current plan details
-                current_plan = await plan_collection.find_one({"razorpay_plan_id": vendor["manage_plan"]})
-                if current_plan:
-                    current_plan_price = current_plan.get("amount", 0)
+                if "manage_plan" in vendor and vendor["manage_plan"]:
+                    # Fetch current plan details
+                    current_plan = await plan_collection.find_one({"razorpay_plan_id": vendor["manage_plan"]})
+                    if current_plan:
+                        current_plan_price = current_plan.get("amount", 0)
 
-                    subscription_id = vendor.get("razorpay_subscription_id")
-                    subscription = razorpay_client.subscription.fetch(subscription_id)
-                    subscription_end_date = subscription.get("current_end")  # Assume this field exists
-                    if subscription_end_date:
-                        subscription_end_date = datetime.fromtimestamp(
-                            subscription_end_date
-                        )  # Convert timestamp to datetime
-                        today = datetime.today()
-                        remaining_days = (subscription_end_date - today).days  # Calculate remaining days
+                        # Calculate current_plan_duration based on period
+                        current_plan_period = current_plan.get("period")
+                        current_plan_duration = PERIOD_TO_DURATION.get(current_plan_period, 30)
 
-                        if remaining_days > 0:
-                            # Prorate the current plan cost
-                            daily_rate = current_plan_price / 30  # Assuming monthly plans have 30 days
-                            remaining_value = daily_rate * remaining_days
+                        subscription_id = vendor.get("razorpay_subscription_id")
+                        subscription = razorpay_client.subscription.fetch(subscription_id)
+                        subscription_start_date = subscription.get("start_at")
+                        if subscription_start_date:
+                            subscription_start_date = datetime.fromtimestamp(subscription_start_date)
+                            today = datetime.now()
+                            subscription_end_date = subscription_start_date + timedelta(days=current_plan_duration)
 
-                            # Deduct from the new plan price
-                            discounted_price = max(new_plan_price - remaining_value, 0)  # Ensure it doesn’t go negative
-
-            # Add the calculated price to the response
-            plan["amount"] = discounted_price
+                            remaining_days = (subscription_end_date - today).days
+                            if remaining_days > 0:
+                                # Calculate daily rate based on the current plan's price and duration
+                                daily_rate = current_plan_price / current_plan_duration
+                                remaining_value = daily_rate * remaining_days
+                                # Deduct the remaining value from the new plan's price
+                                discounted_price = max(new_plan_price - remaining_value, 0)
+                # Add the calculated price to the response
+                p["amount"] = discounted_price
 
             # Fetch active payments
             payments = await payment_collection.find({"status": "active"}).to_list(length=100)
@@ -2546,16 +2767,18 @@ class VendorManager:
                 payment["id"] = str(payment["_id"])
                 payment.pop("_id", None)
 
-            plan["vendor"] = {
-                "id": str(current_user.id),
-                "first_name": current_user.first_name,
-                "email": current_user.email,
-                "phone": current_user.phone,
+            # Prepare the response
+            response = {
+                "vendor": {
+                    "id": str(current_user.id),
+                    "first_name": current_user.first_name,
+                    "email": current_user.email,
+                    "phone": current_user.phone,
+                },
+                "payments": payments,
+                "plans": plans,  # Include all plans here
             }
-            plan["payments"] = payments
-
-            return plan
-
+            return response
         except HTTPException as e:
             raise e
         except Exception as ex:
@@ -2563,6 +2786,99 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
+
+    # async def get_plan(self, request: Request, token: str, plan_id: str):
+    #     try:
+    #         # Get the current user
+    #         current_user = await get_current_user(request=request, token=token)
+    #         if not current_user:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    #         if "vendor" not in [role.value for role in current_user.roles]:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+    #             )
+
+    #         # Fetch the requested plan
+    #         plan = await plan_collection.find_one({"_id": ObjectId(plan_id)})
+    #         if not plan:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+    #         # Convert _id to string
+    #         plan["id"] = str(plan["_id"])
+    #         plan.pop("_id", None)
+
+    #         # Fetch vendor details
+    #         vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+    #         if not vendor:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+    #         # Check if vendor has an active subscription
+    #         amounts = plan.get("amounts", [])  # Get all amounts for the plan
+    #         discounted_amounts = []  # Store discounted amounts for each period
+
+    #         if "manage_plan" in vendor and vendor["manage_plan"]:
+    #             # Fetch current plan details
+    #             current_plan = await plan_collection.find_one({"razorpay_plan_id": vendor["manage_plan"]})
+    #             if current_plan:
+    #                 current_plan_amounts = current_plan.get("amounts", [])
+    #                 current_plan_price = current_plan_amounts[0]["value"] if current_plan_amounts else 0  # Use the first amount as the base price
+
+    #                 subscription_id = vendor.get("razorpay_subscription_id")
+    #                 subscription = razorpay_client.subscription.fetch(subscription_id)
+    #                 subscription_end_date = subscription.get("current_end")  # Assume this field exists
+    #                 if subscription_end_date:
+    #                     subscription_end_date = datetime.fromtimestamp(
+    #                         subscription_end_date
+    #                     )  # Convert timestamp to datetime
+    #                     today = datetime.today()
+    #                     remaining_days = (subscription_end_date - today).days  # Calculate remaining days
+
+    #                     if remaining_days > 0:
+    #                         # Prorate the current plan cost
+    #                         daily_rate = current_plan_price / 30  # Assuming monthly plans have 30 days
+    #                         remaining_value = daily_rate * remaining_days
+
+    #                         # Deduct from each amount in the new plan
+    #                         for amount_item in amounts:
+    #                             new_plan_price = amount_item["value"]
+    #                             discounted_price = max(new_plan_price - remaining_value, 0)  # Ensure it doesn’t go negative
+    #                             discounted_amounts.append({
+    #                                 "type": amount_item["type"],
+    #                                 "value": discounted_price,
+    #                             })
+    #             else:
+    #                 # If no current plan, use the original amounts
+    #                 discounted_amounts = amounts
+    #         else:
+    #             # If no active subscription, use the original amounts
+    #             discounted_amounts = amounts
+
+    #         # Add the calculated amounts to the response
+    #         plan["amounts"] = discounted_amounts
+
+    #         # Fetch active payments
+    #         payments = await payment_collection.find({"status": "active"}).to_list(length=100)
+    #         for payment in payments:
+    #             payment["id"] = str(payment["_id"])
+    #             payment.pop("_id", None)
+
+    #         plan["vendor"] = {
+    #             "id": str(current_user.id),
+    #             "first_name": current_user.first_name,
+    #             "email": current_user.email,
+    #             "phone": current_user.phone,
+    #         }
+    #         plan["payments"] = payments
+
+    #         return plan
+
+    #     except HTTPException as e:
+    #         raise e
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #             detail=f"An unexpected error occurred: {str(ex)}",
+    #         )
 
     async def vendor_users_list_for_slot(self, request: Request, token: str):
         try:
@@ -2732,113 +3048,194 @@ class VendorManager:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def upgrade_vendor_subscription(
-        self, request: Request, token: str, upgrade_subscription_request: VendorSubscriptionRequest
+        self, request: Request, token: str, sub_id: str, upgrade_subscription_request: VendorSubscriptionRequest
     ):
         try:
-            # Authenticate and authorize the user
-            current_user = await get_current_user(request=request, token=token)
+            current_user = await get_current_user(request, token)
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
-                )
-
             # Fetch the vendor's details
-            current_user_id = str(current_user.vendor_id)
-            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user_id)})
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Check if the vendor has an active subscription
+            # Fetch the current subscription details
             if not vendor.get("razorpay_subscription_id"):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail="No active subscription found to upgrade"
-                )
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active subscription found")
 
-            # Fetch the current subscription details from Razorpay
             current_subscription_id = vendor["razorpay_subscription_id"]
-            try:
-                current_subscription = razorpay_client.subscription.fetch(current_subscription_id)
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to fetch current subscription details: {str(e)}",
-                )
 
-            # Fetch the new plan details
-            new_plan_details = razorpay_client.plan.fetch(upgrade_subscription_request.plan_id)
-            if not new_plan_details:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="New plan not found")
-
-            # Calculate the remaining amount from the current subscription
-            current_plan_amount = int(current_subscription["plan"]["item"]["amount"])
-            current_plan_start_date = datetime.fromtimestamp(current_subscription["start_at"])
-            current_plan_period = current_subscription["plan"]["period"].lower()
-
-            # Calculate the unused portion of the current subscription
-            current_date = datetime.now()
-            days_used = (current_date - current_plan_start_date).days
-            total_days_in_plan = 30 if current_plan_period == "monthly" else 365  # Adjust based on the plan period
-            remaining_days = total_days_in_plan - days_used
-            remaining_amount = (current_plan_amount / total_days_in_plan) * remaining_days
-
-            # Deduct the remaining amount from the new plan's cost
-            new_plan_amount = int(new_plan_details["item"]["amount"])
-            adjusted_amount = new_plan_amount - remaining_amount
-            print(adjusted_amount, "adjusted amount")
-            # Create a new subscription with the upgraded plan
-            razorpay_subscription_data = {
-                "plan_id": upgrade_subscription_request.plan_id,
-                "total_count": upgrade_subscription_request.total_count,
-                "quantity": upgrade_subscription_request.quantity,
-                "customer_notify": True,
+            # Set up authentication for Razorpay API
+            auth_string = f"{RAZOR_PAY_KEY_ID}:{RAZOR_PAY_KEY_SECRET}"
+            basic_auth = base64.b64encode(auth_string.encode("utf-8")).decode("utf-8")
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Basic {basic_auth}",
             }
 
-            try:
-                razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to create Razorpay subscription: {str(e)}",
-                )
+            # Fetch current subscription details from Razorpay
+            razorpay_api_url = f"https://api.razorpay.com/v1/subscriptions/{current_subscription_id}"
+            async with httpx.AsyncClient() as client:
+                response = await client.get(razorpay_api_url, headers=headers)
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to fetch Razorpay subscription: {response.text}",
+                    )
+                current_subscription = response.json()
+            # Fetch current plan details from Razorpay
+            current_plan_id = current_subscription.get("plan_id")
+            current_plan_url = f"https://api.razorpay.com/v1/plans/{current_plan_id}"
+            async with httpx.AsyncClient() as client:
+                response = await client.get(current_plan_url, headers=headers)
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to fetch current plan details: {response.text}",
+                    )
+                current_plan_details = response.json()
 
-            # Create a new order for the adjusted amount
-            order_data = {
-                "amount": adjusted_amount,
-                "currency": "INR",
-                "receipt": f"sub_{razorpay_subscription['id']}",
-                "notes": {
-                    "subscription_id": razorpay_subscription["id"],
-                    "vendor_id": str(vendor["_id"]),
-                },
-                "payment_capture": 1,
-            }
-            print(order_data, "order data")
+            # Calculate remaining amount for the current subscription
+            remaining_amount, remaining_days = calculate_remaining_amount(current_subscription, current_plan_details)
 
-            try:
-                razorpay_order = razorpay_client.order.create(data=order_data)
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to create Razorpay order: {str(e)}",
-                )
+            # Check if the change should be immediate or at next cycle
+            if upgrade_subscription_request.schedule_change_at == "now":
+                # For immediate change, we need to cancel the existing subscription and create a new one
 
-            # Update the vendor's subscription details
-            vendor_update_data = {
-                "razorpay_order_id": razorpay_order["id"],
-            }
+                # 1. Cancel the current subscription
+                # cancel_url = f"https://api.razorpay.com/v1/subscriptions/{current_subscription_id}/cancel"
+                # async with httpx.AsyncClient() as client:
+                #     response = await client.post(cancel_url, headers=headers)
+                #     if response.status_code != 200:
+                #         raise HTTPException(
+                #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                #             detail=f"Failed to cancel existing subscription: {response.text}",
+                #         )
 
+                # 2. Create a new subscription with the updated plan
+                create_data = {
+                    "plan_id": upgrade_subscription_request.plan_id,
+                    "quantity": upgrade_subscription_request.quantity,
+                    "total_count": upgrade_subscription_request.total_count,
+                    "customer_notify": 1,
+                }
+
+                create_url = "https://api.razorpay.com/v1/subscriptions"
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(create_url, json=create_data, headers=headers)
+                    if response.status_code != 200:
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to create new Razorpay subscription: {response.text}",
+                        )
+                    updated_subscription = response.json()
+
+                # 3. Handle payment adjustments or refunds
+                new_plan_url = f"https://api.razorpay.com/v1/plans/{upgrade_subscription_request.plan_id}"
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(new_plan_url, headers=headers)
+                    if response.status_code != 200:
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to fetch new plan details: {response.text}",
+                        )
+                    new_plan_details = response.json()
+
+                new_plan_amount = int(new_plan_details["item"]["amount"])
+                total_amount_paid = new_plan_amount
+
+                if total_amount_paid > remaining_amount:
+                    # Vendor paid more than the remaining amount, so issue a refund
+                    refund_amount = total_amount_paid - remaining_amount
+                    order_id = vendor.get("razorpay_order_id")
+                    payment_details_url = f"https://api.razorpay.com/v1/orders/{order_id}/payments"
+
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(payment_details_url, headers=headers)
+                        if response.status_code != 200:
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail=f"Failed to fetch payment details: {response.text}",
+                            )
+
+                        payment_data = response.json()
+
+                        if payment_data and "items" in payment_data and len(payment_data["items"]) > 0:
+                            payment_id = payment_data["items"][0]["id"]  # Get the first payment ID
+                            print(payment_id, "payment_id")
+                        else:
+                            raise HTTPException(
+                                status_code=status.HTTP_404_NOT_FOUND, detail="No payment found for the given order ID"
+                            )
+
+                    # Process refund using the payment ID
+                    refund_url = f"https://api.razorpay.com/v1/payments/{payment_id}/refund"
+                    refund_data = {"amount": int(refund_amount * 100)}  # Razorpay expects amount in paise
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(refund_url, json=refund_data, headers=headers)
+                        if response.status_code != 200:
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail=f"Failed to process refund: {response.text}",
+                            )
+
+                # Update the vendor's subscription details in the database
+                vendor_update_data = {
+                    "razorpay_subscription_id": updated_subscription["id"],
+                    "manage_plan": upgrade_subscription_request.plan_id,
+                    "subscription_quantity": upgrade_subscription_request.quantity,
+                    "subscription_updated_at": datetime.now(),
+                }
+
+                message = "Subscription updated successfully (immediate change)"
+
+            else:
+                # Schedule the change for the next billing cycle
+                update_data = {
+                    "plan_id": upgrade_subscription_request.plan_id,
+                    "quantity": upgrade_subscription_request.quantity,
+                    "remaining_count": upgrade_subscription_request.total_count,
+                    "schedule_change_at": "cycle_end",  # Schedule for next billing cycle
+                    "customer_notify": 1,
+                }
+
+                # Make a PATCH request to Razorpay API to update the subscription
+                razorpay_api_url = f"https://api.razorpay.com/v1/subscriptions/{current_subscription_id}"
+                async with httpx.AsyncClient() as client:
+                    response = await client.patch(razorpay_api_url, json=update_data, headers=headers)
+                    if response.status_code != 200:
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to update Razorpay subscription: {response.text}",
+                        )
+                    updated_subscription = response.json()
+
+                # Update the vendor's subscription details in the database
+                vendor_update_data = {
+                    "manage_plan": upgrade_subscription_request.plan_id,
+                    "subscription_quantity": upgrade_subscription_request.quantity,
+                    "subscription_updated_at": datetime.now(),
+                }
+
+                message = "Subscription updated successfully (effective next billing cycle)"
+
+            # Update vendor information in the database
             result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
             if result.modified_count == 0:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
 
             return {
-                "subscription_id": razorpay_subscription["id"],
-                "order_id": razorpay_order["id"],
-                "amount": order_data["amount"],
-                "currency": order_data["currency"],
+                "status": "SUCCESS",
+                "message": message,
+                "data": {
+                    "subscription_id": updated_subscription["id"],
+                    "effective_from": (
+                        "immediately"
+                        if upgrade_subscription_request.schedule_change_at == "now"
+                        else "next billing cycle"
+                    ),
+                },
             }
 
         except HTTPException as e:

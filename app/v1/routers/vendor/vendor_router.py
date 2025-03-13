@@ -698,7 +698,7 @@ async def create_vendor_subscription(
 ):
     try:
         # Pass data to user manager for processing
-        result = await vendor_manager.create_vendor_subscription(
+        result = await vendor_manager.create_or_upgrade_vendor_subscription(
             request=request, token=token, vendor_subscription_request=vendor_subscription_request
         )
         return success({"message": "Vendor subscription created successfully", "data": result})
@@ -900,9 +900,10 @@ async def get_vendor_service(
         )
 
 
-@router.post("/upgrade-vendor-subscription", status_code=status.HTTP_200_OK)
+@router.patch("/upgrade-vendor-subscription/{sub_id}", status_code=status.HTTP_200_OK)
 async def upgrade_vendor_subscription(
     request: Request,
+    sub_id: str,
     upgrade_subscription_request: VendorSubscriptionRequest,
     token: str = Depends(get_token_from_header),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
@@ -910,7 +911,7 @@ async def upgrade_vendor_subscription(
     try:
         # Pass data to vendor manager for processing
         result = await vendor_manager.upgrade_vendor_subscription(
-            request=request, token=token, upgrade_subscription_request=upgrade_subscription_request
+            request=request, token=token, sub_id=sub_id, upgrade_subscription_request=upgrade_subscription_request
         )
         return success({"message": "Vendor subscription upgraded successfully", "data": result})
     except HTTPException as http_ex:

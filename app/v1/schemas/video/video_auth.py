@@ -13,6 +13,7 @@ video_upload_validator = zon.record(
         "name": zon.string().min(1).max(50),
         "description": zon.string().min(1).max(500),
         "tags": zon.string().min(1).max(50),
+        "category": zon.string().min(1).max(50),
         "thumbnail_image": zon.string().optional(),
         "video_url": zon.string().optional(),
         "video_file": zon.string().optional(),
@@ -24,6 +25,7 @@ class VideoUploadRequest(BaseModel):
     name: str
     description: str
     tags: str
+    category: str
     thumbnail_image: Optional[str] = None
     thumbnail_image_url: Optional[str] = None
     videoType: VideoType
@@ -49,6 +51,7 @@ video_update_validator = zon.record(
         "name": zon.string().min(1).max(50).optional(),
         "description": zon.string().min(1).max(500).optional(),
         "tags": zon.string().min(1).max(50).optional(),
+        "category": zon.string().min(1).max(50).optional(),
         "thumbnail_image": zon.string().optional(),
         "thumbnail_image_url": zon.string().optional(),
         "videoType": zon.string().optional(),
@@ -62,6 +65,7 @@ class VideoUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     tags: Optional[str] = None
+    category: Optional[str] = None
     thumbnail_image: Optional[str] = None
     thumbnail_image_url: Optional[str] = None
     videoType: Optional[VideoType] = None

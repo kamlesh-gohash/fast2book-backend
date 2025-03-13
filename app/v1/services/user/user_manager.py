@@ -1624,24 +1624,30 @@ class UserManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    async def blog_list(self, page: int = 1, limit: int = 10, search: str = None) -> dict:
+    async def blog_list(self, page: int = 1, limit: int = 10, search: str = None, category: str = None) -> dict:
         """
-        Get list of all active categories.
+        Get list of all active blogs, optionally filtered by search term and category.
         """
         try:
-            # Fetch all active categories
             skip = (page - 1) * limit
             query = {}  # Start with an empty query
 
-            # If there's a search term, modify the query to search by name or category_name
+            # Add search filter if search term is provided
             if search:
                 search_regex = {"$regex": search, "$options": "i"}  # Case-insensitive search
                 query["$or"] = [
-                    {"title": search_regex},  # Search by category name (if the category is loaded)
+                    {"title": search_regex},
+                    {"content": search_regex},
                 ]
+
+            # Add category filter if category is provided
+            if category:
+                query["category"] = category  # Filter by exact category name
+
+            # Fetch blogs based on the query
             active_blogs = await blog_collection.find(query).skip(skip).limit(limit).to_list(length=100)
 
-            # Format the response with category name, status, and created_at
+            # Format the response
             blog_data = [
                 {
                     "id": str(blog["_id"]),
@@ -1659,12 +1665,13 @@ class UserManager:
                 }
                 for blog in active_blogs
             ]
-            total_blogs = await blog_collection.count_documents({})
+
+            # Count total blogs matching the query
+            total_blogs = await blog_collection.count_documents(query)
             total_pages = (total_blogs + limit - 1) // limit
+
             # Return the formatted response
             return {"data": blog_data, "total_pages": total_pages, "total_items": total_blogs}
-        except Exception as e:
-            raise e
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch list of blogs: {str(e)}"
@@ -1771,6 +1778,20 @@ class UserManager:
 
             # Return the updated notification settings
             return current_user.notification_settings
+
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    async def get_vendor_list(self, request: Request):
+        try:
+            # Get the current user
+            # current_user = await get_current_user(request=request, token=token)
+            # if not current_user:
+            #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            pass
+
+        except HTTPException as ex:
+            raise
 
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

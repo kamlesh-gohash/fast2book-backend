@@ -173,7 +173,7 @@ async def validate_otp(validate_otp_request: ValidateOtpRequest, user_manager: U
         )
 
 
-@router.get("/profile")
+@router.get("/profile", status_code=status.HTTP_200_OK)
 async def get_profile(
     request: Request, token: str = Depends(get_token_from_header), user_manager: UserManager = Depends(get_user_manager)
 ):
@@ -193,7 +193,7 @@ async def get_profile(
         )
 
 
-@router.put("/update-profile")
+@router.put("/update-profile", status_code=status.HTTP_200_OK)
 async def update_profile(
     request: Request,
     profile_update_request: UpdateProfileRequest,
@@ -477,13 +477,15 @@ async def blog_list(
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search term to filter categories by name or category name"),
+    category: str = Query(None, description="Filter blogs by category"),
     user_manager: UserManager = Depends(get_user_manager),
 ):
     # validation_result = category_list_request.validate()
     # if validation_result:
     #     return validation_result
     try:
-        result = await user_manager.blog_list(page, limit, search)
+
+        result = await user_manager.blog_list(page, limit, search, category)
         return success({"message": "Blog List found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -588,6 +590,22 @@ async def update_notification(
 ):
     try:
         result = await user_manager.update_notification(request=request, token=token)
+        return success({"message": "Notifications update successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-vednor-list", status_code=status.HTTP_200_OK)
+async def get_vendor_list(request: Request, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.get_vendor_list(request=request)
         return success({"message": "Notifications update successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
