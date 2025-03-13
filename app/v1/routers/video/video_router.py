@@ -141,10 +141,11 @@ async def delete_video(
 @router.get("/get-video-for-user", status_code=status.HTTP_200_OK)
 async def get_video_for_user(
     request: Request,
+    category: Optional[str] = Query(None, description="Filter videos by category"),
     video_manager: VideoManager = Depends(get_video_manager),
 ):
     try:
-        result = await video_manager.get_video_for_user(request=request)
+        result = await video_manager.get_video_for_user(request=request, category=category)
         return success({"message": "Video found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

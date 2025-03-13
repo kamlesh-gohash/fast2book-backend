@@ -64,6 +64,7 @@ class VideoManager:
                 "thumbnail_image": video_data.thumbnail_image,
                 "thumbnail_image_url": thumbnail_image_url,
                 "tags": video_data.tags,
+                "category": video_data.category,
                 "videoType": video_data.videoType,
                 "video_file": video_data.video_file,
                 "video_file_url": video_file_url,
@@ -182,6 +183,8 @@ class VideoManager:
                 update_data["description"] = video_data.description
             if video_data.tags is not None:
                 update_data["tags"] = video_data.tags
+            if video_data.category is not None:
+                update_data["category"] = video_data.category
             if video_data.status is not None:
                 update_data["status"] = video_data.status
             if video_data.video_file:
@@ -238,12 +241,17 @@ class VideoManager:
     async def get_video_for_user(
         self,
         request: Request,
+        category: Optional[str] = None,
     ):
         try:
+            query = {}
+            if category:
+                query["category"] = category  # Add category to the query if provided
 
-            videos = await video_collection.find().to_list(length=None)
+            videos = await video_collection.find(query).to_list(length=None)
             for video in videos:
                 video["_id"] = str(video["_id"])
+
             return videos
         except HTTPException as ex:
             raise ex

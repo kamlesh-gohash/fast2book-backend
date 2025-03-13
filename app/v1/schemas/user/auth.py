@@ -26,7 +26,7 @@ signup_validator = (
     )
     .refine(lambda data: data.get("email") or data.get("phone"), "Either email or phone is required and must be valid")
     .refine(
-        lambda data: data.get("gender") in ["male", "female", "other"],  # Validate gender values
+        lambda data: data.get("gender") in ["Male", "Female", "Don't want to Disclose"],  # Validate gender values
         "Gender must be one of: male, female, other",
     )
 )

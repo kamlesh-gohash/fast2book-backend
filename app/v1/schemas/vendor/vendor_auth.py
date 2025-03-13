@@ -59,7 +59,7 @@ class VendorCreateRequest(BaseModel):
     last_name: str
     email: EmailStr
     phone: str
-    gender: Gender = Field(default=Gender.male)
+    gender: Gender = Field(default=Gender.Male)
     roles: list[Role] = [Role.vendor]  # Default role is 'vendor'
     business_type: BusinessType = Field(default=BusinessType.individual)
     business_name: Optional[str] = Field(None, max_length=100)
@@ -164,6 +164,7 @@ update_vendor_validator = zon.record(
         "phone": zon.number().int().min(1000000000).max(9999999999).optional(),
         "vendor_address": zon.string().optional(),
         "vendor_details": zon.string().optional(),
+        # "location": zon.string().optional(),
         "is_payment_required": zon.boolean().optional(),
     }
 )
@@ -174,7 +175,7 @@ class UpdateVendorRequest(BaseModel):
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[int] = None
-    gender: Gender = Field(default=Gender.male)
+    gender: Gender = Field(default=Gender.Male)
     roles: list[Role] = [Role.vendor]
     user_image: Optional[str] = None
     user_image_url: Optional[str] = None
@@ -192,9 +193,32 @@ class UpdateVendorRequest(BaseModel):
     manage_plan: Optional[str] = None
     manage_fee_and_gst: Optional[str] = None
     manage_offer: Optional[str] = None
-    location: Optional[Location] = Field(None, description="Location details of the vendor")
+    # location: Optional[Location] = Field(None, description="Location details of the vendor")
     specialization: Optional[str] = Field(None, description="specialization of the vendor")
     status: StatusEnum = Field(default=StatusEnum.Active)
+
+    @root_validator(pre=True)
+    def check_required_fields(cls, values):
+        # Define required fields
+        required_fields = ["first_name", "last_name"]
+        missing_fields = []
+
+        # Check for missing required fields
+        for field in required_fields:
+            if field not in values or values[field] is None:
+                missing_fields.append(field)
+
+        if missing_fields:
+            # Raise a custom exception with the validation error
+            raise CustomValidationError(
+                detail={
+                    "status": "VALIDATION_ERROR",
+                    "message": f"The following fields are required: {', '.join(missing_fields)}",
+                    "data": None,
+                }
+            )
+
+        return values
 
     def validate(self):
         try:
@@ -270,7 +294,7 @@ class SignUpVendorRequest(BaseModel):
     user_image: Optional[str] = None
     user_image_url: Optional[str] = None
     # phone: Optional[str] = Field(None, min_length=10, max_length=10)
-    gender: Gender = Field(default=Gender.male)
+    gender: Gender = Field(default=Gender.Male)
     roles: list[Role] = [Role.vendor]
     business_type: BusinessType = Field(default=BusinessType.individual)
     business_name: Optional[str] = Field(None, max_length=100)
@@ -359,7 +383,7 @@ class VendorUserCreateRequest(BaseModel):
     services: List[Service]
     phone: Optional[str] = None
     fees: Optional[float] = Field(default=0.0)
-    gender: Gender = Field(default=Gender.male)
+    gender: Gender = Field(default=Gender.Male)
     status: StatusEnum = Field(default=StatusEnum.Active)
     roles: list[Role] = [Role.vendor_user]
     created_by: Optional[str] = None
@@ -455,6 +479,7 @@ vendor_subscription_validator = zon.record(
     {
         "plan_id": zon.string(),
         "vendor_id": zon.string().optional(),
+        "schedule_change_at": zon.string().optional(),
     }
 )
 
@@ -464,7 +489,9 @@ class VendorSubscriptionRequest(BaseModel):
     vendor_id: Optional[str] = None
     total_count: int
     quantity: int = 1
+    type: Optional[str] = None
     start_at: Optional[datetime] = None
+    schedule_change_at: Optional[str] = None
     expire_by: Optional[datetime] = None
 
     @root_validator(pre=True)

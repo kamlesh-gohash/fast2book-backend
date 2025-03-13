@@ -24,6 +24,7 @@ class Video(Document):
     name: str
     description: str
     tags: str
+    category: str
     thumbnail_image: Optional[str] = None
     thumbnail_image_url: Optional[str] = None
     videoType: VideoType

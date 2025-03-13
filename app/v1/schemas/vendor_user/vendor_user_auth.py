@@ -40,7 +40,7 @@ from app.v1.utils.response.response_format import validation_error
 #     last_name: str
 #     email: EmailStr
 #     phone: str
-#     gender: Gender = Field(default=Gender.male)
+#     gender: Gender = Field(default=Gender.Male)
 #     roles: list[Role] = [Role.vendor]  # Default role is 'vendor'
 #     business_type: BusinessType=Field(default=BusinessType.individual)
 #     business_name: Optional[str] = Field(None, max_length=100)
@@ -123,7 +123,7 @@ from app.v1.utils.response.response_format import validation_error
 #     last_name: Optional[str] = None
 #     email: Optional[EmailStr] = None
 #     phone: Optional[str] = None
-#     gender: Gender = Field(default=Gender.male)
+#     gender: Gender = Field(default=Gender.Male)
 #     business_type: BusinessType=Field(default=BusinessType.individual)
 #     business_name: Optional[str] = Field(None, max_length=100)
 #     business_address: Optional[str] = Field(None, max_length=255)
