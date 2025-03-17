@@ -3055,18 +3055,15 @@ class VendorManager:
             if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            # Fetch the vendor's details
             vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Fetch the current subscription details
             if not vendor.get("razorpay_subscription_id"):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active subscription found")
 
             current_subscription_id = vendor["razorpay_subscription_id"]
 
-            # Set up authentication for Razorpay API
             auth_string = f"{RAZOR_PAY_KEY_ID}:{RAZOR_PAY_KEY_SECRET}"
             basic_auth = base64.b64encode(auth_string.encode("utf-8")).decode("utf-8")
             headers = {
@@ -3074,7 +3071,6 @@ class VendorManager:
                 "Authorization": f"Basic {basic_auth}",
             }
 
-            # Fetch current subscription details from Razorpay
             razorpay_api_url = f"https://api.razorpay.com/v1/subscriptions/{current_subscription_id}"
             async with httpx.AsyncClient() as client:
                 response = await client.get(razorpay_api_url, headers=headers)
@@ -3084,7 +3080,6 @@ class VendorManager:
                         detail=f"Failed to fetch Razorpay subscription: {response.text}",
                     )
                 current_subscription = response.json()
-            # Fetch current plan details from Razorpay
             current_plan_id = current_subscription.get("plan_id")
             current_plan_url = f"https://api.razorpay.com/v1/plans/{current_plan_id}"
             async with httpx.AsyncClient() as client:
@@ -3096,14 +3091,11 @@ class VendorManager:
                     )
                 current_plan_details = response.json()
 
-            # Calculate remaining amount for the current subscription
             remaining_amount, remaining_days = calculate_remaining_amount(current_subscription, current_plan_details)
 
-            # Check if the change should be immediate or at next cycle
             if upgrade_subscription_request.schedule_change_at == "now":
                 # For immediate change, we need to cancel the existing subscription and create a new one
 
-                # 1. Cancel the current subscription
                 # cancel_url = f"https://api.razorpay.com/v1/subscriptions/{current_subscription_id}/cancel"
                 # async with httpx.AsyncClient() as client:
                 #     response = await client.post(cancel_url, headers=headers)
@@ -3113,7 +3105,6 @@ class VendorManager:
                 #             detail=f"Failed to cancel existing subscription: {response.text}",
                 #         )
 
-                # 2. Create a new subscription with the updated plan
                 create_data = {
                     "plan_id": upgrade_subscription_request.plan_id,
                     "quantity": upgrade_subscription_request.quantity,
@@ -3131,7 +3122,6 @@ class VendorManager:
                         )
                     updated_subscription = response.json()
 
-                # 3. Handle payment adjustments or refunds
                 new_plan_url = f"https://api.razorpay.com/v1/plans/{upgrade_subscription_request.plan_id}"
                 async with httpx.AsyncClient() as client:
                     response = await client.get(new_plan_url, headers=headers)
@@ -3146,7 +3136,6 @@ class VendorManager:
                 total_amount_paid = new_plan_amount
 
                 if total_amount_paid > remaining_amount:
-                    # Vendor paid more than the remaining amount, so issue a refund
                     refund_amount = total_amount_paid - remaining_amount
                     order_id = vendor.get("razorpay_order_id")
                     payment_details_url = f"https://api.razorpay.com/v1/orders/{order_id}/payments"
@@ -3160,18 +3149,17 @@ class VendorManager:
                             )
 
                         payment_data = response.json()
-
+                        print(payment_data, "payment_data")
                         if payment_data and "items" in payment_data and len(payment_data["items"]) > 0:
-                            payment_id = payment_data["items"][0]["id"]  # Get the first payment ID
+                            payment_id = payment_data["items"][0]["id"]
                             print(payment_id, "payment_id")
                         else:
                             raise HTTPException(
                                 status_code=status.HTTP_404_NOT_FOUND, detail="No payment found for the given order ID"
                             )
 
-                    # Process refund using the payment ID
                     refund_url = f"https://api.razorpay.com/v1/payments/{payment_id}/refund"
-                    refund_data = {"amount": int(refund_amount * 100)}  # Razorpay expects amount in paise
+                    refund_data = {"amount": int(refund_amount * 100)}
                     async with httpx.AsyncClient() as client:
                         response = await client.post(refund_url, json=refund_data, headers=headers)
                         if response.status_code != 200:
@@ -3180,7 +3168,6 @@ class VendorManager:
                                 detail=f"Failed to process refund: {response.text}",
                             )
 
-                # Update the vendor's subscription details in the database
                 vendor_update_data = {
                     "razorpay_subscription_id": updated_subscription["id"],
                     "manage_plan": upgrade_subscription_request.plan_id,
@@ -3191,16 +3178,14 @@ class VendorManager:
                 message = "Subscription updated successfully (immediate change)"
 
             else:
-                # Schedule the change for the next billing cycle
                 update_data = {
                     "plan_id": upgrade_subscription_request.plan_id,
                     "quantity": upgrade_subscription_request.quantity,
                     "remaining_count": upgrade_subscription_request.total_count,
-                    "schedule_change_at": "cycle_end",  # Schedule for next billing cycle
+                    "schedule_change_at": "cycle_end",
                     "customer_notify": 1,
                 }
 
-                # Make a PATCH request to Razorpay API to update the subscription
                 razorpay_api_url = f"https://api.razorpay.com/v1/subscriptions/{current_subscription_id}"
                 async with httpx.AsyncClient() as client:
                     response = await client.patch(razorpay_api_url, json=update_data, headers=headers)
@@ -3211,7 +3196,6 @@ class VendorManager:
                         )
                     updated_subscription = response.json()
 
-                # Update the vendor's subscription details in the database
                 vendor_update_data = {
                     "manage_plan": upgrade_subscription_request.plan_id,
                     "subscription_quantity": upgrade_subscription_request.quantity,
@@ -3220,7 +3204,6 @@ class VendorManager:
 
                 message = "Subscription updated successfully (effective next billing cycle)"
 
-            # Update vendor information in the database
             result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
             if result.modified_count == 0:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")

@@ -606,7 +606,25 @@ async def update_notification(
 async def get_vendor_list(request: Request, user_manager: UserManager = Depends(get_user_manager)):
     try:
         result = await user_manager.get_vendor_list(request=request)
-        return success({"message": "Notifications update successfully", "data": result})
+        return success({"message": "Vendors list found successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-vendor-slot", status_code=status.HTTP_200_OK)
+async def get_vendor_slot(
+    vendor_id: str, request: Request, date: str = Query(None), user_manager: UserManager = Depends(get_user_manager)
+):
+    try:
+        result = await user_manager.get_vendor_slot(vendor_id=vendor_id, request=request, date=date)
+        return success({"message": "Vendor slot found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
