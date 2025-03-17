@@ -618,33 +618,51 @@ class SuperUserManager:
 
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
             # Aggregate count of vendors for each plan
             pipeline = [
                 {
-                    "$group": {
-                        "_id": "$razorpay_plan_id",
-                        "vendor_count": {"$sum": 1},
-                        "vendor_ids": {"$push": "$vendor_id"},
+                    "$match": {
+                        "is_subscription": True  # Only consider vendors with active subscriptions
                     }
                 },
-                {"$sort": {"vendor_count": ASCENDING}},
+                {
+                    "$group": {
+                        "_id": "$manage_plan",  # Group by the plan ID
+                        "vendor_count": {"$sum": 1}  # Count the number of vendors in each group
+                    }
+                },
+                {
+                    "$lookup": {
+                        "from": "plans",
+                        "localField": "_id",
+                        "foreignField": "razorpay_plan_id",
+                        "as": "plan_details"
+                    }
+                },
+                {
+                    "$unwind": "$plan_details"  # Unwind the plan details array
+                },
+                {
+                    "$project": {
+                        "plan_id": "$_id",
+                        "plan_name": "$plan_details.name",
+                        "description": "$plan_details.description",
+                        "vendor_count": 1
+                    }
+                }
             ]
 
-            plan_counts = await subscription_collection.aggregate(pipeline).to_list(None)
+            plan_counts = await vendor_collection.aggregate(pipeline).to_list(None)
 
-            # Fetch plan details and vendor details
+            # Fetch vendor details for each plan
             result = []
             for plan in plan_counts:
-                plan_details = await plan_collection.find_one(
-                    {"razorpay_plan_id": plan["_id"]}, {"name": 1, "description": 1}
-                )
-
                 vendors = await vendor_collection.find(
-                    {"_id": {"$in": [ObjectId(v_id) for v_id in plan["vendor_ids"]]}},
-                    {"business_name": 1, "category_name": 1, "services": 1},
+                    {"manage_plan": plan["plan_id"], "is_subscription": True},
+                    {"business_name": 1, "category_name": 1, "services": 1}
                 ).to_list(None)
 
                 vendor_data = [
@@ -659,11 +677,10 @@ class SuperUserManager:
 
                 result.append(
                     {
-                        "plan_id": plan["_id"],
-                        "plan_name": plan_details["name"] if plan_details else "Unknown",
-                        "description": plan_details["description"] if plan_details else "No description",
+                        "plan_id": plan["plan_id"],
+                        "plan_name": plan["plan_name"],
+                        "description": plan["description"],
                         "vendor_count": plan["vendor_count"],
-                        "vendors": vendor_data,
                     }
                 )
 
@@ -671,6 +688,9 @@ class SuperUserManager:
                 "total_plans": len(result),
                 "plans": result,
             }
+
+        except HTTPException as e:
+            raise e
 
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))

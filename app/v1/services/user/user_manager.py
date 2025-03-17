@@ -1784,14 +1784,265 @@ class UserManager:
 
     async def get_vendor_list(self, request: Request):
         try:
-            # Get the current user
-            # current_user = await get_current_user(request=request, token=token)
-            # if not current_user:
-            #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-            pass
+            cursor = category_collection.aggregate([
+                {"$match": {"status": "active"}},  
+                {
+                    "$lookup": { 
+                        "from": "services",
+                        "localField": "_id",
+                        "foreignField": "category_id",
+                        "as": "services"
+                    }
+                },
+                {
+                    "$lookup": { 
+                        "from": "vendors",
+                        "let": {"category_id_str": {"$toString": "$_id"}},
+                        "pipeline": [
+                            {
+                                "$match": {
+                                    "$expr": {"$eq": ["$category_id", "$$category_id_str"]},  
+                                    "status": "active",
+                                    "is_subscription": True
+                                }
+                            },
+                            # For business type - lookup the creator user
+                            {
+                                "$lookup": {  
+                                    "from": "users",
+                                    "let": {
+                                        "vendor_id": {"$toString": "$_id"}
+                                    },
+                                    "pipeline": [
+                                        {
+                                            "$match": {
+                                                "$expr": {
+                                                    "$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "$match": {
+                                                "roles": "vendor_user"
+                                            }
+                                        }
+                                    ],
+                                    "as": "creator_user"
+                                }
+                            },
+                            {
+                                "$lookup": {  
+                                    "from": "users",
+                                    "let": {
+                                        "vendor_id": {"$toString": "$_id"}
+                                    },
+                                    "pipeline": [
+                                        {
+                                            "$match": {
+                                                "$expr": {
+                                                    "$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]
+                                                }
+                                            }
+                                        }
+                                    ],
+                                    "as": "vendor_user"
+                                }
+                            },
+                            {
+                                "$addFields": {
+                                    "user_details": {
+                                        "$cond": {
+                                            "if": {"$eq": ["$business_type", "business"]},
+                                            "then": {"$arrayElemAt": ["$creator_user", 0]},
+                                            "else": {"$arrayElemAt": ["$vendor_user", 0]}
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "$addFields": { 
+                                    "vendor_id": "$user_details._id",
+                                    "vendor_first_name": "$user_details.first_name",
+                                    "vendor_last_name": "$user_details.last_name",
+                                    "vendor_image": "$user_details.user_image",
+                                    "vendor_image_url": "$user_details.user_image_url",
+                                }
+                            }
+                        ],
+                        "as": "vendors"
+                    }
+                },
+                {
+                    "$project": { 
+                        "_id": 0,
+                        "category": "$name",
+                        "category_slug": "$slug",
+                        "services": {
+                            "$map": { 
+                                "input": "$services",
+                                "as": "service",
+                                "in": {
+                                    "service_id": "$$service._id",
+                                    "name": "$$service.name",
+                                    "service_image": "$$service.service_image",
+                                    "service_image_url": "$$service.service_image_url",
+                                    "category_name": "$$service.category_name",
+                                    "category_slug": "$$service.category_slug"
+                                }
+                            }
+                        },
+                        "vendors": {
+                            "$map": { 
+                                "input": "$vendors",
+                                "as": "vendor",
+                                "in": {
+                                    "vendor_id": "$$vendor.vendor_id",
+                                    "business_name": "$$vendor.business_name",
+                                    "business_type": "$$vendor.business_type",
+                                    "vendor_first_name": "$$vendor.vendor_first_name",
+                                    "vendor_last_name": "$$vendor.vendor_last_name",
+                                    "vendor_image": "$$vendor.vendor_image",
+                                    "vendor_image_url": "$$vendor.vendor_image_url",
+                                }
+                            }
+                        }
+                    }
+                }
+            ])
 
-        except HTTPException as ex:
+            result = await cursor.to_list(length=100)
+
+            data = {}
+            for item in result:
+                category = item["category"]
+                services = item["services"]
+                vendors = item["vendors"]
+
+                data[category] = {
+                    "services": services,
+                    "vendors": vendors
+                }
+
+                for service in data[category]["services"]:
+                    service["service_id"] = str(service["service_id"])
+
+                for vendor in data[category]["vendors"]:
+                    vendor["vendor_id"] = str(vendor["vendor_id"])
+
+            return data
+
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}"
+            )
+        
+    async def get_vendor_slot(self, request: Request, vendor_id: str, date: str = None):
+        try:
+            if not ObjectId.is_valid(vendor_id):
+                print("Invalid vendor ID")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid vendor ID")
+
+            vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_id)})
+            if not vendor_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            if not date:
+                date = datetime.now().strftime("%Y-%m-%d")
+
+            try:
+                date_obj = datetime.strptime(date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD"
+                )
+
+            vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_user.get("vendor_id"))})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor found")
+
+            if vendor.get("business_type") == "business":
+                user = await user_collection.find_one({"_id": ObjectId(vendor_id), "roles": "vendor_user"})
+                if not user:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+            else:
+                user = await user_collection.find_one({"_id": ObjectId(vendor_id)})
+                if not user:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+
+            slots = vendor_user.get("availability_slots")
+            if not slots:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No slots found for the vendor")
+
+            day_of_week = date_obj.strftime("%A")
+            filtered_slots = None
+            for slot in slots:
+                if slot.get("day") == day_of_week:
+                    filtered_slots = slot.get("time_slots")
+                    break
+
+            if not filtered_slots:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No slots found for {day_of_week}")
+
+            for slot in filtered_slots:
+                if "start_time" in slot and isinstance(slot["start_time"], datetime):
+                    slot["start_time"] = slot["start_time"].isoformat()
+                if "end_time" in slot and isinstance(slot["end_time"], datetime):
+                    slot["end_time"] = slot["end_time"].isoformat()
+
+            for slot in filtered_slots:
+                slot_start_time = slot["start_time"]
+                slot_end_time = slot["end_time"]
+
+                total_bookings_for_slot = await booking_collection.count_documents(
+                    {
+                        "vendor_user_id": str(vendor_id),
+                        "booking_date": date,
+                        "payment_status": "paid",
+                        "time_slot": {"$gte": slot_start_time, "$lt": slot_end_time},
+                    }
+                )
+                slot["total_bookings"] = total_bookings_for_slot
+
+                slot["max_seats"] = slot.get("max_seat", 0)
+
+            vendor_data = {
+                "vendor_user_id": str(vendor_user.get("_id")),
+                "vendor_first_name": vendor_user.get("first_name"),
+                "vendor_last_name": vendor_user.get("last_name"),
+                "vendor_image": vendor_user.get("user_image"),
+                "vendor_image_url": vendor_user.get("user_image_url"),
+                "business_name": vendor.get("business_name"),
+                "business_type": vendor.get("business_type"),
+                "vendor_id": str(vendor.get("_id")),
+                "services": vendor_user.get("services") if vendor_user.get("services") else vendor.get("services"),
+                "category_id": vendor_user.get("category_id") if vendor_user.get("category") else vendor.get("category_id"),
+                "fess":vendor_user.get("fess"),
+                "specialization": vendor_user.get("specialization"),
+                "location":vendor.get("location")
+            }
+
+            filtered_slots = [
+                {
+                    "start_time": slot["start_time"],
+                    "end_time": slot["end_time"],
+                    "duration": slot.get("duration", None),
+                    "max_seats": slot.get("max_seats", 0), 
+                    "total_bookings": slot.get("total_bookings", 0), 
+                }
+                for slot in filtered_slots
+            ]
+
+            return {
+                "slots": filtered_slots,
+                "vendor": vendor_data,
+            }
+
+        except HTTPException:
             raise
-
-        except Exception as e:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        except Exception as ex:
+            print(ex, 'ex')
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}"
+            )
