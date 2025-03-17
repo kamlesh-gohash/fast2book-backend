@@ -3151,7 +3151,7 @@ class VendorManager:
                         payment_data = response.json()
                         print(payment_data, "payment_data")
                         if payment_data and "items" in payment_data and len(payment_data["items"]) > 0:
-                            payment_id = payment_data["items"][0]["id"] 
+                            payment_id = payment_data["items"][0]["id"]
                             print(payment_id, "payment_id")
                         else:
                             raise HTTPException(
@@ -3182,7 +3182,7 @@ class VendorManager:
                     "plan_id": upgrade_subscription_request.plan_id,
                     "quantity": upgrade_subscription_request.quantity,
                     "remaining_count": upgrade_subscription_request.total_count,
-                    "schedule_change_at": "cycle_end",  
+                    "schedule_change_at": "cycle_end",
                     "customer_notify": 1,
                 }
 

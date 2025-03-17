@@ -617,10 +617,11 @@ async def get_vendor_list(request: Request, user_manager: UserManager = Depends(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+
 @router.get("/get-vendor-slot", status_code=status.HTTP_200_OK)
-async def get_vendor_slot(vendor_id: str, request: Request, 
-                          date: str = Query(None),
-                          user_manager: UserManager = Depends(get_user_manager)):
+async def get_vendor_slot(
+    vendor_id: str, request: Request, date: str = Query(None), user_manager: UserManager = Depends(get_user_manager)
+):
     try:
         result = await user_manager.get_vendor_slot(vendor_id=vendor_id, request=request, date=date)
         return success({"message": "Vendor slot found successfully", "data": result})
@@ -632,4 +633,4 @@ async def get_vendor_slot(vendor_id: str, request: Request,
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    )
+        )

@@ -1784,131 +1784,117 @@ class UserManager:
 
     async def get_vendor_list(self, request: Request):
         try:
-            cursor = category_collection.aggregate([
-                {"$match": {"status": "active"}},  
-                {
-                    "$lookup": { 
-                        "from": "services",
-                        "localField": "_id",
-                        "foreignField": "category_id",
-                        "as": "services"
-                    }
-                },
-                {
-                    "$lookup": { 
-                        "from": "vendors",
-                        "let": {"category_id_str": {"$toString": "$_id"}},
-                        "pipeline": [
-                            {
-                                "$match": {
-                                    "$expr": {"$eq": ["$category_id", "$$category_id_str"]},  
-                                    "status": "active",
-                                    "is_subscription": True
-                                }
-                            },
-                            # For business type - lookup the creator user
-                            {
-                                "$lookup": {  
-                                    "from": "users",
-                                    "let": {
-                                        "vendor_id": {"$toString": "$_id"}
-                                    },
-                                    "pipeline": [
-                                        {
-                                            "$match": {
-                                                "$expr": {
-                                                    "$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]
+            cursor = category_collection.aggregate(
+                [
+                    {"$match": {"status": "active"}},
+                    {
+                        "$lookup": {
+                            "from": "services",
+                            "localField": "_id",
+                            "foreignField": "category_id",
+                            "as": "services",
+                        }
+                    },
+                    {
+                        "$lookup": {
+                            "from": "vendors",
+                            "let": {"category_id_str": {"$toString": "$_id"}},
+                            "pipeline": [
+                                {
+                                    "$match": {
+                                        "$expr": {"$eq": ["$category_id", "$$category_id_str"]},
+                                        "status": "active",
+                                        "is_subscription": True,
+                                    }
+                                },
+                                # For business type - lookup the creator user
+                                {
+                                    "$lookup": {
+                                        "from": "users",
+                                        "let": {"vendor_id": {"$toString": "$_id"}},
+                                        "pipeline": [
+                                            {
+                                                "$match": {
+                                                    "$expr": {"$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]}
                                                 }
+                                            },
+                                            {"$match": {"roles": "vendor_user"}},
+                                        ],
+                                        "as": "creator_user",
+                                    }
+                                },
+                                {
+                                    "$lookup": {
+                                        "from": "users",
+                                        "let": {"vendor_id": {"$toString": "$_id"}},
+                                        "pipeline": [
+                                            {"$match": {"$expr": {"$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]}}}
+                                        ],
+                                        "as": "vendor_user",
+                                    }
+                                },
+                                {
+                                    "$addFields": {
+                                        "user_details": {
+                                            "$cond": {
+                                                "if": {"$eq": ["$business_type", "business"]},
+                                                "then": {"$arrayElemAt": ["$creator_user", 0]},
+                                                "else": {"$arrayElemAt": ["$vendor_user", 0]},
                                             }
-                                        },
-                                        {
-                                            "$match": {
-                                                "roles": "vendor_user"
-                                            }
-                                        }
-                                    ],
-                                    "as": "creator_user"
-                                }
-                            },
-                            {
-                                "$lookup": {  
-                                    "from": "users",
-                                    "let": {
-                                        "vendor_id": {"$toString": "$_id"}
-                                    },
-                                    "pipeline": [
-                                        {
-                                            "$match": {
-                                                "$expr": {
-                                                    "$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]
-                                                }
-                                            }
-                                        }
-                                    ],
-                                    "as": "vendor_user"
-                                }
-                            },
-                            {
-                                "$addFields": {
-                                    "user_details": {
-                                        "$cond": {
-                                            "if": {"$eq": ["$business_type", "business"]},
-                                            "then": {"$arrayElemAt": ["$creator_user", 0]},
-                                            "else": {"$arrayElemAt": ["$vendor_user", 0]}
                                         }
                                     }
+                                },
+                                {
+                                    "$addFields": {
+                                        "vendor_id": "$user_details._id",
+                                        "vendor_first_name": "$user_details.first_name",
+                                        "vendor_last_name": "$user_details.last_name",
+                                        "vendor_image": "$user_details.user_image",
+                                        "vendor_image_url": "$user_details.user_image_url",
+                                    }
+                                },
+                            ],
+                            "as": "vendors",
+                        }
+                    },
+                    {
+                        "$project": {
+                            "_id": 0,
+                            "category": "$name",
+                            "category_slug": "$slug",
+                            "services": {
+                                "$map": {
+                                    "input": "$services",
+                                    "as": "service",
+                                    "in": {
+                                        "service_id": "$$service._id",
+                                        "name": "$$service.name",
+                                        "service_image": "$$service.service_image",
+                                        "service_image_url": "$$service.service_image_url",
+                                        "category_name": "$$service.category_name",
+                                        "category_slug": "$$service.category_slug",
+                                    },
                                 }
                             },
-                            {
-                                "$addFields": { 
-                                    "vendor_id": "$user_details._id",
-                                    "vendor_first_name": "$user_details.first_name",
-                                    "vendor_last_name": "$user_details.last_name",
-                                    "vendor_image": "$user_details.user_image",
-                                    "vendor_image_url": "$user_details.user_image_url",
+                            "vendors": {
+                                "$map": {
+                                    "input": "$vendors",
+                                    "as": "vendor",
+                                    "in": {
+                                        "vendor_id": "$$vendor.vendor_id",
+                                        "business_name": "$$vendor.business_name",
+                                        "business_type": "$$vendor.business_type",
+                                        "vendor_first_name": "$$vendor.vendor_first_name",
+                                        "vendor_last_name": "$$vendor.vendor_last_name",
+                                        "vendor_image": "$$vendor.vendor_image",
+                                        "vendor_image_url": "$$vendor.vendor_image_url",
+                                    },
                                 }
-                            }
-                        ],
-                        "as": "vendors"
-                    }
-                },
-                {
-                    "$project": { 
-                        "_id": 0,
-                        "category": "$name",
-                        "category_slug": "$slug",
-                        "services": {
-                            "$map": { 
-                                "input": "$services",
-                                "as": "service",
-                                "in": {
-                                    "service_id": "$$service._id",
-                                    "name": "$$service.name",
-                                    "service_image": "$$service.service_image",
-                                    "service_image_url": "$$service.service_image_url",
-                                    "category_name": "$$service.category_name",
-                                    "category_slug": "$$service.category_slug"
-                                }
-                            }
-                        },
-                        "vendors": {
-                            "$map": { 
-                                "input": "$vendors",
-                                "as": "vendor",
-                                "in": {
-                                    "vendor_id": "$$vendor.vendor_id",
-                                    "business_name": "$$vendor.business_name",
-                                    "business_type": "$$vendor.business_type",
-                                    "vendor_first_name": "$$vendor.vendor_first_name",
-                                    "vendor_last_name": "$$vendor.vendor_last_name",
-                                    "vendor_image": "$$vendor.vendor_image",
-                                    "vendor_image_url": "$$vendor.vendor_image_url",
-                                }
-                            }
+                            },
                         }
-                    }
-                }
-            ])
+                    },
+                ]
+            )
 
             result = await cursor.to_list(length=100)
 
@@ -1918,10 +1904,7 @@ class UserManager:
                 services = item["services"]
                 vendors = item["vendors"]
 
-                data[category] = {
-                    "services": services,
-                    "vendors": vendors
-                }
+                data[category] = {"services": services, "vendors": vendors}
 
                 for service in data[category]["services"]:
                     service["service_id"] = str(service["service_id"])
@@ -1933,10 +1916,9 @@ class UserManager:
 
         except Exception as ex:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"An unexpected error occurred: {str(ex)}"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
-        
+
     async def get_vendor_slot(self, request: Request, vendor_id: str, date: str = None):
         try:
             if not ObjectId.is_valid(vendor_id):
@@ -2016,10 +1998,12 @@ class UserManager:
                 "business_type": vendor.get("business_type"),
                 "vendor_id": str(vendor.get("_id")),
                 "services": vendor_user.get("services") if vendor_user.get("services") else vendor.get("services"),
-                "category_id": vendor_user.get("category_id") if vendor_user.get("category") else vendor.get("category_id"),
-                "fess":vendor_user.get("fess"),
+                "category_id": (
+                    vendor_user.get("category_id") if vendor_user.get("category") else vendor.get("category_id")
+                ),
+                "fess": vendor_user.get("fess"),
                 "specialization": vendor_user.get("specialization"),
-                "location":vendor.get("location")
+                "location": vendor.get("location"),
             }
 
             filtered_slots = [
@@ -2027,8 +2011,8 @@ class UserManager:
                     "start_time": slot["start_time"],
                     "end_time": slot["end_time"],
                     "duration": slot.get("duration", None),
-                    "max_seats": slot.get("max_seats", 0), 
-                    "total_bookings": slot.get("total_bookings", 0), 
+                    "max_seats": slot.get("max_seats", 0),
+                    "total_bookings": slot.get("total_bookings", 0),
                 }
                 for slot in filtered_slots
             ]
@@ -2041,8 +2025,7 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as ex:
-            print(ex, 'ex')
+            print(ex, "ex")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"An unexpected error occurred: {str(ex)}"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

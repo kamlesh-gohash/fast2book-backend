@@ -623,15 +623,11 @@ class SuperUserManager:
 
             # Aggregate count of vendors for each plan
             pipeline = [
-                {
-                    "$match": {
-                        "is_subscription": True  # Only consider vendors with active subscriptions
-                    }
-                },
+                {"$match": {"is_subscription": True}},  # Only consider vendors with active subscriptions
                 {
                     "$group": {
                         "_id": "$manage_plan",  # Group by the plan ID
-                        "vendor_count": {"$sum": 1}  # Count the number of vendors in each group
+                        "vendor_count": {"$sum": 1},  # Count the number of vendors in each group
                     }
                 },
                 {
@@ -639,20 +635,18 @@ class SuperUserManager:
                         "from": "plans",
                         "localField": "_id",
                         "foreignField": "razorpay_plan_id",
-                        "as": "plan_details"
+                        "as": "plan_details",
                     }
                 },
-                {
-                    "$unwind": "$plan_details"  # Unwind the plan details array
-                },
+                {"$unwind": "$plan_details"},  # Unwind the plan details array
                 {
                     "$project": {
                         "plan_id": "$_id",
                         "plan_name": "$plan_details.name",
                         "description": "$plan_details.description",
-                        "vendor_count": 1
+                        "vendor_count": 1,
                     }
-                }
+                },
             ]
 
             plan_counts = await vendor_collection.aggregate(pipeline).to_list(None)
@@ -662,7 +656,7 @@ class SuperUserManager:
             for plan in plan_counts:
                 vendors = await vendor_collection.find(
                     {"manage_plan": plan["plan_id"], "is_subscription": True},
-                    {"business_name": 1, "category_name": 1, "services": 1}
+                    {"business_name": 1, "category_name": 1, "services": 1},
                 ).to_list(None)
 
                 vendor_data = [
