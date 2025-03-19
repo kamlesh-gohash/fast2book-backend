@@ -15,6 +15,7 @@ from app.v1.middleware.auth import get_current_user
 from app.v1.models import category_collection, services_collection
 from app.v1.models.category import Category
 from app.v1.models.services import Service
+from app.v1.models.user import User
 from app.v1.schemas.service.service import CreateServiceRequest, UpdateServiceRequest
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
@@ -22,23 +23,19 @@ from app.v1.utils.token import create_access_token, create_refresh_token, get_oa
 
 class ServicesManager:
 
-    async def service_create(self, request: Request, token: str, service_request: CreateServiceRequest) -> dict:
+    async def service_create(self, current_user: User, service_request: CreateServiceRequest) -> dict:
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
-            service_management_menu = next(
-                (menu for menu in current_user.menu if menu["id"] == "service-management"), None
-            )
-            if not service_management_menu or not service_management_menu["actions"]["addServices"]:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to add a service"
-                )
+            # service_management_menu = next(
+            #     (menu for menu in current_user.menu if menu["id"] == "service-management"), None
+            # )
+            # if not service_management_menu or not service_management_menu["actions"]["addServices"]:
+            #     raise HTTPException(
+            #         status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to add a service"
+            #     )
             existing_service = await services_collection.find_one(
                 {"name": {"$regex": f"^{service_request.name}$", "$options": "i"}}
             )
@@ -103,25 +100,21 @@ class ServicesManager:
             )
 
     async def service_list(
-        self, request: Request, token: str, page: int, limit: int, search: str = None, statuss: str = None
+        self, request: Request, current_user: User, page: int, limit: int, search: str = None, statuss: str = None
     ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
-            service_management_menu = next(
-                (menu for menu in current_user.menu if menu["id"] == "service-management"), None
-            )
+            # service_management_menu = next(
+            #     (menu for menu in current_user.menu if menu["id"] == "service-management"), None
+            # )
 
-            if not service_management_menu or not service_management_menu["actions"]["List"]:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to view the service list"
-                )
+            # if not service_management_menu or not service_management_menu["actions"]["List"]:
+            #     raise HTTPException(
+            #         status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to view the service list"
+            #     )
 
             skip = (page - 1) * limit
             query = {}
@@ -168,19 +161,32 @@ class ServicesManager:
 
             total_services = await services_collection.count_documents(query)
             total_pages = (total_services + limit - 1) // limit
-
-            return {"data": service_data, "total_items": total_services, "total_pages": total_pages}
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": service_data,
+                "paginator": {
+                    "itemCount": total_services,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
+            # return {"data": service_data, "total_items": total_services, "total_pages": total_pages}
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def service_get(self, request: Request, token: str, id: str):
+    async def service_get(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -206,14 +212,8 @@ class ServicesManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def service_update(self, request: Request, token: str, id: str, service_request: UpdateServiceRequest):
+    async def service_update(self, current_user: User, id: str, service_request: UpdateServiceRequest):
         try:
-            # Get current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            # Check if the user has the required role
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -303,12 +303,8 @@ class ServicesManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def service_delete(self, request: Request, token: str, id: str):
+    async def service_delete(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -320,12 +316,11 @@ class ServicesManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def category_list_for_service(self, request: Request, token: str) -> dict:
+    async def category_list_for_service(
+        self,
+        current_user: User,
+    ) -> dict:
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             allowed_roles = ["admin", "vendor"]
             user_roles = [role.value for role in current_user.roles]
 

@@ -634,3 +634,27 @@ async def get_vendor_slot(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.get("/get-category-service/{category_slug}", status_code=status.HTTP_200_OK)
+async def get_category_service(
+    category_slug: str,
+    request: Request,
+    page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    try:
+        result = await user_manager.get_category_service(
+            request=request, category_slug=category_slug, page=page, limit=limit
+        )
+        return success({"message": "Category service found successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

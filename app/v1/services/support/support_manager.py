@@ -65,12 +65,23 @@ class SupportManager:
             # Get total count for pagination
             total_support = await support_collection.count_documents(query)
             total_pages = (total_support + limit - 1) // limit
-
-            # Return the paginated data
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
             return {
                 "data": formatted_support,
-                "total_support": total_support,
-                "total_pages": total_pages,
+                "paginator": {
+                    "itemCount": total_support,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
             }
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))

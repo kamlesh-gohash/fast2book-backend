@@ -1,11 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 
 from app.v1.dependencies import get_category_manager, get_services_manager
-from app.v1.middleware.auth import get_token_from_header
-from app.v1.models import services
+from app.v1.middleware.auth import check_permission, get_current_user, get_token_from_header
+from app.v1.models import User, services
 from app.v1.schemas.service.service import CreateServiceRequest, DeleteServiceRequest, UpdateServiceRequest
 from app.v1.services import CategoryManager, ServicesManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
+
+
+def has_permission(menu_id: str, action: str):
+    """
+    Dependency to check if the user has permission for a specific action on a menu item.
+    """
+
+    async def permission_checker(request: Request):
+        await check_permission(request, menu_id, action)
+
+    return Depends(permission_checker)
 
 
 router = APIRouter()
@@ -13,9 +24,9 @@ router = APIRouter()
 
 @router.post("/create-service", status_code=status.HTTP_200_OK)
 async def create_service(
-    request: Request,
     service_request: CreateServiceRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
+    _permission: None = has_permission("service-management", "addServices"),
     service_manager: "ServicesManager" = Depends(lambda: ServicesManager()),
 ):
     # Validate the service request
@@ -28,7 +39,7 @@ async def create_service(
         service_request.to_object_id()
 
         # Create the service
-        result = await service_manager.service_create(request=request, token=token, service_request=service_request)
+        result = await service_manager.service_create(current_user=current_user, service_request=service_request)
         return success({"message": "Service Created successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -44,17 +55,18 @@ async def create_service(
 @router.get("/service-list", status_code=status.HTTP_200_OK)
 async def service_list(
     request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search term to filter services by name or category name"),
+    _permission: None = has_permission("service-management", "List"),
     service_manager: "ServicesManager" = Depends(get_services_manager),
 ):
     try:
         query_params = request.query_params
         statuss = query_params.get("query[status]")
         result = await service_manager.service_list(
-            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
+            request=request, current_user=current_user, page=page, limit=limit, search=search, statuss=statuss
         )
         return success({"message": "Service List found successfully", "data": result})
     except HTTPException as http_ex:
@@ -70,14 +82,13 @@ async def service_list(
 
 @router.get("/get-service/{id}", status_code=status.HTTP_200_OK)
 async def get_service(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the service to retrieve"),
     service_manager: "ServicesManager" = Depends(get_services_manager),
 ):
     try:
         # Call the ServiceManager to retrieve the service by id
-        result = await service_manager.service_get(request=request, token=token, id=id)
+        result = await service_manager.service_get(current_user=current_user, id=id)
 
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
@@ -96,10 +107,10 @@ async def get_service(
 
 @router.put("/update-service/{id}", status_code=status.HTTP_200_OK)
 async def update_service(
-    request: Request,
     service_request: UpdateServiceRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the service to update"),
+    _permission: None = has_permission("service-management", "editServices"),
     service_manager: "ServicesManager" = Depends(get_services_manager),
 ):
     validation_result = service_request.validate()
@@ -112,9 +123,7 @@ async def update_service(
         )
     try:
         # Call the ServiceManager to update the service by id
-        result = await service_manager.service_update(
-            request=request, token=token, id=id, service_request=service_request
-        )
+        result = await service_manager.service_update(current_user=current_user, id=id, service_request=service_request)
 
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
@@ -133,14 +142,14 @@ async def update_service(
 
 @router.delete("/delete-service/{id}", status_code=status.HTTP_200_OK)
 async def delete_service(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the service to delete"),
+    _permission: None = has_permission("service-management", "deleteServices"),
     service_manager: "ServicesManager" = Depends(get_services_manager),
 ):
     try:
         # Call the ServiceManager to delete the service by id
-        result = await service_manager.service_delete(request=request, token=token, id=id)
+        result = await service_manager.service_delete(current_user=current_user, id=id)
 
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
@@ -159,15 +168,14 @@ async def delete_service(
 
 @router.get("/category-list-for-services", status_code=status.HTTP_200_OK)
 async def category_list_for_services(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     service_manager: ServicesManager = Depends(get_services_manager),
 ):
     # validation_result = category_list_request.validate()
     # if validation_result:
     #     return validation_result
     try:
-        result = await service_manager.category_list_for_service(request=request, token=token)
+        result = await service_manager.category_list_for_service(current_user=current_user)
         return success({"message": "Category List found successfully", "data": result})
     except HTTPException as http_ex:
 

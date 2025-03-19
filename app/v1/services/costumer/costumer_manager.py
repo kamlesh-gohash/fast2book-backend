@@ -23,12 +23,8 @@ from app.v1.utils.token import create_access_token, create_refresh_token, get_oa
 
 class CostumerManager:
 
-    async def create_customer(self, request: Request, token: str, create_costumer_request: User):
+    async def create_customer(self, current_user: User, create_costumer_request: User):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -99,7 +95,7 @@ class CostumerManager:
     async def customer_list(
         self,
         request: Request,
-        token: str,
+        current_user: User,
         page: int,
         limit: int,
         search: str = None,
@@ -107,10 +103,6 @@ class CostumerManager:
         role: str = "user",
     ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -192,17 +184,31 @@ class CostumerManager:
 
             # Calculate total pages
             total_pages = (total_costumers + limit - 1) // limit
-
-            return {"data": costumer_data, "total_items": total_costumers, "total_pages": total_pages}
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": costumer_data,
+                "paginator": {
+                    "itemCount": total_costumers,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
+        except HTTPException as e:
+            raise e
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def get_customer(self, request: Request, token: str, id: str):
+    async def get_customer(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -266,14 +272,8 @@ class CostumerManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def update_customer(
-        self, request: Request, token: str, id: str, update_costumer_request: UpdateCostumerRequest
-    ):
+    async def update_customer(self, current_user: User, id: str, update_costumer_request: UpdateCostumerRequest):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -364,12 +364,8 @@ class CostumerManager:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def delete_customer(self, request: Request, token: str, id: str):
+    async def delete_customer(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "

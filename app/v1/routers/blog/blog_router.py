@@ -6,16 +6,32 @@ from pydantic import BaseModel, Field
 from slugify import slugify
 
 from app.v1.dependencies import get_blog_manager
+from app.v1.middleware.auth import check_permission
 from app.v1.models import Blog
 from app.v1.services import BlogManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
+
+
+def has_permission(menu_id: str, action: str):
+    """
+    Dependency to check if the user has permission for a specific action on a menu item.
+    """
+
+    async def permission_checker(request: Request):
+        await check_permission(request, menu_id, action)
+
+    return Depends(permission_checker)
 
 
 router = APIRouter()
 
 
 @router.post("/create-blog", status_code=status.HTTP_201_CREATED)
-async def create_blog(create_blog_request: Blog, blog_manager: BlogManager = Depends(get_blog_manager)):
+async def create_blog(
+    create_blog_request: Blog,
+    _permission: None = has_permission("blog-management", "addBlog"),
+    blog_manager: BlogManager = Depends(get_blog_manager),
+):
     try:
         if not create_blog_request.blog_url and create_blog_request.title:
             create_blog_request.blog_url = slugify(create_blog_request.title)
@@ -42,6 +58,7 @@ async def blog_list(
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search term to filter categories by name or category name"),
+    _permission: None = has_permission("blog-management", "List"),
     blog_manager: BlogManager = Depends(get_blog_manager),
 ):
     # validation_result = category_list_request.validate()
@@ -109,7 +126,12 @@ class BlogRequest(BaseModel):
 
 
 @router.put("/update-blog/{id}", status_code=status.HTTP_200_OK)
-async def update_blog(id: str, blog_request: BlogRequest, blog_manager: BlogManager = Depends(get_blog_manager)):
+async def update_blog(
+    id: str,
+    blog_request: BlogRequest,
+    _permission: None = has_permission("blog-management", "editBlog"),
+    blog_manager: BlogManager = Depends(get_blog_manager),
+):
     try:
         result = await blog_manager.update_blog_by_id(id, blog_request)
         return success({"message": "Blog updated successfully", "data": result})
@@ -128,6 +150,7 @@ async def update_blog(id: str, blog_request: BlogRequest, blog_manager: BlogMana
 @router.delete("/delete-blog/{id}", status_code=status.HTTP_200_OK)
 async def delete_blog(
     id: str = Path(..., title="The ID of the blog to delete"),
+    _permission: None = has_permission("blog-management", "deleteBlog"),
     blog_manager: BlogManager = Depends(get_blog_manager),
 ):
     try:

@@ -5,19 +5,14 @@ from fastapi import HTTPException, Request, status
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import payment_collection
 from app.v1.models.payment import PaymentType
+from app.v1.models.user import User
 
 
 class PaymentManager:
     async def payment_type_list(
-        self, request: Request, token: str, page: int, limit: int, search: str = None, statuss: str = None
+        self, request: Request, current_user: User, page: int, limit: int, search: str = None, statuss: str = None
     ):
         try:
-            # Get the current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            # Check if the current user has the "vendor" role
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -48,7 +43,25 @@ class PaymentManager:
                 )
             total_count = await payment_collection.count_documents(query)
             total_pages = (total_count + limit - 1) // limit
-            return {"data": payment_data, "total_items": total_count, "total_pages": total_pages}
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": payment_data,
+                "paginator": {
+                    "itemCount": total_count,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
+            # return {"data": payment_data, "total_items": total_count, "total_pages": total_pages}
         except HTTPException as e:
             raise e
         except Exception as ex:
@@ -56,13 +69,8 @@ class PaymentManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def update_payment(self, request: Request, token: str, id: str, update_payment_request: PaymentType):
+    async def update_payment(self, current_user: User, id: str, update_payment_request: PaymentType):
         try:
-            # Get the current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             # Check if the current user has the "vendor" role
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(

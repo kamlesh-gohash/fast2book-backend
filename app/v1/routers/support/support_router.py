@@ -2,9 +2,20 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, Request, UploadFile, status
 
 from app.v1.dependencies import get_support_manager
-from app.v1.middleware.auth import get_token_from_header
+from app.v1.middleware.auth import check_permission, get_token_from_header
 from app.v1.services.support.support_manager import SupportManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
+
+
+def has_permission(menu_id: str, action: str):
+    """
+    Dependency to check if the user has permission for a specific action on a menu item.
+    """
+
+    async def permission_checker(request: Request):
+        await check_permission(request, menu_id, action)
+
+    return Depends(permission_checker)
 
 
 router = APIRouter()
@@ -17,6 +28,7 @@ async def support_list(
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search query"),
+    _permission: None = has_permission("support", "List"),
     support_manager: SupportManager = Depends(get_support_manager),
 ):
     try:

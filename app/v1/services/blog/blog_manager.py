@@ -29,6 +29,7 @@ class BlogManager:
     async def create_blog(self, create_blog_request: Blog) -> dict:
         try:
             blog_data = create_blog_request.dict()
+            print(blog_data, "blog_data")
             file_url = None
             if create_blog_request.blog_image:
                 image_name = create_blog_request.blog_image
@@ -110,8 +111,24 @@ class BlogManager:
                 )
             total_blogs = await blog_collection.count_documents({})
             total_pages = (total_blogs + limit - 1) // limit
-            # Return the formatted response
-            return {"data": blog_data, "total_pages": total_pages, "total_items": total_blogs}
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": blog_data,
+                "paginator": {
+                    "itemCount": total_blogs,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
         except Exception as e:
             raise e
         except Exception as e:
@@ -192,11 +209,22 @@ class BlogManager:
                         detail=f"Invalid tags format: {blog_request.tags}. Tags should be a list of strings.",
                     )
                 update_data["tags"] = blog_request.tags
-            update_data["title"] = blog_request.title
-            update_data["content"] = blog_request.content
-            update_data["author_name"] = blog_request.author_name
+            if blog_request.title:
+                update_data["title"] = blog_request.title
+            if blog_request.content:
+                update_data["content"] = blog_request.content
+            if blog_request.author_name:
+                update_data["author_name"] = blog_request.author_name
+            if blog_request.status:
+                update_data["status"] = blog_request.status
+            if blog_request.blog_url:
+                update_data["blog_url"] = blog_request.blog_url
+            if blog_request.blog_image_url:
+                update_data["blog_image_url"] = blog_request.blog_image_url
+
             update_data["updated_at"] = datetime.utcnow()
-            update_data["status"] = blog_request.status
+            if blog_request.status:
+                update_data["status"] = blog_request.status
             updated_blog = await blog_collection.find_one_and_update(
                 {"_id": ObjectId(id)},
                 {"$set": update_data},
