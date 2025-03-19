@@ -1116,7 +1116,6 @@ class UserManager:
                     )
 
             active_vendors = await vendor_collection.aggregate(pipeline).to_list(length=None)
-            print(active_vendors, "active_vendors")
             if not active_vendors:
                 raise HTTPException(
                     status_code=404,
