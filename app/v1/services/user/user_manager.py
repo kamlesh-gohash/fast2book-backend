@@ -1116,6 +1116,7 @@ class UserManager:
                     )
 
             active_vendors = await vendor_collection.aggregate(pipeline).to_list(length=None)
+            print(active_vendors, "active_vendors")
             if not active_vendors:
                 raise HTTPException(
                     status_code=404,
@@ -1375,6 +1376,7 @@ class UserManager:
                 "id": str(result.inserted_id),
                 "name": support_request.name,
                 "email": support_request.email,
+                "subject": support_request.subject,
                 "phone": support_request.phone,
                 "message": support_request.message,
                 "created_at": support_request.created_at,
@@ -1922,7 +1924,6 @@ class UserManager:
     async def get_vendor_slot(self, request: Request, vendor_id: str, date: str = None):
         try:
             if not ObjectId.is_valid(vendor_id):
-                print("Invalid vendor ID")
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid vendor ID")
 
             vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_id)})
@@ -2025,7 +2026,48 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as ex:
-            print(ex, "ex")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def get_category_service(self, category_slug: str, request: Request, page: int = 1, limit: int = 10):
+        try:
+            if not category_slug:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
+
+            category = await category_collection.find_one({"slug": category_slug})
+            if not category:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+
+            active_services = await services_collection.find(
+                {"category_id": category["_id"], "status": "active"}
+            ).to_list(length=None)
+            service_data = [
+                {
+                    "id": str(service["_id"]),
+                    "name": service["name"],
+                    "status": service["status"],
+                    "service_image": service["service_image"],
+                    "service_image_url": service["service_image_url"],
+                }
+                for service in active_services
+            ]
+
+            total_services = await services_collection.count_documents(
+                {"category_id": category["_id"], "status": "active"}
+            )
+            total_pages = (total_services + limit - 1) // limit
+
+            service_data = {
+                "services": service_data,
+                "total_services": total_services,
+                "total_pages": total_pages,
+            }
+
+            return service_data
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )

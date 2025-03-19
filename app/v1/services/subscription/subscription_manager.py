@@ -19,6 +19,7 @@ from app.v1.models import category_collection, plan_collection, subscription_col
 from app.v1.models.category import Category
 from app.v1.models.services import Service
 from app.v1.models.subscription import Subscription, SubscriptionDuration
+from app.v1.models.user import User
 from app.v1.schemas.subscription.subscription_auth import *
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
@@ -28,15 +29,8 @@ razorpay_client = razorpay.Client(auth=(os.getenv("RAZOR_PAY_KEY_ID"), os.getenv
 
 
 class SubscriptionManager:
-    async def subscription_create(
-        self, request: Request, token: str, subscription_request: CreateSubscriptionRequest
-    ) -> dict:
+    async def subscription_create(self, current_user: User, subscription_request: CreateSubscriptionRequest) -> dict:
         try:
-            # Validate the current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -87,13 +81,9 @@ class SubscriptionManager:
             )
 
     async def subscription_list(
-        self, request: Request, token: str, page: int, limit: int, search: str = None, statuss: str = None
+        self, request: Request, current_user: User, page: int, limit: int, search: str = None, statuss: str = None
     ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -137,19 +127,31 @@ class SubscriptionManager:
 
             total_subscriptions = await subscription_collection.count_documents(query)
             total_pages = (total_subscriptions + limit - 1) // limit
-
-            return {"data": subscription_data, "total_items": total_subscriptions, "total_pages": total_pages}
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": subscription_data,
+                "paginator": {
+                    "itemCount": total_subscriptions,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def subscription_get(self, request: Request, token: str, id: str):
+    async def subscription_get(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -178,14 +180,8 @@ class SubscriptionManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def subscription_update(
-        self, request: Request, token: str, id: str, subscription_request: UpdateSubscriptionRequest
-    ):
+    async def subscription_update(self, current_user: User, id: str, subscription_request: UpdateSubscriptionRequest):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -338,12 +334,8 @@ class SubscriptionManager:
     #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
     #         )
 
-    async def plan_create(self, request: Request, token: str, plan_request: CreateSubscriptionRequest):
+    async def plan_create(self, current_user: User, plan_request: CreateSubscriptionRequest):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
@@ -520,12 +512,8 @@ class SubscriptionManager:
     #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
     #         )
 
-    async def plan_list(self, request: Request, token: str, page: int, limit: int, search: str):
+    async def plan_list(self, current_user: User, page: int, limit: int, search: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -566,11 +554,26 @@ class SubscriptionManager:
                     }
                 )
 
+            total_pages = (total_count + limit - 1) // limit
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
             return {
                 "data": plan_data,
-                "total_items": total_count,
-                "total_pages": (total_count + limit - 1) // limit,
+                "paginator": {
+                    "itemCount": total_count,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
             }
+
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"

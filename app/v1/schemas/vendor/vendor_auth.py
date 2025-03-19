@@ -193,14 +193,14 @@ class UpdateVendorRequest(BaseModel):
     manage_plan: Optional[str] = None
     manage_fee_and_gst: Optional[str] = None
     manage_offer: Optional[str] = None
-    # location: Optional[Location] = Field(None, description="Location details of the vendor")
+    location: Optional[Location] = Field(None, description="Location details of the vendor")
     specialization: Optional[str] = Field(None, description="specialization of the vendor")
     status: StatusEnum = Field(default=StatusEnum.Active)
 
     @root_validator(pre=True)
     def check_required_fields(cls, values):
         # Define required fields
-        required_fields = ["first_name", "last_name"]
+        required_fields = []
         missing_fields = []
 
         # Check for missing required fields

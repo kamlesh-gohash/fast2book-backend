@@ -15,25 +15,26 @@ from slugify import slugify
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import category_collection, services_collection
 from app.v1.models.category import Category
+from app.v1.models.user import User
 from app.v1.utils.email import generate_otp, send_email
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
 class CategoryManager:
 
-    async def create_category(self, request: Request, token: str, category_request: Category) -> dict:
+    async def create_category(self, current_user: User, category_request: Category) -> dict:
         """
         category creating
         """
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            # current_user = await get_current_user(request=request, token=token)
+            # if not current_user:
+            #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
-                )
+            # if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+            #     raise HTTPException(
+            #         status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+            #     )
             existing_categorys = await category_collection.find_one(
                 {"name": {"$regex": f"^{category_request.name}$", "$options": "i"}}
             )
@@ -72,16 +73,18 @@ class CategoryManager:
             )
 
     async def category_list(
-        self, request: Request, token: str, page: int = 1, limit: int = 10, search: str = None, statuss: str = None
+        self,
+        request: Request,
+        current_user: User,
+        page: int = 1,
+        limit: int = 10,
+        search: str = None,
+        statuss: str = None,
     ) -> dict:
         """
         Get list of all active categories.
         """
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -122,7 +125,25 @@ class CategoryManager:
                 )
             total_categories = await category_collection.count_documents({})
             total_pages = (total_categories + limit - 1) // limit
-            return {"data": category_data, "total_items": total_categories, "total_pages": total_pages}
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": category_data,
+                "paginator": {
+                    "itemCount": total_categories,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
+            # return {"data": category_data, "total_items": total_categories, "total_pages": total_pages}
 
         except HTTPException as e:
             raise e
@@ -131,12 +152,8 @@ class CategoryManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_category_by_id(self, request: Request, token: str, id: str) -> dict:
+    async def get_category_by_id(self, current_user: User, id: str) -> dict:
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -162,12 +179,8 @@ class CategoryManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def update_category_by_id(self, request: Request, token: str, id: str, category_request: Category) -> dict:
+    async def update_category_by_id(self, current_user: User, id: str, category_request: Category) -> dict:
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -184,16 +197,17 @@ class CategoryManager:
             # Prepare the update data
             update_data = {}
             if category_request.name:
-                existing_categorys = await category_collection.find_one(
-                    {"name": {"$regex": f"^{category_request.name}$", "$options": "i"}}
-                )
-
-                if existing_categorys:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Category with name '{category_request.name}' already exists.",
+                if category_request.name != existing_category.get("name"):
+                    existing_categorys = await category_collection.find_one(
+                        {"name": {"$regex": f"^{category_request.name}$", "$options": "i"}}
                     )
+                    if existing_categorys:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Category with name '{category_request.name}' already exists.",
+                        )
                 update_data["name"] = category_request.name
+
             if category_request.status:
                 update_data["status"] = category_request.status.value
 
@@ -221,16 +235,13 @@ class CategoryManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def delete_category_by_id(self, request: Request, token: str, id: str) -> dict:
+    async def delete_category_by_id(self, current_user: User, id: str) -> dict:
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
