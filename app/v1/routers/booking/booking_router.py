@@ -5,7 +5,7 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, Path, Query, Request, UploadFile, status
 
 from app.v1.dependencies import *
-from app.v1.middleware.auth import get_token_from_header
+from app.v1.middleware.auth import get_current_user, get_token_from_header
 from app.v1.models import booking_collection, services, user_collection
 from app.v1.models.booking import *
 from app.v1.schemas.booking.booking import *
@@ -23,12 +23,11 @@ router = APIRouter()
 
 @router.post("/appointment-slot", status_code=status.HTTP_200_OK)
 async def appointment_time(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.appointment_time(request=request, token=token)
+        result = await booking_manager.appointment_time(current_user=current_user)
 
         return success({"message": "Appointment Time found successfully", "data": result})
 
@@ -46,20 +45,18 @@ async def appointment_time(
 
 @router.get("/user-book-appointment", status_code=status.HTTP_200_OK)
 async def book_appointment(
-    request: Request,
     booking_date: str = Query(..., description="Booking date in YYYY-MM-DD format"),
     slot: str = Query(..., description="Time slot in 'HH:MM - HH:MM' format"),
     vendor_id: str = Query(..., description="Vendor ID"),
     service_id: str = Query(..., description="Service ID"),
-    vendor_user_id: Optional[str] = Query(None, description="Vendor User ID (optional)"),  # New optional parameter
-    token: str = Depends(get_token_from_header),
+    vendor_user_id: Optional[str] = Query(None, description="Vendor User ID (optional)"),
+    current_user: User = Depends(get_current_user),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
         # Call the booking manager to fetch and return the required data
         result = await booking_manager.book_appointment(
-            request=request,
-            token=token,
+            current_user=current_user,
             booking_date=booking_date,
             slot=slot,
             vendor_id=vendor_id,
@@ -80,14 +77,13 @@ async def book_appointment(
 
 @router.get("/checkout/{id}", status_code=status.HTTP_200_OK)
 async def user_booking_checkout(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., min_length=1, max_length=100),
     # payment_method: str = Form(...),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.user_booking_checkout(request=request, token=token, id=id)
+        result = await booking_manager.user_booking_checkout(current_user=current_user, id=id)
         return success({"message": "boking detail found successfully", "data": result})
 
     except HTTPException as http_ex:
@@ -104,8 +100,7 @@ async def user_booking_checkout(
 
 @router.get("/user-booking-list-for-vendor", status_code=status.HTTP_200_OK)
 async def user_booking_list_for_vendor(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     search: str = Query(None, description="Search query"),
     start_date: str = Query(None, description="Start date for filtering bookings (format: YYYY-MM-DD HH:MM:SS)"),
     end_date: str = Query(None, description="End date for filtering bookings (format: YYYY-MM-DD HH:MM:SS)"),
@@ -113,7 +108,7 @@ async def user_booking_list_for_vendor(
 ):
     try:
         result = await booking_manager.user_booking_list_for_vendor(
-            request=request, token=token, search=search, start_date=start_date, end_date=end_date
+            current_user=current_user, search=search, start_date=start_date, end_date=end_date
         )
 
         return success({"message": "User Booking List found successfully", "data": result})
@@ -132,13 +127,12 @@ async def user_booking_list_for_vendor(
 
 @router.put("/vendor-update-booking/{id}", status_code=status.HTTP_200_OK)
 async def update_booking_status(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., min_length=1, max_length=100),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.vendor_update_booking(request=request, token=token, id=id)
+        result = await booking_manager.vendor_update_booking(current_user=current_user, id=id)
 
         return success({"message": "User Booking updated successfully", "data": result})
 
@@ -155,13 +149,12 @@ async def update_booking_status(
 
 @router.get("/vendor-get-booking/{id}", status_code=status.HTTP_200_OK)
 async def vendor_get_booking(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., min_length=1, max_length=100),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.vendor_get_booking(request=request, token=token, id=id)
+        result = await booking_manager.vendor_get_booking(current_user=current_user, id=id)
 
         return success({"message": "User Booking found successfully", "data": result})
 
@@ -178,8 +171,7 @@ async def vendor_get_booking(
 
 @router.get("/user-booking-list", status_code=status.HTTP_200_OK)
 async def user_booking_list(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     status_filter: str = Query(None, description="Filter past bookings by status (completed/cancelled)"),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
@@ -191,7 +183,7 @@ async def user_booking_list(
                 detail="Invalid status filter. Must be either 'completed' or 'cancelled'",
             )
 
-        result = await booking_manager.user_booking_list(request=request, token=token, status_filter=status_filter)
+        result = await booking_manager.user_booking_list(current_user=current_user, status_filter=status_filter)
 
         return success({"message": "User Booking List found successfully", "data": result})
 
@@ -208,16 +200,13 @@ async def user_booking_list(
 
 @router.post("/cancel-booking/{id}", status_code=status.HTTP_200_OK)
 async def cancel_booking(
-    request: Request,
     cancel_request: CancelBookingRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., min_length=1, max_length=100),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.cancel_booking(
-            request=request, token=token, id=id, cancel_request=cancel_request
-        )
+        result = await booking_manager.cancel_booking(current_user=current_user, id=id, cancel_request=cancel_request)
 
         return success({"message": "User Booking cancelled successfully", "data": result})
 
@@ -234,8 +223,7 @@ async def cancel_booking(
 
 @router.get("/user-booking-list-for-admin", status_code=status.HTTP_200_OK)
 async def user_booking_list_for_admin(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     search: str = Query(None, description="Search query"),
     start_date: str = Query(None, description="Start date for filtering bookings (format: YYYY-MM-DD HH:MM:SS)"),
     end_date: str = Query(None, description="End date for filtering bookings (format: YYYY-MM-DD HH:MM:SS)"),
@@ -243,7 +231,7 @@ async def user_booking_list_for_admin(
 ):
     try:
         result = await booking_manager.user_booking_list_for_admin(
-            request=request, token=token, search=search, start_date=start_date, end_date=end_date
+            current_user=current_user, search=search, start_date=start_date, end_date=end_date
         )
 
         return success({"message": "User Booking List found successfully", "data": result})
@@ -261,13 +249,12 @@ async def user_booking_list_for_admin(
 
 @router.get("/get-user-booking-for-admin/{id}", status_code=status.HTTP_200_OK)
 async def get_user_booking_for_admin(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., min_length=1, max_length=100),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.get_user_booking_for_admin(request=request, token=token, id=id)
+        result = await booking_manager.get_user_booking_for_admin(current_user=current_user, id=id)
 
         return success({"message": "User Booking found successfully", "data": result})
 
@@ -284,15 +271,13 @@ async def get_user_booking_for_admin(
 
 @router.post("/booking-payment", status_code=status.HTTP_200_OK)
 async def booking_payment(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     booking_data: CreateBookingRequest = Body(...),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
         result = await booking_manager.booking_payment(
-            request=request,
-            token=token,
+            current_user=current_user,
             vendor_id=booking_data.vendor_id,
             slot=booking_data.time_slot,
             booking_date=booking_data.booking_date,
@@ -394,13 +379,12 @@ async def verify_payment(request: Request, payload: dict):
 
 @router.get("/user-booking-view/{id}", status_code=status.HTTP_200_OK)
 async def user_booking_view(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., min_length=1, max_length=100),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.user_booking_view(request=request, token=token, id=id)
+        result = await booking_manager.user_booking_view(current_user=current_user, id=id)
 
         return success({"message": "User Booking found successfully", "data": result})
 
@@ -417,15 +401,14 @@ async def user_booking_view(
 
 @router.get("/user-booking-update-request/{booking_id}", status_code=status.HTTP_200_OK)
 async def user_booking_update_request(
-    request: Request,
     booking_id: str = Path(..., min_length=1, max_length=100),
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
         result = await booking_manager.user_booking_update_request(
-            request=request, token=token, booking_id=booking_id, date=date
+            current_user=current_user, booking_id=booking_id, date=date
         )
         return success({"message": "Vendor slots retrieved successfully", "data": result})
     except HTTPException as http_ex:
@@ -441,16 +424,14 @@ async def user_booking_update_request(
 
 @router.post("/user-booking-reschedule/{booking_id}", status_code=status.HTTP_200_OK)
 async def user_booking_reschedule(
-    request: Request,
     reason_for_reschulding: ResuldlinBookingRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     booking_id: str = Path(..., min_length=1, max_length=100),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
         result = await booking_manager.user_booking_resulding(
-            request=request,
-            token=token,
+            current_user=current_user,
             reason_for_reschulding=reason_for_reschulding,
             booking_id=booking_id,
         )

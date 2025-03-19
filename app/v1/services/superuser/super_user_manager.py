@@ -267,14 +267,8 @@ class SuperUserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def create_super_user(
-        self, request: Request, token: str, super_user_create_request: SuperUserCreateRequest
-    ) -> dict:
+    async def create_super_user(self, current_user: User, super_user_create_request: SuperUserCreateRequest) -> dict:
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -334,7 +328,7 @@ class SuperUserManager:
     async def super_user_list(
         self,
         request: Request,
-        token: str,
+        current_user: User,
         page: int,
         limit: int,
         search: str = None,
@@ -342,10 +336,6 @@ class SuperUserManager:
         role: str = "admin",
     ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -406,17 +396,29 @@ class SuperUserManager:
 
             # Calculate total pages
             total_pages = (total_admin + limit - 1) // limit
-
-            return {"data": admin_data, "total_items": total_admin, "total_pages": total_pages}
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": admin_data,
+                "paginator": {
+                    "itemCount": total_admin,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def get_super_user(self, request: Request, token: str, id: str):
+    async def get_super_user(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -434,14 +436,8 @@ class SuperUserManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def update_super_user(
-        self, request: Request, token: str, id: str, update_super_user_request: SuperUserUpdateRequest
-    ):
+    async def update_super_user(self, current_user: User, id: str, update_super_user_request: SuperUserUpdateRequest):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in current_user.roles and current_user.user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not superuser")
             # Validate costumer ID
@@ -500,12 +496,8 @@ class SuperUserManager:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def delete_super_user(self, request: Request, token: str, id: str):
+    async def delete_super_user(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -517,12 +509,8 @@ class SuperUserManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def get_dashboard_data(self, request: Request, token: str):
+    async def get_dashboard_data(self, current_user: User):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -543,12 +531,8 @@ class SuperUserManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def get_dashboard_booking_data(self, request: Request, token: str):
+    async def get_dashboard_booking_data(self, current_user: User):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -610,12 +594,8 @@ class SuperUserManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def get_total_subscribers(self, request: Request, token: str):
+    async def get_total_subscribers(self, current_user: User):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
@@ -686,5 +666,67 @@ class SuperUserManager:
         except HTTPException as e:
             raise e
 
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_total_booking_for_year(self, current_user: User, year: int):
+        try:
+            # Check if the user has the required permissions
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+
+            # Validate the year (optional)
+            if year < 2000 or year > 2100:  # Adjust the range as needed
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid year")
+
+            # Aggregate bookings by month for the specified year
+            pipeline = [
+                {
+                    "$match": {
+                        "payment_status": "paid",  # Only consider paid bookings
+                        "booking_date": {
+                            "$gte": datetime(year, 1, 1),  # Start of the year
+                            "$lt": datetime(year + 1, 1, 1),  # Start of the next year
+                        },
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": {"$month": "$booking_date"},  # Group by month
+                        "booking_count": {"$sum": 1},  # Count the number of bookings in each month
+                    }
+                },
+            ]
+
+            # Execute the aggregation pipeline
+            monthly_counts = await booking_collection.aggregate(pipeline).to_list(None)
+
+            # Create a dictionary to store the count for each month
+            month_data = {month: 0 for month in range(1, 13)}  # Initialize all months with 0
+            for entry in monthly_counts:
+                month_data[entry["_id"]] = entry["booking_count"]
+
+            # Format the result as required
+            result = [
+                {"name": "Jan", "booking": month_data[1]},
+                {"name": "Feb", "booking": month_data[2]},
+                {"name": "Mar", "booking": month_data[3]},
+                {"name": "Apr", "booking": month_data[4]},
+                {"name": "May", "booking": month_data[5]},
+                {"name": "Jun", "booking": month_data[6]},
+                {"name": "Jul", "booking": month_data[7]},
+                {"name": "Aug", "booking": month_data[8]},
+                {"name": "Sep", "booking": month_data[9]},
+                {"name": "Oct", "booking": month_data[10]},
+                {"name": "Nov", "booking": month_data[11]},
+                {"name": "Dec", "booking": month_data[12]},
+            ]
+
+            return result
+
+        except HTTPException as e:
+            raise e
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))

@@ -35,99 +35,9 @@ razorpay_client = razorpay.Client(auth=(os.getenv("RAZOR_PAY_KEY_ID"), os.getenv
 
 class BookingManager:
 
-    # async def book_appointment(
-    #     self,
-    #     request: Request,
-    #     token: str,
-    #     booking_date: str = Query(..., description="Booking date in YYYY-MM-DD format"),
-    #     slot: str = Query(..., description="Time slot in 'HH:MM - HH:MM' format"),
-    #     vendor_id: str = Query(..., description="Vendor ID"),
-    #     service_id: str = Query(..., description="Service ID"),
-    # ):
-    #     try:
-    #         # Get current user
-    #         current_user = await get_current_user(request=request, token=token)
-    #         if not current_user:
-    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-    #         # Fetch vendor details
-    #         vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
-    #         if not vendor:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-    #         # Fetch category details
-    #         category_id = vendor.get("category_id")
-    #         category = await category_collection.find_one({"_id": ObjectId(category_id)})
-    #         if not category:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
-
-    #         # Fetch service details
-    #         service = await services_collection.find_one({"_id": ObjectId(service_id)})
-    #         if not service:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-
-    #         # Fetch vendor user details
-    #         if vendor["business_type"] == "business":
-    #             vendor_user = await user_collection.find_one({"created_by": vendor["user_id"]})
-    #         else:
-    #             vendor_user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
-    #         if not vendor_user:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
-
-    #         amount = vendor.get("fees")
-    #         payment_method = "Razorpay"
-    #         payment_config = await payment_collection.find_one({"name": payment_method})
-    #         if not payment_config:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
-    #         admin_charge_type = payment_config.get("charge_type")  # 'percentage' or 'fixed'
-    #         admin_charge_value = payment_config.get("charge_value")  # e.g., 10 for 10% or 50 for $50
-
-    #         if admin_charge_type == "percentage":
-    #             admin_charge = (admin_charge_value / 100) * amount
-    #         elif admin_charge_type == "fixed":
-    #             admin_charge = admin_charge_value
-    #         else:
-    #             admin_charge = 0
-
-    #         total_amount = amount + admin_charge
-    #         # Prepare response data
-    #         response_data = {
-    #             "vendor": {
-    #                 "id": str(vendor.get("_id")),
-    #                 "business_name": vendor.get("business_name"),
-    #                 "name": vendor_user.get("first_name"),
-    #                 "last_name": vendor_user.get("last_name"),
-    #                 "fees": vendor.get("fees", 0),
-    #                 "location": vendor.get("location"),
-    #                 "specialization": vendor.get("specialization"),
-    #                 "is_payment_required": vendor.get("is_payment_required", False),
-    #             },
-    #             "category": {
-    #                 "id": str(category.get("_id")),
-    #                 "name": category.get("name"),
-    #             },
-    #             "service": {
-    #                 "id": str(service.get("_id")),
-    #                 "name": service.get("name"),
-    #             },
-    #             "booking_date": booking_date,
-    #             "time_slot": slot,
-    #             "platform_fee": admin_charge,
-    #             "total_amount": total_amount,
-    #         }
-
-    #         return response_data
-
-    #     except HTTPException as http_ex:
-    #         raise http_ex
-    #     except Exception as ex:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #             detail=f"An unexpected error occurred: {str(ex)}",
-    #         )
     async def book_appointment(
         self,
-        request: Request,
-        token: str,
+        current_user: User,
         booking_date: str = Query(..., description="Booking date in YYYY-MM-DD format"),
         slot: str = Query(..., description="Time slot in 'HH:MM - HH:MM' format"),
         vendor_id: str = Query(..., description="Vendor ID"),
@@ -135,11 +45,6 @@ class BookingManager:
         vendor_user_id: Optional[str] = Query(None, description="Vendor User ID (optional)"),  # New optional parameter
     ):
         try:
-            # Get current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             # Fetch vendor details
             vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
             if not vendor:
@@ -263,12 +168,8 @@ class BookingManager:
         """
         return datetime.strptime(date, "%Y-%m-%d").strftime("%A")
 
-    async def user_booking_checkout(self, request: Request, token: str, id: str):
+    async def user_booking_checkout(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             current_user_id = str(current_user.id)
             booking_id = str(id)
             booking_details = await booking_collection.find_one(
@@ -349,12 +250,9 @@ class BookingManager:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def user_booking_list_for_vendor(
-        self, request: Request, token: str, search: str = None, start_date: str = None, end_date: str = None
+        self, current_user: User, search: str = None, start_date: str = None, end_date: str = None
     ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -465,12 +363,8 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def vendor_get_booking(self, request: Request, token: str, id: str):
+    async def vendor_get_booking(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -499,11 +393,8 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def vendor_update_booking(self, request: Request, token: str, id: str):
+    async def vendor_update_booking(self, request: Request, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -540,11 +431,8 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def user_booking_list(self, request: Request, token: str, status_filter: str = None):
+    async def user_booking_list(self, current_user: User, status_filter: str = None):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "user" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -637,11 +525,8 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def cancel_booking(self, request: Request, token: str, id: str, cancel_request: CancelBookingRequest):
+    async def cancel_booking(self, current_user: User, id: str, cancel_request: CancelBookingRequest):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "user" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -675,17 +560,13 @@ class BookingManager:
 
     async def user_booking_list_for_admin(
         self,
-        request: Request,
-        token: str,
+        current_user: User,
         search: str = None,
         role: str = "vendor",
         start_date: str = None,
         end_date: str = None,
     ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise ValueError(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -873,8 +754,7 @@ class BookingManager:
 
     async def booking_payment(
         self,
-        request: Request,
-        token: str,
+        current_user: User,
         vendor_id: str,
         slot: str,
         booking_date: str,
@@ -883,12 +763,6 @@ class BookingManager:
         vendor_user_id: Optional[str] = None,
     ):
         try:
-            # Step 1: Get current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            # Step 2: Fetch service details
             service = await services_collection.find_one({"_id": ObjectId(service_id)})
             if not service:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
@@ -1036,13 +910,8 @@ class BookingManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def user_booking_view(self, request: Request, token: str, id: str):
+    async def user_booking_view(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            # Fetch the booking
             booking = await booking_collection.find_one({"_id": ObjectId(id)})
             if not booking:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
@@ -1093,12 +962,8 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def user_booking_resulding(self, request: Request, token: str, booking_id: str, reason_for_reschulding):
+    async def user_booking_resulding(self, current_user: User, booking_id: str, reason_for_reschulding):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             booking = await booking_collection.find_one({"_id": ObjectId(booking_id)})
             if not booking:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
@@ -1163,12 +1028,8 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def user_booking_update_request(self, request: Request, token: str, booking_id: str, date: str):
+    async def user_booking_update_request(self, current_user: User, booking_id: str, date: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             booking = await booking_collection.find_one({"_id": ObjectId(booking_id)})
             if not booking:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")

@@ -21,6 +21,7 @@ class Support(BaseModel):
     email: str
     phone: str
     message: str
+    subject: str
     reply: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

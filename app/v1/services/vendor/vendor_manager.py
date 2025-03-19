@@ -106,12 +106,8 @@ razorpay_client = razorpay.Client(auth=(RAZOR_PAY_KEY_ID, RAZOR_PAY_KEY_SECRET))
 
 class VendorManager:
 
-    async def create_vendor(self, request: Request, token: str, create_vendor_request: SignUpVendorRequest):
+    async def create_vendor(self, current_user: User, create_vendor_request: SignUpVendorRequest):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -320,8 +316,7 @@ class VendorManager:
 
     async def vendor_list(
         self,
-        request: Request,
-        token: str,
+        current_user: User,
         page: int,
         limit: int,
         search: str = None,
@@ -330,11 +325,6 @@ class VendorManager:
     ):
         try:
             # Verify current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            # Check permissions
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -378,7 +368,7 @@ class VendorManager:
                 # Capitalize names and format email
                 vendor["first_name"] = vendor["first_name"].capitalize()
                 vendor["last_name"] = vendor["last_name"].capitalize()
-                vendor["email"] = vendor["email"].lower()
+                vendor["email"] = vendor["email"]
                 vendor["user_image"] = vendor.get("user_image", "")
                 if vendor["user_image"] is not None:
                     vendor["user_image_url"] = vendor.get("user_image_url", "")
@@ -430,12 +420,23 @@ class VendorManager:
             # Fetch total count and calculate total pages
             total_vendors = await user_collection.count_documents(query)
             total_pages = (total_vendors + limit - 1) // limit
-
-            # Response format
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
             return {
                 "data": vendor_data,
-                "total_items": total_vendors,
-                "total_pages": total_pages,
+                "paginator": {
+                    "itemCount": total_vendors,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
             }
 
         except HTTPException as e:
@@ -445,12 +446,8 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_vendor(self, request: Request, token: str, id: str):
+    async def get_vendor(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -477,6 +474,7 @@ class VendorManager:
             result["fees"] = result.get("fees")
             result.pop("vendor_id")
             vendor_details = await vendor_collection.find_one({"_id": ObjectId(id)})
+            print(vendor_details, "vendor_details")
             if vendor_details:
                 result["business_name"] = vendor_details.get("business_name")
                 result["business_type"] = vendor_details.get("business_type")
@@ -490,6 +488,7 @@ class VendorManager:
                 else:
                     result["category_name"] = "Unknown"
                 result["services"] = vendor_details.get("services", [])
+                print(result["services"], "llllllllllllllll")
                 result["service_details"] = vendor_details.get("service_details", [])
                 result["manage_plan"] = vendor_details.get("manage_plan", False)
                 result["manage_fee_and_gst"] = vendor_details.get("manage_fee_and_gst", False)
@@ -508,17 +507,13 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def update_vendor(self, request: Request, token: str, id: str, update_vendor_request: UpdateVendorRequest):
+    async def update_vendor(self, current_user: User, id: str, update_vendor_request: UpdateVendorRequest):
         try:
-            # Authenticate and authorize the user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -743,12 +738,8 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def delete_vendor(self, request: Request, token: str, id: str):
+    async def delete_vendor(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -765,12 +756,8 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_service_by_category(self, request: Request, token: str, id: str):
+    async def get_service_by_category(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             allowed_roles = ["admin", "vendor"]
             user_roles = [role.value for role in current_user.roles]
 
@@ -1069,13 +1056,14 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def vendor_profile(self, request: Request, token: str):
+    async def vendor_profile(self, current_user: User):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            # current_user = await get_current_user(request=request, token=token)
+            # if not current_user:
+            #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
+                print(current_user.roles)
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
@@ -1122,12 +1110,8 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def update_profile(self, request: Request, token: str, update_vendor_request: UpdateVendorRequest):
+    async def update_profile(self, current_user: User, update_vendor_request: UpdateVendorRequest):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -1322,14 +1306,8 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def create_vendor_user(
-        self, request: Request, token: str, vendor_user_create_request: VendorUserCreateRequest
-    ):
+    async def create_vendor_user(self, current_user: User, vendor_user_create_request: VendorUserCreateRequest):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -1447,16 +1425,12 @@ class VendorManager:
 
     async def vendor_users_list(
         self,
-        request: Request,
-        token: str,
+        current_user: User,
         page: int,
         limit: int,
         search: str = None,
     ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             # Check if the current user has the "vendor" role
             if "vendor" not in [role.value for role in current_user.roles]:
@@ -1492,7 +1466,24 @@ class VendorManager:
                 formatted_users.append(user)
             total_users = await user_collection.count_documents(query)
             total_pages = (total_users + limit - 1) // limit
-            return {"data": formatted_users, "total_items": total_users, "total_pages": total_pages}
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": formatted_users,
+                "paginator": {
+                    "itemCount": total_users,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
         except HTTPException as e:
             raise e
         except Exception as ex:
@@ -1501,13 +1492,9 @@ class VendorManager:
             )
 
     async def set_individual_vendor_availability(
-        self, request: Request, token: str, slots: List[DaySlot], vendor_user_id: Optional[str] = None
+        self, current_user: User, slots: List[DaySlot], vendor_user_id: Optional[str] = None
     ):
         try:
-            # Get current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -1670,70 +1657,7 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def delete_vendor_availability(
-        self, request: Request, token: str, day: str, start_time: Optional[str] = None
-    ):
-        """
-        Delete vendor availability for a specific day or time slot.
-
-        Args:
-                request (Request): The HTTP request object.
-                token (str): The authentication token for the current user.
-                day (str): The day to delete availability for.
-                start_time (Optional[str]): The specific start time of the slot to delete.
-
-        Returns:
-                dict: Updated vendor availability slots.
-        """
-        try:
-            # Authenticate the current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            # Ensure the user is a vendor
-            if "vendor" not in [role.value for role in current_user.roles]:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
-                )
-
-            # Find the vendor associated with the user
-            vendor = await vendor_collection.find_one({"user_id": str(current_user.id)})
-            if not vendor:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-
-            # Fetch current availability slots
-            availability_slots = vendor.get("availability_slots", [])
-            if not availability_slots:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No availability slots found")
-
-            # Filter availability slots
-            updated_slots = []
-            for slot in availability_slots:
-                if slot["day"] == day:
-                    if start_time:
-                        if "time_slots" in slot:
-                            slot["time_slots"] = [ts for ts in slot["time_slots"] if ts["start_time"] != start_time]
-                            if not slot["time_slots"]:
-                                continue
-                    else:
-                        continue
-                updated_slots.append(slot)
-            await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": {"availability_slots": updated_slots}})
-
-            updated_vendor = await vendor_collection.find_one({"_id": vendor["_id"]})
-            if updated_vendor:
-                updated_vendor = serialize_mongo_document(updated_vendor)
-                updated_vendor["id"] = str(updated_vendor.pop("_id"))
-
-            return updated_vendor
-
-        except HTTPException as ex:
-            raise ex
-        except Exception as ex:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
-
-    async def add_slot_time_vendor(self, request: Request, token: str, id: str, slots: List[DaySlot]):
+    async def add_slot_time_vendor(self, current_user: User, id: str, slots: List[DaySlot]):
         """
         Set availability slots for a specific user created by the current business user.
 
@@ -1747,9 +1671,6 @@ class VendorManager:
                 dict: Updated user availability slots.
         """
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -1835,12 +1756,9 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def create_vendor_slots(self, request: Request, token: str, vendor_id: str, slots: List[DaySlot]):
+    async def create_vendor_slots(self, current_user: User, vendor_id: str, slots: List[DaySlot]):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
@@ -1891,7 +1809,7 @@ class VendorManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def get_vendor_slots(self, request: Request, token: str, vendor_id: str):
+    async def get_vendor_slots(self, current_user: User, vendor_id: str):
         """
         Fetch availability slots for a vendor or vendor_user.
 
@@ -1904,11 +1822,7 @@ class VendorManager:
                 dict: Vendor data along with availability slots.
         """
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
@@ -1966,14 +1880,13 @@ class VendorManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def vendor_list_for_slot(self, request: Request, token: str):
+    async def vendor_list_for_slot(
+        self,
+        current_user: User,
+    ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             # Ensure the user is a super admin
-            if current_user.user_role != 2:  # Assuming role `2` is for super admin
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
@@ -2033,16 +1946,12 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def vendor_user_list_for_slot(self, request: Request, token: str, vendor_id: str):
+    async def vendor_user_list_for_slot(self, current_user: User, vendor_id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
-
             if not ObjectId.is_valid(vendor_id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid vendor ID")
             # vendor_details = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
@@ -2078,13 +1987,9 @@ class VendorManager:
             )
 
     async def update_vendor_user_by_id(
-        self, request: Request, token: str, id: str, vendor_user_request: VendorUserUpdateRequest, role: str = "vendor"
+        self, current_user: User, id: str, vendor_user_request: VendorUserUpdateRequest, role: str = "vendor"
     ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -2156,11 +2061,8 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    async def delete_vendor_user_by_id(self, request: Request, token: str, id: str):
+    async def delete_vendor_user_by_id(self, current_user: User, id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -2189,11 +2091,8 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    async def get_vendor_user_by_id(self, request: Request, token: str, id: str, role: str = "vendor"):
+    async def get_vendor_user_by_id(self, current_user: User, id: str, role: str = "vendor"):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -2225,11 +2124,11 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    async def vendor_subscription_plan(self, request: Request, token: str):
+    async def vendor_subscription_plan(
+        self,
+        current_user: User,
+    ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -2347,13 +2246,9 @@ class VendorManager:
     #         )
 
     async def create_or_upgrade_vendor_subscription(
-        self, request: Request, token: str, vendor_subscription_request: VendorSubscriptionRequest
+        self, current_user: User, vendor_subscription_request: VendorSubscriptionRequest
     ):
         try:
-            # Authenticate and authorize the user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
@@ -2503,14 +2398,9 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    async def verify_subscription_payment(self, request: Request, token: str, subscription_id: str):
+    async def verify_subscription_payment(self, current_user: User, subscription_id: str):
 
         try:
-            # Get the current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             # Check if the user has the "vendor" role
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
@@ -2574,11 +2464,11 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    async def subscription_payment_details(self, request: Request, token: str):
+    async def subscription_payment_details(
+        self,
+        current_user: User,
+    ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
@@ -2645,12 +2535,11 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    async def get_plan_list(self, request: Request, token: str):
+    async def get_plan_list(
+        self,
+        current_user: User,
+    ):
         try:
-            # Get the current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -2693,12 +2582,8 @@ class VendorManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
-    async def get_plan(self, request: Request, token: str, plan_id: str):
+    async def get_plan(self, current_user: User, plan_id: str):
         try:
-            # Get the current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
@@ -2880,13 +2765,11 @@ class VendorManager:
     #             detail=f"An unexpected error occurred: {str(ex)}",
     #         )
 
-    async def vendor_users_list_for_slot(self, request: Request, token: str):
+    async def vendor_users_list_for_slot(
+        self,
+        current_user: User,
+    ):
         try:
-            # Get the current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             # Check if the current user has the "vendor" role
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
@@ -2913,12 +2796,11 @@ class VendorManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def get_dashboard_data_for_vendor(self, request: Request, token: str):
+    async def get_dashboard_data_for_vendor(
+        self,
+        current_user: User,
+    ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -2952,12 +2834,11 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_vendor_bookings(self, request: Request, token: str):
+    async def get_vendor_bookings(
+        self,
+        current_user: User,
+    ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -3027,12 +2908,11 @@ class VendorManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def get_vendor_service(self, request: str, token: str):
+    async def get_vendor_service(
+        self,
+        current_user: User,
+    ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -3048,13 +2928,13 @@ class VendorManager:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def upgrade_vendor_subscription(
-        self, request: Request, token: str, sub_id: str, upgrade_subscription_request: VendorSubscriptionRequest
+        self, current_user: User, sub_id: str, upgrade_subscription_request: VendorSubscriptionRequest
     ):
         try:
-            current_user = await get_current_user(request, token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                )
             vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")

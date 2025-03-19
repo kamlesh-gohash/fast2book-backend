@@ -1,11 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 
 from app.v1.dependencies import get_costumer_manager
-from app.v1.middleware.auth import get_token_from_header
+from app.v1.middleware.auth import check_permission, get_current_user, get_token_from_header
 from app.v1.models import User
 from app.v1.schemas.costumer.costumer import CostumerCreateRequest, UpdateCostumerRequest
 from app.v1.services import CostumerManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
+
+
+def has_permission(menu_id: str, action: str):
+    """
+    Dependency to check if the user has permission for a specific action on a menu item.
+    """
+
+    async def permission_checker(request: Request):
+        await check_permission(request, menu_id, action)
+
+    return Depends(permission_checker)
 
 
 router = APIRouter()
@@ -16,9 +27,9 @@ router = APIRouter()
 
 @router.post("/create-costumer", status_code=status.HTTP_201_CREATED)
 async def register_customer(
-    request: Request,
     costumer_create_request: CostumerCreateRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
+    _permission: None = has_permission("costumer-management", "addCostumer"),
     costumer_manager: CostumerManager = Depends(get_costumer_manager),
 ):
     validation_result = costumer_create_request.validate()
@@ -27,7 +38,7 @@ async def register_customer(
     try:
         # User registration logic
         result = await costumer_manager.create_customer(
-            request=request, token=token, create_costumer_request=costumer_create_request
+            current_user=current_user, create_costumer_request=costumer_create_request
         )
         return success({"message": "customer created successfully", "data": result})
     except HTTPException as http_ex:
@@ -45,17 +56,18 @@ async def register_customer(
 @router.get("/costumer-list", status_code=status.HTTP_200_OK)
 async def customer_list(
     request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search term to filter costumers by name, email, or phone"),
+    _permission: None = has_permission("costumer-management", "List"),
     costumer_manager: CostumerManager = Depends(get_costumer_manager),
 ):
     try:
         query_params = request.query_params
         statuss = query_params.get("query[status]")
         result = await costumer_manager.customer_list(
-            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
+            request=request, current_user=current_user, page=page, limit=limit, search=search, statuss=statuss
         )
         return success({"message": "customer List found successfully", "data": result})
     except HTTPException as http_ex:
@@ -73,13 +85,12 @@ async def customer_list(
 
 @router.get("/get-costumer/{id}", status_code=status.HTTP_200_OK)
 async def get_customer(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the costumer to retrieve"),
     costumer_manager: CostumerManager = Depends(get_costumer_manager),
 ):
     try:
-        result = await costumer_manager.get_customer(request=request, token=token, id=id)
+        result = await costumer_manager.get_customer(current_user=current_user, id=id)
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Costumer not found")
         return success({"message": "customer found successfully", "data": result})
@@ -97,10 +108,10 @@ async def get_customer(
 
 @router.put("/update-costumer/{id}", status_code=status.HTTP_200_OK)
 async def update_customer(
-    request: Request,
     update_costumer_request: UpdateCostumerRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the costumer to update"),
+    _permission: None = has_permission("costumer-management", "editCostumer"),
     costumer_manager: CostumerManager = Depends(get_costumer_manager),
 ):
     validation_result = update_costumer_request.validate()
@@ -122,7 +133,7 @@ async def update_customer(
         )
     try:
         result = await costumer_manager.update_customer(
-            request=request, token=token, id=id, update_costumer_request=update_costumer_request
+            current_user=current_user, id=id, update_costumer_request=update_costumer_request
         )
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Costumer not found")
@@ -141,13 +152,13 @@ async def update_customer(
 
 @router.delete("/delete-costumer/{id}", status_code=status.HTTP_200_OK)
 async def delete_customer(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the costumer to delete"),
+    _permission: None = has_permission("costumer-management", "deleteCostumer"),
     costumer_manager: CostumerManager = Depends(get_costumer_manager),
 ):
     try:
-        result = await costumer_manager.delete_customer(request=request, token=token, id=id)
+        result = await costumer_manager.delete_customer(current_user=current_user, id=id)
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Costumer not found")
         return success({"message": "customer deleted successfully", "data": result})

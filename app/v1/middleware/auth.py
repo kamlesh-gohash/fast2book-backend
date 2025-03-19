@@ -7,6 +7,7 @@ from typing import Optional
 import httpx
 
 from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport import requests
@@ -15,6 +16,7 @@ from google.oauth2 import id_token
 from app.v1.config.auth import oauth
 from app.v1.models import User, user_collection
 from app.v1.models.user import *
+from app.v1.utils.response.response_format import unauthorized
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
@@ -48,85 +50,33 @@ def check_access_to_route(current_user: User, required_role: str):
 SECRET_KEY = os.getenv("SECRET_KEY")  # Use the same secret key that signs the JWT
 ALGORITHM = "HS256"  # Ensure this matches the algorithm used to sign the token
 
-
-# async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)):
-#     """Get the current authenticated user from the JWT token."""
-#     try:
-
-#         # Decode the token
-#         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-#         # Extract email from the token's payload
-#         email = payload.get("sub")  # Ensure the token contains a 'sub' claim for email
-#         if not email:
-#             raise HTTPException(status_code=401, detail="Invalid token: Missing 'sub' claim.")
-
-#         # Fetch the user from the database
-#         user = await User.get_user_by_email(email)
-#         if not user:
-#             raise HTTPException(status_code=404, detail="User not found.")
-
-#         return user
-#     except ExpiredSignatureError:
-#         raise HTTPException(status_code=401, detail="Token has expired.")
-#     except InvalidTokenError as e:
-#         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail="Internal server error")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
 
-async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)):
+async def get_current_user(request: Request = None, token: str = Depends(oauth2_scheme)):
     """Get the current authenticated user from either a JWT token or a Google ID token."""
     try:
-        # Check if the token is a Google ID token
-        if token.startswith("google_"):
-            # Extract the actual Google ID token
-            google_token = token.replace("google_", "")
-            id_info = id_token.verify_oauth2_token(google_token, requests.Request(), GOOGLE_CLIENT_ID)
-            # Validate the issuer
-            if id_info["iss"] not in ["accounts.google.com", "https://accounts.google.com"]:
-                raise HTTPException(status_code=401, detail="Invalid Google token issuer.")
+        # Handle JWT token
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        sub = payload.get("sub")
 
-            # Extract email from Google ID token
-            email = id_info.get("email")
-            if not email:
-                raise HTTPException(status_code=401, detail="Invalid Google token: Missing email.")
-
-            # Fetch or create the user in your database
-            user = await User.get_user_by_email(email)
+        if not sub:
+            raise HTTPException(status_code=401, detail="Invalid token: Missing 'sub' claim.")
+        sub = str(sub).strip()
+        # Try to fetch user by email or phone
+        user = None
+        if "@" in sub:
+            user = await User.get_user_by_email(sub)
             if not user:
-                # Create a new user if they don't exist
-                user = await User.create_user(
-                    email=email,
-                    name=id_info.get("name"),
-                    picture=id_info.get("picture"),
-                    provider="google",
-                )
-
-            return user
-
+                raise HTTPException(status_code=404, detail="User not found by email.")
+        elif sub.isdigit():
+            user = await User.get_user_by_phone(sub)
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found by phone.")
         else:
-            # Handle JWT token
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            sub = payload.get("sub")
+            raise HTTPException(status_code=401, detail="Invalid token: 'sub' is neither email nor phone.")
 
-            if not sub:
-                raise HTTPException(status_code=401, detail="Invalid token: Missing 'sub' claim.")
-            sub = str(sub).strip()
-            # Try to fetch user by email or phone
-            user = None
-            if "@" in sub:
-                user = await User.get_user_by_email(sub)
-                if not user:
-                    raise HTTPException(status_code=404, detail="User not found by email.")
-            elif sub.isdigit():
-                user = await User.get_user_by_phone(sub)
-                if not user:
-                    raise HTTPException(status_code=404, detail="User not found by phone.")
-            else:
-                raise HTTPException(status_code=401, detail="Invalid token: 'sub' is neither email nor phone.")
-
-            return user
+        return user
 
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired.")
@@ -222,3 +172,76 @@ async def get_token_from_header(authorization: Optional[str] = Header(None)) -> 
 
     token = authorization[len(token_prefix) :]
     return token
+
+
+async def check_permission(request: Request, menu_id: str, action: str):
+    current_user = await get_current_user(request, await get_token_from_header(request.headers.get("Authorization")))
+    if not current_user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    menu_item = next((menu for menu in current_user.menu if menu["id"] == menu_id), None)
+    if not menu_item or not menu_item["actions"].get(action):
+        print(menu_item, "menu_item")
+        # return unauthorized(
+        #     {"message": "You do not have permission to perform this action"},
+        #     # status_code=status.HTTP_403_FORBIDDEN,
+        # )
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to perform this action.",
+        )
+    pass
+
+
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Skip authentication for certain paths (e.g., login, docs, etc.)
+        normalized_path = request.url.path.rstrip("/")
+
+        # Skip authentication for certain paths (e.g., login, docs, etc.)
+        if normalized_path in ["/v1/vendor/sign-in", "/docs", "/openapi.json"]:
+            return await call_next(request)
+
+        # Get the token from the header
+        authorization = request.headers.get("Authorization")
+        if not authorization:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"message": "Token not provided"},
+            )
+
+        # Extract the token from the 'Bearer <token>' format
+        token_prefix = "Bearer "
+        if not authorization.startswith(token_prefix):
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"message": "Invalid token format"},
+            )
+
+        token = authorization[len(token_prefix) :]
+
+        # Validate the token and get the current user
+        try:
+            current_user = await get_current_user(request, token)
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            # Attach the user to the request state
+            request.state.user = current_user
+        except HTTPException as e:
+            return JSONResponse(
+                status_code=e.status_code,
+                content={"message": e.detail},
+            )
+        except Exception as e:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"message": "An unexpected error occurred"},
+            )
+
+        # Proceed to the next middleware or route handler
+        return await call_next(request)

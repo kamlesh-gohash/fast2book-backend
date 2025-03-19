@@ -9,12 +9,23 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from app.v1.dependencies import get_vendor_manager
-from app.v1.middleware.auth import get_token_from_header
+from app.v1.middleware.auth import check_permission, get_current_user, get_token_from_header
 from app.v1.models import User, vendor_collection
 from app.v1.schemas.slots.slots import *
 from app.v1.schemas.vendor.vendor_auth import *
 from app.v1.services import VendorManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
+
+
+def has_permission(menu_id: str, action: str):
+    """
+    Dependency to check if the user has permission for a specific action on a menu item.
+    """
+
+    async def permission_checker(request: Request):
+        await check_permission(request, menu_id, action)
+
+    return Depends(permission_checker)
 
 
 router = APIRouter()
@@ -43,15 +54,15 @@ def validate_request_data(schema: Type[BaseModel]) -> Callable:
 
 @router.post("/create-vendor", status_code=status.HTTP_201_CREATED)
 async def create_vendor(
-    request: Request,
     create_vendor_request: dict = Depends(validate_request_data(SignUpVendorRequest)),
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
+    _permission: None = has_permission("vendor-management", "addVendor"),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         # User registration logic
         result = await vendor_manager.create_vendor(
-            request=request, token=token, create_vendor_request=create_vendor_request
+            current_user=current_user, create_vendor_request=create_vendor_request
         )
         return success({"message": "Vendor created successfully", "data": result})
     except HTTPException as http_ex:
@@ -69,17 +80,18 @@ async def create_vendor(
 @router.get("/vendor-list", status_code=status.HTTP_200_OK)
 async def vendor_list(
     request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search term to filter vendors by name, email, or phone"),
+    _permission: None = has_permission("vendor-management", "List"),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         query_params = request.query_params
         statuss = query_params.get("query[status]")
         result = await vendor_manager.vendor_list(
-            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
+            current_user=current_user, page=page, limit=limit, search=search, statuss=statuss
         )
         return success({"message": "Vendor List found successfully", "data": result})
     except HTTPException as http_ex:
@@ -96,16 +108,15 @@ async def vendor_list(
 
 @router.get("/get-vendor/{id}", status_code=status.HTTP_200_OK)
 async def get_vendor(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the vendor to retrieve"),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.get_vendor(request=request, token=token, id=id)
+        result = await vendor_manager.get_vendor(current_user=current_user, id=id)
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-        return success({"message": "Vendor found successfully", "data": result})
+        return success({"message": "Vendor detail found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -120,10 +131,10 @@ async def get_vendor(
 
 @router.put("/update-vendor/{id}", status_code=status.HTTP_200_OK)
 async def update_vendor(
-    request: Request,
     update_vendor_request: UpdateVendorRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the vendor to update"),
+    _permission: None = has_permission("vendor-management", "editVendor"),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     validation_result = update_vendor_request.validate()
@@ -151,7 +162,7 @@ async def update_vendor(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one field must be provided")
     try:
         result = await vendor_manager.update_vendor(
-            request=request, token=token, id=id, update_vendor_request=update_vendor_request
+            current_user=current_user, id=id, update_vendor_request=update_vendor_request
         )
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
@@ -170,13 +181,13 @@ async def update_vendor(
 
 @router.delete("/delete-vendor/{id}", status_code=status.HTTP_200_OK)
 async def delete_vendor(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the vendor to delete"),
+    _permission: None = has_permission("vendor-management", "deleteVendor"),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.delete_vendor(request=request, token=token, id=id)
+        result = await vendor_manager.delete_vendor(current_user=current_user, id=id)
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
         return success({"message": "Vendor deleted successfully", "data": result})
@@ -194,13 +205,12 @@ async def delete_vendor(
 
 @router.get("/get-service-by-category/{id}", status_code=status.HTTP_200_OK)
 async def get_service_by_category(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the vendor to retrieve"),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.get_service_by_category(request=request, token=token, id=id)
+        result = await vendor_manager.get_service_by_category(current_user=current_user, id=id)
         return success({"message": "Service found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -262,12 +272,12 @@ async def vendor_sign_up(
 
 @router.get("/vendor-profile", status_code=status.HTTP_200_OK)
 async def vendor_profile(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.vendor_profile(request=request, token=token)
+
+        result = await vendor_manager.vendor_profile(current_user=current_user)
         return success({"message": "Vendor profile found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -275,6 +285,7 @@ async def vendor_profile(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -283,9 +294,8 @@ async def vendor_profile(
 
 @router.put("/update-profile", status_code=status.HTTP_200_OK)
 async def update_profile(
-    request: Request,
     update_vendor_request: UpdateVendorRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     validation_result = update_vendor_request.validate()
@@ -293,7 +303,7 @@ async def update_profile(
         return validation_result
     try:
         result = await vendor_manager.update_profile(
-            request=request, token=token, update_vendor_request=update_vendor_request
+            current_user=current_user, update_vendor_request=update_vendor_request
         )
         return success({"message": "Vendor profile updated successfully", "data": result})
     except HTTPException as http_ex:
@@ -310,9 +320,8 @@ async def update_profile(
 
 @router.post("/create-vendor-user", status_code=status.HTTP_201_CREATED)
 async def create_vendor_user(
-    request: Request,
     vendor_user_create_request: VendorUserCreateRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     validation_result = vendor_user_create_request.validate()
@@ -320,7 +329,7 @@ async def create_vendor_user(
         return validation_result
     try:
         result = await vendor_manager.create_vendor_user(
-            request=request, token=token, vendor_user_create_request=vendor_user_create_request
+            current_user=current_user, vendor_user_create_request=vendor_user_create_request
         )
         return success({"message": "Vendor user created successfully", "data": result})
     except HTTPException as http_ex:
@@ -337,8 +346,7 @@ async def create_vendor_user(
 
 @router.get("/vendor-users-list", status_code=status.HTTP_200_OK)
 async def vendor_users_list(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: Optional[str] = Query(None, description="Search query"),
@@ -346,7 +354,7 @@ async def vendor_users_list(
 ):
     try:
         result = await vendor_manager.vendor_users_list(
-            request=request, token=token, page=page, limit=limit, search=search
+            current_user=current_user, page=page, limit=limit, search=search
         )
         return success({"message": "Vendor users list found successfully", "data": result})
     except HTTPException as http_ex:
@@ -363,15 +371,14 @@ async def vendor_users_list(
 
 @router.post("/add-slot-time", status_code=status.HTTP_201_CREATED)
 async def add_slot_time(
-    request: Request,
-    slot_request: SlotRequest,  # Updated to use the new model
-    token: str = Depends(get_token_from_header),
+    slot_request: SlotRequest,
+    current_user: User = Depends(get_current_user),
     vendor_user_id: Optional[str] = None,
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         result = await vendor_manager.set_individual_vendor_availability(
-            request=request, token=token, slots=slot_request.slots, vendor_user_id=vendor_user_id
+            current_user=current_user, slots=slot_request.slots, vendor_user_id=vendor_user_id
         )
         return success({"message": "Slot time added successfully", "data": result})
     except HTTPException as http_ex:
@@ -432,51 +439,16 @@ async def update_vendor_availability(
         )
 
 
-@router.delete("/delete-vendor-availability", status_code=status.HTTP_200_OK)
-async def delete_vendor_availability(
-    request: Request,
-    token: str = Depends(get_token_from_header),
-    day: str = Query(..., description="Day to delete slots for, e.g., 'Monday'"),
-    start_time: Optional[str] = Query(None, description="Start time of the specific slot to delete (ISO 8601 format)"),
-    vendor_manager: VendorManager = Depends(get_vendor_manager),
-):
-    """
-    Delete vendor availability for a specific day or time slot.
-
-    Args:
-        day (str): The day for which availability should be deleted.
-        start_time (Optional[str]): The specific start time of the slot to delete.
-
-    Returns:
-        dict: Response indicating success or failure.
-    """
-    try:
-        result = await vendor_manager.delete_vendor_availability(
-            request=request, token=token, day=day, start_time=start_time
-        )
-        return success({"message": "Vendor availability deleted successfully", "data": result})
-    except HTTPException as http_ex:
-        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
-    except ValueError as ex:
-        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
-    except Exception as ex:
-        return internal_server_error(
-            {"message": "An unexpected error occurred", "error": str(ex)},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-
-
 @router.post("/add-slot-time-vendor/{id}", status_code=status.HTTP_201_CREATED)
 async def add_slot_time_vendor(
-    request: Request,
     slot_request: SlotRequest,  # Updated to use the new model
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the vendor user to add slots for"),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         result = await vendor_manager.add_slot_time_vendor(
-            request=request, token=token, id=id, slots=slot_request.slots  # Pass the list of slots
+            current_user=current_user, id=id, slots=slot_request.slots  # Pass the list of slots
         )
         return success({"message": "Slot time added successfully", "data": result})
     except HTTPException as http_ex:
@@ -517,16 +489,15 @@ async def change_password_vendor(
 
 @router.post("/vendor-slots/{vendor_id}", status_code=status.HTTP_200_OK)
 async def create_vendor_slots(
-    request: Request,
     slot_request: SlotRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_id: str = Path(..., title="The ID of the vendor to create slots for"),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         # Pass data to user manager for processing
         result = await vendor_manager.create_vendor_slots(
-            request=request, token=token, vendor_id=vendor_id, slots=slot_request.slots
+            current_user=current_user, vendor_id=vendor_id, slots=slot_request.slots
         )
         return success({"message": "Slots Updated successfully", "data": result})
     except HTTPException as http_ex:
@@ -542,14 +513,13 @@ async def create_vendor_slots(
 
 @router.get("/vendor-slots-list/{vendor_id}", status_code=status.HTTP_200_OK)
 async def get_vendor_slots(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_id: str = Path(..., title="The ID of the vendor to get slots for"),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         # Pass data to user manager for processing
-        result = await vendor_manager.get_vendor_slots(request=request, token=token, vendor_id=vendor_id)
+        result = await vendor_manager.get_vendor_slots(current_user=current_user, vendor_id=vendor_id)
         return success({"message": "Slots retrieved successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -564,13 +534,12 @@ async def get_vendor_slots(
 
 @router.get("/vendor-list-for-slot", status_code=status.HTTP_200_OK)
 async def vendor_list_for_slot(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         # Pass data to user manager for processing
-        result = await vendor_manager.vendor_list_for_slot(request=request, token=token)
+        result = await vendor_manager.vendor_list_for_slot(current_user=current_user)
         return success({"message": "Vendor list retrieved successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -585,14 +554,13 @@ async def vendor_list_for_slot(
 
 @router.get("/vendor-user-list-for-slot/{vendor_id}", status_code=status.HTTP_200_OK)
 async def vendor_user_list_for_slot(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_id=str,
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         # Pass data to user manager for processing
-        result = await vendor_manager.vendor_user_list_for_slot(request=request, token=token, vendor_id=vendor_id)
+        result = await vendor_manager.vendor_user_list_for_slot(current_user=current_user, vendor_id=vendor_id)
         return success({"message": "Vendor list retrieved successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -608,14 +576,13 @@ async def vendor_user_list_for_slot(
 @router.put("/update-vendor-user/{id}", status_code=status.HTTP_200_OK)
 async def update_vendor_user(
     id: str,
-    request: Request,
     vendor_user_request: VendorUserUpdateRequest,
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
-    token: str = Depends(get_token_from_header),
 ):
     try:
         result = await vendor_manager.update_vendor_user_by_id(
-            request=request, token=token, id=id, vendor_user_request=vendor_user_request
+            current_user=current_user, id=id, vendor_user_request=vendor_user_request
         )
         return success({"message": "Vendor user updated successfully", "data": result})
     except HTTPException as http_ex:
@@ -632,13 +599,12 @@ async def update_vendor_user(
 
 @router.delete("/delete-vendor-user/{id}", status_code=status.HTTP_200_OK)
 async def delete_vendor_user(
-    request: Request,
     id: str,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.delete_vendor_user_by_id(request=request, token=token, id=id)
+        result = await vendor_manager.delete_vendor_user_by_id(current_user=current_user, id=id)
         return success({"message": "Vendor user deleted successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -651,13 +617,12 @@ async def delete_vendor_user(
 
 @router.get("/get-vendor-user/{id}", status_code=status.HTTP_200_OK)
 async def get_vendor_user(
-    request: Request,
     id: str,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.get_vendor_user_by_id(request=request, token=token, id=id)
+        result = await vendor_manager.get_vendor_user_by_id(current_user=current_user, id=id)
         return success({"message": "vendor user found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -670,12 +635,11 @@ async def get_vendor_user(
 
 @router.get("/vendor-subscription-plan", status_code=status.HTTP_200_OK)
 async def vendor_subscription_plan(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.vendor_subscription_plan(request=request, token=token)
+        result = await vendor_manager.vendor_subscription_plan(current_user=current_user)
         return success({"message": "vendor subscription plan found successfully", "data": result})
 
     except HTTPException as http_ex:
@@ -691,15 +655,14 @@ async def vendor_subscription_plan(
 
 @router.post("/create-vendor-subscription", status_code=status.HTTP_200_OK)
 async def create_vendor_subscription(
-    request: Request,
     vendor_subscription_request: VendorSubscriptionRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         # Pass data to user manager for processing
         result = await vendor_manager.create_or_upgrade_vendor_subscription(
-            request=request, token=token, vendor_subscription_request=vendor_subscription_request
+            current_user=current_user, vendor_subscription_request=vendor_subscription_request
         )
         return success({"message": "Vendor subscription created successfully", "data": result})
     except HTTPException as http_ex:
@@ -715,15 +678,14 @@ async def create_vendor_subscription(
 
 @router.get("/verify-subscription-payment/{subscription_id}", status_code=status.HTTP_200_OK)
 async def verify_subscription_payment(
-    request: Request,
     subscription_id: str,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         # Pass data to vendor manager for processing
         result = await vendor_manager.verify_subscription_payment(
-            request=request, token=token, subscription_id=subscription_id
+            current_user=current_user, subscription_id=subscription_id
         )
         return success({"message": "Subscription payment verified successfully", "data": result})
     except HTTPException as http_ex:
@@ -739,12 +701,11 @@ async def verify_subscription_payment(
 
 @router.get("/vendor-subscription-payment-detail", status_code=status.HTTP_200_OK)
 async def subscription_payment_details(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.subscription_payment_details(request=request, token=token)
+        result = await vendor_manager.subscription_payment_details(current_user=current_user)
         return success({"message": "subscription payment details found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -759,12 +720,11 @@ async def subscription_payment_details(
 
 @router.get("/get-plan-list", status_code=status.HTTP_200_OK)
 async def get_plan_list(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.get_plan_list(request=request, token=token)
+        result = await vendor_manager.get_plan_list(current_user=current_user)
         return success({"message": "plan list found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -797,13 +757,12 @@ async def get_all_plans(
 
 @router.get("/get-plan/{plan_id}", status_code=status.HTTP_200_OK)
 async def get_plan(
-    request: Request,
     plan_id: str,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.get_plan(request=request, token=token, plan_id=plan_id)
+        result = await vendor_manager.get_plan(current_user=current_user, plan_id=plan_id)
         return success({"message": "plan found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -818,12 +777,11 @@ async def get_plan(
 
 @router.get("/vendor-users-list-for-slot", status_code=status.HTTP_200_OK)
 async def vendor_users_list_for_slot(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.vendor_users_list_for_slot(request=request, token=token)
+        result = await vendor_manager.vendor_users_list_for_slot(current_user=current_user)
         return success({"message": "Vendor users list found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -839,12 +797,11 @@ async def vendor_users_list_for_slot(
 
 @router.get("/vednor-dashboard", status_code=status.HTTP_200_OK)
 async def get_dashboard_data_for_vendor(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.get_dashboard_data_for_vendor(request=request, token=token)
+        result = await vendor_manager.get_dashboard_data_for_vendor(current_user=current_user)
         return success({"message": "Dashboard details", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -860,12 +817,11 @@ async def get_dashboard_data_for_vendor(
 
 @router.get("/get-vendor-bookings", status_code=status.HTTP_200_OK)
 async def get_vendor_bookings(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.get_vendor_bookings(request=request, token=token)
+        result = await vendor_manager.get_vendor_bookings(current_user=current_user)
         return success({"message": "Dashboard details", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -881,12 +837,11 @@ async def get_vendor_bookings(
 
 @router.get("/get-vendor-service", status_code=status.HTTP_200_OK)
 async def get_vendor_service(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.get_vendor_service(request=request, token=token)
+        result = await vendor_manager.get_vendor_service(current_user=current_user)
         return success({"message": "Vendor services", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -902,16 +857,15 @@ async def get_vendor_service(
 
 @router.patch("/upgrade-vendor-subscription/{sub_id}", status_code=status.HTTP_200_OK)
 async def upgrade_vendor_subscription(
-    request: Request,
     sub_id: str,
     upgrade_subscription_request: VendorSubscriptionRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         # Pass data to vendor manager for processing
         result = await vendor_manager.upgrade_vendor_subscription(
-            request=request, token=token, sub_id=sub_id, upgrade_subscription_request=upgrade_subscription_request
+            current_user=current_user, sub_id=sub_id, upgrade_subscription_request=upgrade_subscription_request
         )
         return success({"message": "Vendor subscription upgraded successfully", "data": result})
     except HTTPException as http_ex:

@@ -1,11 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 
 from app.v1.dependencies import get_category_manager, get_subscription_manager
-from app.v1.middleware.auth import get_token_from_header
-from app.v1.models import services
+from app.v1.middleware.auth import check_permission, get_current_user, get_token_from_header
+from app.v1.models import User, services
 from app.v1.schemas.subscription.subscription_auth import *
 from app.v1.services import CategoryManager, SubscriptionManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
+
+
+def has_permission(menu_id: str, action: str):
+    """
+    Dependency to check if the user has permission for a specific action on a menu item.
+    """
+
+    async def permission_checker(request: Request):
+        await check_permission(request, menu_id, action)
+
+    return Depends(permission_checker)
 
 
 router = APIRouter()
@@ -13,9 +24,9 @@ router = APIRouter()
 
 @router.post("/create-subscription", status_code=status.HTTP_200_OK)
 async def create_subscription(
-    request: Request,
     subscription_request: CreateSubscriptionRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
+    _permission: None = has_permission("subscription", "addSubscription"),
     subscription_manager: "SubscriptionManager" = Depends(lambda: SubscriptionManager()),
 ):
     # Validate the service request
@@ -26,7 +37,7 @@ async def create_subscription(
     try:
         # Create the service
         result = await subscription_manager.subscription_create(
-            request=request, token=token, subscription_request=subscription_request
+            current_user=current_user, subscription_request=subscription_request
         )
         return success({"message": "Subscription created successfully", "data": result})
     except HTTPException as http_ex:
@@ -43,17 +54,18 @@ async def create_subscription(
 @router.get("/subscription-list", status_code=status.HTTP_200_OK)
 async def subscription_list(
     request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search term to filter subscriptions by title"),
+    _permission: None = has_permission("subscription", "List"),
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
     try:
         query_params = request.query_params
         statuss = query_params.get("query[status]")
         result = await subscription_manager.subscription_list(
-            request=request, token=token, page=page, limit=limit, search=search, statuss=statuss
+            request=request, current_user=current_user, page=page, limit=limit, search=search, statuss=statuss
         )
         return success({"message": "Subscription List found successfully", "data": result})
     except HTTPException as http_ex:
@@ -69,14 +81,13 @@ async def subscription_list(
 
 @router.get("/get-subscription/{id}", status_code=status.HTTP_200_OK)
 async def get_subscription(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the subscription to retrieve"),
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
     try:
         # Call the ServiceManager to retrieve the service by id
-        result = await subscription_manager.subscription_get(request=request, token=token, id=id)
+        result = await subscription_manager.subscription_get(current_user=current_user, id=id)
 
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="subscription not found")
@@ -95,9 +106,8 @@ async def get_subscription(
 
 @router.put("/update-subscription/{id}", status_code=status.HTTP_200_OK)
 async def update_service(
-    request: Request,
     subscription_request: UpdateSubscriptionRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     id: str = Path(..., title="The ID of the service to update"),
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
@@ -119,7 +129,7 @@ async def update_service(
     try:
         # Call the ServiceManager to update the service by id
         result = await subscription_manager.subscription_update(
-            request=request, token=token, id=id, subscription_request=subscription_request
+            current_user=current_user, id=id, subscription_request=subscription_request
         )
 
         if not result:
@@ -140,6 +150,7 @@ async def update_service(
 @router.delete("/delete-subscription/{id}", status_code=status.HTTP_200_OK)
 async def delete_service(
     id: str = Path(..., title="The ID of the service to delete"),
+    _permission: None = has_permission("subscription", "deleteSubscription"),
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
     try:
@@ -190,15 +201,15 @@ async def delete_service(
 
 @router.post("/create-plan", status_code=status.HTTP_200_OK)
 async def create_plan(
-    request: Request,
     plan_request: CreateSubscriptionRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
+    _permission: None = has_permission("subscription", "addSubscription"),
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
 
     try:
         # Create the service
-        result = await subscription_manager.plan_create(request=request, token=token, plan_request=plan_request)
+        result = await subscription_manager.plan_create(current_user=current_user, plan_request=plan_request)
         return success({"message": "Plan created successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -213,17 +224,15 @@ async def create_plan(
 
 @router.get("/plan-list", status_code=status.HTTP_200_OK)
 async def plan_list(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
     search: str = Query(None, description="Search term to filter plans by title"),
+    _permission: None = has_permission("subscription", "List"),
     subscription_manager: "SubscriptionManager" = Depends(get_subscription_manager),
 ):
     try:
-        result = await subscription_manager.plan_list(
-            request=request, token=token, page=page, limit=limit, search=search
-        )
+        result = await subscription_manager.plan_list(current_user=current_user, page=page, limit=limit, search=search)
         return success({"message": "Plan List found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

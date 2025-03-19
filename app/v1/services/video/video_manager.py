@@ -129,10 +129,23 @@ class VideoManager:
                 response_data.append(video)
             total_video = await video_collection.count_documents(query)
             total_pages = (total_video + limit - 1) // limit
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
             return {
                 "data": response_data,
-                "total_items": total_video,
-                "total_pages": total_pages,
+                "paginator": {
+                    "itemCount": total_video,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
             }
         except HTTPException as ex:
             raise ex

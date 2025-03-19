@@ -18,11 +18,8 @@ from app.v1.schemas.vendor.vendor_auth import *
 
 class PermissionManager:
 
-    async def admin_list(self, request: Request, token: str):
+    async def admin_list(self, current_user: User):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -33,17 +30,6 @@ class PermissionManager:
             query = {"roles": {"$regex": "^admin$", "$options": "i"}}
             admin_list = await user_collection.find(query).to_list(length=100)
 
-            # processed_admin_list = []
-            # for admin in admin_list:
-            #     processed_admin = {
-            #         "id": str(admin["_id"]),
-            #         **{
-            #             key: value
-            #             for key, value in admin.items()
-            #             if key not in ["_id", "password", "otp"]
-            #         }
-            #     }
-            #     processed_admin_list.append(processed_admin)
             processed_admin_list = []
             for admin in admin_list:
                 processed_admin = {
@@ -58,13 +44,9 @@ class PermissionManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def permission_list(self, request: Request, token: str):
+    async def permission_list(self, current_user: User):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-            if current_user.user_role != 2:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
@@ -75,58 +57,8 @@ class PermissionManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    # async def assign_permission(self, request: Request, token: str, admin_id: str, permission_assign: PermissionAssignRequest):
-    #     try:
-    #         current_user = await get_current_user(request=request, token=token)
-    #         if not current_user:
-    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-    #         if current_user.user_role != 2:
-    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page ")
-
-    #         if not admin_id:
-    #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin ID is required")
-
-    #         admin_user = await user_collection.find_one({"_id": ObjectId(admin_id)})
-    #         if not admin_user:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin not found")
-
-    #         user_id = admin_user["_id"]
-
-    #         for permission_data in permission_assign.permissions:
-    #             table = permission_data.get("table")
-    #             actions = permission_data.get("actions")
-
-    #             if table not in TableType._value2member_map_:
-    #                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid table type: {table}")
-
-    #             existing_permission = await permission_collection.find_one({"user_id": PydanticObjectId(str(user_id)), "table": table})
-    #             print(existing_permission, 'existing_permission')
-
-    #             if existing_permission:
-    #                 existing_permission.actions = actions
-    #                 existing_permission.updated_at = datetime.utcnow()
-    #                 await permission_collection.save(existing_permission)
-    #             else:
-    #                 new_permission = Permission(
-    #                     user_id=PydanticObjectId(str(user_id)),
-    #                     table=table,
-    #                     actions=actions,
-    #                     created_at=datetime.utcnow(),
-    #                     updated_at=datetime.utcnow(),
-    #                 )
-    #                 print(new_permission, 'new_permission')
-    #                 await permission_collection.insert_one(new_permission.dict(exclude_unset=True))
-
-    #         return {"admin_id": admin_id, "permissions": permission_assign.permissions}
-
-    #     except Exception as ex:
-    #         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
-
-    async def get_permission_by_adminid(self, request: Request, token: str, admin_id: str):
+    async def get_permission_by_adminid(self, current_user: User, admin_id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -147,70 +79,8 @@ class PermissionManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    # async def update_permission(self, request: Request, token: str, admin_id: str, updates: dict):
-    #     try:
-    #         current_user = await get_current_user(request=request, token=token)
-    #         if not current_user:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized"
-    #             )
-    #         if current_user.user_role != 2:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
-    #             )
-    #         if not admin_id:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST, detail="Admin ID is required"
-    #             )
-
-    #         admin_user = await user_collection.find_one({"_id": ObjectId(admin_id)})
-    #         if not admin_user:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_404_NOT_FOUND, detail="Admin not found"
-    #             )
-
-    #         if not isinstance(updates, dict):
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid updates format"
-    #             )
-    #         for item in updates.get("menu", []):
-    #             if "title" not in item or "status" not in item:
-    #                 raise HTTPException(
-    #                     status_code=status.HTTP_400_BAD_REQUEST,
-    #                     detail="Each menu item must include 'title' and 'status'.",
-    #                 )
-
-    #         updates = jsonable_encoder(updates)
-    #         update_result = await user_collection.update_one(
-    #             {"_id": ObjectId(admin_id)},
-    #             {"$set": {"menu": updates.get("menu", DEFAULT_MENU_STRUCTURE)}},
-    #         )
-
-    #         if update_result.modified_count == 0:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST, detail="No fields updated"
-    #             )
-
-    #         updated_user = await user_collection.find_one({"_id": ObjectId(admin_id)})
-    #         if updated_user:
-    #             updated_user["id"] = str(updated_user["_id"])
-    #             updated_user.pop("_id", None)
-    #         return {"data": updated_user}
-
-    #     except HTTPException as e:
-    #         raise e
-    #     except Exception as ex:
-    #         print(ex,'ex')
-    #         raise HTTPException(
-    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #             detail=f"An unexpected error occurred: {str(ex)}",
-    #         )
-
-    async def update_permission(self, request: Request, token: str, admin_id: str, updates: dict):
+    async def update_permission(self, current_user: User, admin_id: str, updates: dict):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
