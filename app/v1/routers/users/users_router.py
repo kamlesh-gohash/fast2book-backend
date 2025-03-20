@@ -9,10 +9,11 @@ from google.auth.transport import requests
 from google.oauth2 import id_token
 
 from app.v1.dependencies import get_support_manager, get_user_manager
-from app.v1.middleware.auth import get_token_from_header
+from app.v1.middleware.auth import get_current_user, get_token_from_header
 from app.v1.models import User, UserToken
 from app.v1.models.services import *
 from app.v1.models.support import Support
+from app.v1.models.ticket import Ticket
 from app.v1.schemas.user.auth import *
 from app.v1.services import UserManager
 from app.v1.services.support.support_manager import SupportManager
@@ -175,11 +176,11 @@ async def validate_otp(validate_otp_request: ValidateOtpRequest, user_manager: U
 
 @router.get("/profile", status_code=status.HTTP_200_OK)
 async def get_profile(
-    request: Request, token: str = Depends(get_token_from_header), user_manager: UserManager = Depends(get_user_manager)
+    current_user: User = Depends(get_current_user), user_manager: UserManager = Depends(get_user_manager)
 ):
     try:
         # Get profile logic
-        result = await user_manager.get_profile(request=request, token=token)
+        result = await user_manager.get_profile(current_user=current_user)
         return success({"message": "Profile fetched successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -195,9 +196,8 @@ async def get_profile(
 
 @router.put("/update-profile", status_code=status.HTTP_200_OK)
 async def update_profile(
-    request: Request,
     profile_update_request: UpdateProfileRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     user_manager: UserManager = Depends(get_user_manager),
 ):
     # validation_result = profile_update_request.validate()
@@ -206,7 +206,7 @@ async def update_profile(
     try:
         # Update profile logic
         result = await user_manager.update_profile(
-            request=request, token=token, profile_update_request=profile_update_request
+            current_user=current_user, profile_update_request=profile_update_request
         )
         return success({"message": "Profile updated successfully", "data": result})
     except HTTPException as http_ex:
@@ -429,9 +429,8 @@ async def category_top_service(user_manager: UserManager = Depends(get_user_mana
 
 @router.post("/change-password", status_code=status.HTTP_200_OK)
 async def change_password(
-    request: Request,
     change_password_request: ChangePasswordRequest,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     user_manager: UserManager = Depends(get_user_manager),
 ):
     validation_result = change_password_request.validate()
@@ -439,8 +438,7 @@ async def change_password(
         return validation_result
     try:
         result = await user_manager.change_password(
-            request=request,
-            token=token,
+            current_user=current_user,
             old_password=change_password_request.old_password,
             new_password=change_password_request.new_password,
         )
@@ -564,12 +562,11 @@ async def send_link(email: str = Query(None), phone: str = Query(None)):
 
 @router.get("/get-notifications-list", status_code=status.HTTP_200_OK)
 async def get_notifications_list(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     user_manager: UserManager = Depends(get_user_manager),
 ):
     try:
-        result = await user_manager.get_notifications_list(request=request, token=token)
+        result = await user_manager.get_notifications_list(current_user=current_user)
         return success({"message": "Notifications list found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -654,6 +651,23 @@ async def get_category_service(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/create-ticket", status_code=status.HTTP_200_OK)
+async def create_ticket(request: Request, ticket_data: Ticket, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.create_ticket(request=request, ticket_data=ticket_data)
+        return success({"message": "Ticket created successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

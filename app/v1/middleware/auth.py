@@ -53,7 +53,43 @@ ALGORITHM = "HS256"  # Ensure this matches the algorithm used to sign the token
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
 
-async def get_current_user(request: Request = None, token: str = Depends(oauth2_scheme)):
+# async def get_current_user(request: Request = None, token: str = Depends(oauth2_scheme)):
+#     """Get the current authenticated user from either a JWT token or a Google ID token."""
+#     try:
+#         # Handle JWT token
+#         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+#         sub = payload.get("sub")
+
+#         if not sub:
+#             raise HTTPException(status_code=401, detail="Invalid token: Missing 'sub' claim.")
+#         sub = str(sub).strip()
+#         # Try to fetch user by email or phone
+#         user = None
+#         if "@" in sub:
+#             user = await User.get_user_by_email(sub)
+#             if not user:
+#                 raise HTTPException(status_code=404, detail="User not found by email.")
+#         elif sub.isdigit():
+#             user = await User.get_user_by_phone(sub)
+#             if not user:
+#                 raise HTTPException(status_code=404, detail="User not found by phone.")
+#         else:
+#             raise HTTPException(status_code=401, detail="Invalid token: 'sub' is neither email nor phone.")
+
+#         return user
+
+#     except ExpiredSignatureError:
+#         raise HTTPException(status_code=401, detail="Token has expired.")
+
+#     except InvalidTokenError as e:
+#         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+#     except GoogleAuthError as e:
+#         raise HTTPException(status_code=401, detail=f"Invalid Google token: {str(e)}")
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
     """Get the current authenticated user from either a JWT token or a Google ID token."""
     try:
         # Handle JWT token
@@ -175,23 +211,23 @@ async def get_token_from_header(authorization: Optional[str] = Header(None)) -> 
 
 
 async def check_permission(request: Request, menu_id: str, action: str):
-    current_user = await get_current_user(request, await get_token_from_header(request.headers.get("Authorization")))
+    # Extract the token from the Authorization header
+    token = await get_token_from_header(request.headers.get("Authorization"))
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    # Get the current user using the token
+    current_user = await get_current_user(token)
     if not current_user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
+    # Check if the user has the required permissions
     menu_item = next((menu for menu in current_user.menu if menu["id"] == menu_id), None)
     if not menu_item or not menu_item["actions"].get(action):
-        print(menu_item, "menu_item")
-        # return unauthorized(
-        #     {"message": "You do not have permission to perform this action"},
-        #     # status_code=status.HTTP_403_FORBIDDEN,
-        # )
-
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to perform this action.",
         )
-    pass
 
 
 from starlette.middleware.base import BaseHTTPMiddleware

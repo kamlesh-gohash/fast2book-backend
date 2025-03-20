@@ -7,7 +7,6 @@ from scripts.seed import seed_categorys, seed_data, seed_payment_types
 
 from app.v1.config.constants import FRONT_URL
 from app.v1.config.db import initiate_database
-from app.v1.middleware.auth import AuthMiddleware
 from app.v1.middleware.exception_handlers.custom_handlers import exception_handlers
 from app.v1.middleware.response_format import add_response_format
 from app.v1.routers.base_router import router
@@ -37,7 +36,6 @@ app.add_middleware(
 )
 
 
-# app.add_middleware(AuthMiddleware)
 app.include_router(router)
 
 

@@ -14,17 +14,13 @@ class SupportManager:
     async def support_list(
         self,
         request: Request,
-        token: str,
+        current_user: User,
         page: int,
         limit: int,
         search: str = None,
         statuss: str = None,
     ):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -86,12 +82,8 @@ class SupportManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def support_detail(self, request: Request, token: str, support_id: str):
+    async def support_detail(self, current_user: User, support_id: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -105,13 +97,8 @@ class SupportManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def reply_support(self, request: Request, token: str, support_id: str, reply: str):
+    async def reply_support(self, current_user: User, support_id: str, reply: str):
         try:
-            # Verify the current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             # Check if the user is an admin
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(

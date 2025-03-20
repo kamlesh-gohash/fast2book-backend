@@ -21,8 +21,10 @@ from app.v1.models import (
     plan_collection,
     services_collection,
     subscription_collection,
+    ticket_collection,
     user_collection,
     vendor_collection,
+    vendor_query_collection,
 )
 from app.v1.models.permission import *
 from app.v1.models.slots import *
@@ -726,6 +728,271 @@ class SuperUserManager:
 
             return result
 
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_all_tickets(
+        self,
+        current_user: User,
+        page: int,
+        limit: int,
+        search: str = None,
+        statuss: str = None,
+    ):
+        try:
+            # Check if the user has the required permissions
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+            skip = max((page - 1) * limit, 0)
+            query = {}
+
+            if search:
+                search = search.strip()
+                if not search:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Search term cannot be empty")
+                search_regex = {"$regex": search, "$options": "i"}
+                query["$or"] = [
+                    {"first_name": search_regex},
+                    {"last_name": search_regex},
+                    {"email": search_regex},
+                    {"phone": search_regex},
+                ]
+
+            if statuss:
+                statuss = statuss.strip()
+                if not statuss:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status cannot be empty")
+                query["status"] = statuss
+
+            # Fetch all tickets
+
+            tickets = (
+                await ticket_collection.find(query)
+                .sort("created_at", DESCENDING)
+                .skip(skip)
+                .limit(limit)
+                .to_list(length=limit)
+            )
+            print(tickets, "tickets")
+            if not tickets:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No tickets found")
+
+            for ticket in tickets:
+                ticket["id"] = str(ticket["_id"])
+                ticket.pop("_id")
+
+            total_tickets = await ticket_collection.count_documents(query)
+            total_pages = (total_tickets + limit - 1) // limit
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": tickets,
+                "paginator": {
+                    "itemCount": total_tickets,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_ticket_details(self, current_user: User, ticket_id: str):
+        try:
+            # Check if the user has the required permissions
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+            # Fetch the ticket details
+            ticket = await ticket_collection.find_one({"_id": ObjectId(ticket_id)})
+            if not ticket:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+
+            ticket["id"] = str(ticket["_id"])
+            ticket.pop("_id")
+
+            return ticket
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def reply_to_ticket(self, current_user: User, ticket_id: str, reply: str):
+        try:
+            # Check if the user has the required permissions
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+
+            # Fetch the ticket to get the user's email
+            ticket = await ticket_collection.find_one({"_id": ObjectId(ticket_id)})
+            if not ticket:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+
+            user_email = ticket.get("email")
+            if not user_email:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User email not found in ticket")
+
+            # Update the ticket with the reply
+            update_data = await ticket_collection.update_one({"_id": ObjectId(ticket_id)}, {"$set": {"reply": reply}})
+
+            # Send email to the user with the reply
+            source = "Ticket Reply"
+            to_email = user_email
+            context = {"reply": reply}
+            await send_email(to_email, source, context)
+
+            return {reply}
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_all_vendor_query(
+        self,
+        current_user: User,
+        page: int,
+        limit: int,
+        search: str = None,
+        statuss: str = None,
+    ):
+        try:
+            # Check if the user has the required permissions
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+            skip = max((page - 1) * limit, 0)
+            query = {}
+
+            if search:
+                search = search.strip()
+                if not search:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Search term cannot be empty")
+                search_regex = {"$regex": search, "$options": "i"}
+                query["$or"] = [
+                    {"first_name": search_regex},
+                    {"last_name": search_regex},
+                    {"email": search_regex},
+                    {"phone": search_regex},
+                ]
+
+            if statuss:
+                statuss = statuss.strip()
+                if not statuss:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status cannot be empty")
+                query["status"] = statuss
+
+            # Fetch all tickets
+
+            vendor_query = (
+                await vendor_query_collection.find(query)
+                .sort("created_at", DESCENDING)
+                .skip(skip)
+                .limit(limit)
+                .to_list(length=limit)
+            )
+            if not vendor_query:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor query found")
+
+            for vendor in vendor_query:
+
+                vendor["id"] = str(vendor["_id"])
+                vendor.pop("_id")
+
+            total_vendor_query = await vendor_query_collection.count_documents(query)
+            total_pages = (total_vendor_query + limit - 1) // limit
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": vendor_query,
+                "paginator": {
+                    "itemCount": total_vendor_query,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_vendor_query_details(self, current_user: User, vendor_query_id: str):
+        try:
+            # Check if the user has the required permissions
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+            # Fetch the ticket details
+            vendor_query = await vendor_query_collection.find_one({"_id": ObjectId(vendor_query_id)})
+            if not vendor_query:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor query not found")
+
+            vendor_query["id"] = str(vendor_query["_id"])
+            vendor_query.pop("_id")
+
+            return vendor_query
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def reply_to_vendor_query(self, current_user: User, vendor_query_id: str, reply: str):
+        try:
+            # Check if the user has the required permissions
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+
+            # Fetch the ticket to get the user's email
+            vendor_query = await vendor_query_collection.find_one({"_id": ObjectId(vendor_query_id)})
+            if not vendor_query:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+
+            user_email = vendor_query.get("email")
+            if not user_email:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User email not found in ticket")
+
+            # Update the ticket with the reply
+            await vendor_query_collection.update_one({"_id": ObjectId(vendor_query_id)}, {"$set": {"reply": reply}})
+
+            # Send email to the user with the reply
+            source = "Vendor Query Reply"
+            to_email = user_email
+            context = {"reply": reply}
+            await send_email(to_email, source, context)
+
+            return {reply}
         except HTTPException as e:
             raise e
         except Exception as ex:

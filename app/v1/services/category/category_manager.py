@@ -60,6 +60,7 @@ class CategoryManager:
                 "name": created_category["name"],
                 "slug": created_category["slug"],
                 "status": created_category["status"],
+                "icon": created_category["icon"] if "icon" in created_category else None,
                 "created_at": created_category["created_at"],
             }
 
@@ -120,6 +121,7 @@ class CategoryManager:
                         "name": category["name"],
                         "slug": category.get("slug"),  # Use .get() to avoid KeyError
                         "status": category["status"],
+                        "icon": category["icon"] if "icon" in category else None,
                         "created_at": category["created_at"],
                     }
                 )
@@ -172,6 +174,7 @@ class CategoryManager:
                 "name": category["name"],
                 "slug": category["slug"] if "slug" in category else None,
                 "status": category["status"],
+                "icon": category["icon"] if "icon" in category else None,
                 "created_at": category["created_at"],
             }
         except Exception as ex:
@@ -210,6 +213,8 @@ class CategoryManager:
 
             if category_request.status:
                 update_data["status"] = category_request.status.value
+            if category_request.icon:
+                update_data["icon"] = category_request.icon
 
             if not update_data:
                 raise HTTPException(
@@ -229,13 +234,13 @@ class CategoryManager:
                 "name": updated_category["name"],
                 "slug": updated_category["slug"] if "slug" in updated_category else None,
                 "status": updated_category["status"],
+                "icon": updated_category["icon"] if "icon" in updated_category else None,
                 "created_at": updated_category["created_at"],
             }
 
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
