@@ -1,5 +1,5 @@
-from fastapi import HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 
 from app.v1.utils.response.response_code import ResponseCode
 from app.v1.utils.response.response_format import record_not_found
@@ -23,8 +23,21 @@ async def custom_exception_handler(request, exc: Exception):
     )
 
 
+async def custom_http_exception_handler(request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "UNAUTHORIZED",
+            "message": "You are not authorized to access this Page.",
+            "data": None,
+        },
+    )
+
+
 # Define exception handlers
-exception_handlers = {
-    404: not_found,  # Register the custom 404 handler
-    Exception: custom_exception_handler,  # Handle all uncaught exceptions
-}
+# exception_handlers = {
+#     404: not_found,  # Register the custom 404 handler
+#     Exception: custom_exception_handler,  # Handle all uncaught exceptions
+# }
+
+exception_handlers = {Exception: custom_exception_handler, HTTPException: custom_http_exception_handler}

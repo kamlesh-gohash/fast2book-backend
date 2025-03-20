@@ -34,6 +34,8 @@ booking_payments_collection = get_model("booking_payments")
 vendor_services_collection = get_model("vendor_services")
 vendor_ratings_collection = get_model("vendor_ratings")
 video_collection = get_model("videos")
+ticket_collection = get_model("tickets")
+vendor_query_collection = get_model("vendor_queries")
 
 
 __all__ = {
@@ -55,4 +57,6 @@ __all__ = {
     "vendor_services_collection": vendor_services_collection,
     "vendor_ratings_collection": vendor_ratings_collection,
     "video_collection": video_collection,
+    "ticket_collection": ticket_collection,
+    "vendor_query_collection": vendor_query_collection,
 }

@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app.v1.dependencies import get_vendor_manager
 from app.v1.middleware.auth import check_permission, get_current_user, get_token_from_header
 from app.v1.models import User, vendor_collection
+from app.v1.models.vendor_query import VendorQuery
 from app.v1.schemas.slots.slots import *
 from app.v1.schemas.vendor.vendor_auth import *
 from app.v1.services import VendorManager
@@ -91,7 +92,7 @@ async def vendor_list(
         query_params = request.query_params
         statuss = query_params.get("query[status]")
         result = await vendor_manager.vendor_list(
-            current_user=current_user, page=page, limit=limit, search=search, statuss=statuss
+            current_user=current_user, request=request, page=page, limit=limit, search=search, statuss=statuss
         )
         return success({"message": "Vendor List found successfully", "data": result})
     except HTTPException as http_ex:
@@ -100,6 +101,7 @@ async def vendor_list(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -394,15 +396,12 @@ async def add_slot_time(
 
 @router.get("/get-vendor-availability", status_code=status.HTTP_200_OK)
 async def get_vendor_availability(
-    request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     vendor_user_id: str = None,  # New optional parameter
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.get_vendor_availability(
-            request=request, token=token, vendor_user_id=vendor_user_id
-        )
+        result = await vendor_manager.get_vendor_availability(current_user=current_user, vendor_user_id=vendor_user_id)
         return success({"message": "Vendor availability found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -410,6 +409,7 @@ async def get_vendor_availability(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -418,14 +418,13 @@ async def get_vendor_availability(
 
 @router.put("/update-vendor-availability", status_code=status.HTTP_201_CREATED)
 async def update_vendor_availability(
-    request: Request,
-    slot_request: SlotRequest,  # Updated to use the new model
-    token: str = Depends(get_token_from_header),
+    slot_request: SlotRequest,
+    current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         result = await vendor_manager.update_vendor_availability(
-            request=request, token=token, slots=slot_request.slots  # Pass the list of slots
+            current_user=current_user, slots=slot_request.slots  # Pass the list of slots
         )
         return success({"message": "Vendor availability updated successfully", "data": result})
     except HTTPException as http_ex:
@@ -874,6 +873,25 @@ async def upgrade_vendor_subscription(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/create-vendor-query", status_code=status.HTTP_200_OK)
+async def create_vendor_query(
+    request: Request, vendor_query: VendorQuery, user_manager: VendorManager = Depends(get_vendor_manager)
+):
+    try:
+        result = await user_manager.create_vendor_query(request=request, vendor_query=vendor_query)
+        return success({"message": "Vendor query created successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

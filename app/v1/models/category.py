@@ -27,6 +27,7 @@ class Category(Document, BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     number_of_views: int = Field(default=0)
+    icon: Optional[str] = None
 
     class Settings:
         name = "categories"

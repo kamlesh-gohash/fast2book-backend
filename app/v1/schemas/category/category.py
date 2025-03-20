@@ -14,6 +14,7 @@ from app.v1.utils.response.response_format import validation_error
 create_category_validator = zon.record(
     {
         "name": zon.string(),
+        "icon": zon.string().optional(),
     }
 )
 
@@ -22,6 +23,7 @@ class CreateCategoryRequest(BaseModel):
     name: str
     status: StatusEnum = StatusEnum.Active
     slug: str = None  # Add slug field
+    icon: Optional[str] = None
 
     def validate(self):
         """Validate the input using zon."""
@@ -70,6 +72,7 @@ update_category_validator = zon.record(
     {
         "name": zon.string().optional(),
         "status": zon.string().optional(),
+        "icon": zon.string().optional(),
     }
 )
 
@@ -78,6 +81,7 @@ update_category_validator = zon.record(
 class UpdateCategoryRequest(BaseModel):
     name: Optional[str] = None  # Optional field
     status: Optional[StatusEnum] = None  # Optional field
+    icon: Optional[str] = None
 
     def validate(self):
         try:
