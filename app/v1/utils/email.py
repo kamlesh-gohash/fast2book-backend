@@ -193,6 +193,10 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "Vednor Create": project_root / "templates/email/vendor_create_email.html",
         "APP Link": project_root / "templates/email/app_link.html",
         "Booking Confirmation": project_root / "templates/email/booking_confirm.html",
+        "Ticket Created": project_root / "templates/email/ticket.html",
+        "Ticket Reply": project_root / "templates/email/ticket_reply.html",
+        "Vendor Query Created": project_root / "templates/email/vendor_query.html",
+        "Vendor Query Reply": project_root / "templates/email/vendor_query_reply.html",
     }
 
     # Get the template path based on the source
@@ -239,6 +243,10 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "APP Link": "APP Link",
         "Payment Success": "Payment Success",
         "Booking Confirmation": "Booking Confirm",
+        "Ticket Created": "Ticket Created",
+        "Ticket Reply": "Ticket Reply",
+        "Vendor Query Created": "Vendor Query Created",
+        "Vendor Query Reply": "Vendor Query Reply",
         # Add other sources and subjects here
     }
     msg["Subject"] = subject_map.get(source, "Welcome")  # Default subject

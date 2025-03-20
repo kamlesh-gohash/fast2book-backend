@@ -442,3 +442,153 @@ async def get_total_booking_for_year(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.get("/all-tickets", status_code=status.HTTP_200_OK)
+async def get_all_tickets(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    search: str = Query(None, description="Search term to filter costumers by name, email, or phone"),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
+        result = await user_manager.get_all_tickets(
+            current_user=current_user, page=page, limit=limit, search=search, statuss=statuss
+        )
+        return success({"message": "All tickets", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/ticket-details/{ticket_id}", status_code=status.HTTP_200_OK)
+async def get_ticket_details(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        result = await user_manager.get_ticket_details(current_user=current_user, ticket_id=ticket_id)
+        return success({"message": "Ticket details", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/ticket-reply", status_code=status.HTTP_200_OK)
+async def reply_to_ticket(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        data = await request.json()
+        ticket_id = data.get("ticket_id")
+        reply = data.get("reply")
+
+        if not ticket_id or not reply:
+            raise ValueError("Ticket ID and reply are required")
+
+        result = await user_manager.reply_to_ticket(current_user=current_user, ticket_id=ticket_id, reply=reply)
+        return success({"message": "Ticket reply", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/all-vendor-query", status_code=status.HTTP_200_OK)
+async def get_all_vendor_query(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    search: str = Query(None, description="Search term to filter costumers by name, email, or phone"),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
+        result = await user_manager.get_all_vendor_query(
+            current_user=current_user, page=page, limit=limit, search=search, statuss=statuss
+        )
+        return success({"message": "All tickets", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vendor-query-details/{vendor_query_id}", status_code=status.HTTP_200_OK)
+async def get_vendor_query_details(
+    vendor_query_id: str,
+    current_user: User = Depends(get_current_user),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        result = await user_manager.get_vendor_query_details(current_user=current_user, vendor_query_id=vendor_query_id)
+        return success({"message": "Ticket details", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/vendor-query-reply", status_code=status.HTTP_200_OK)
+async def reply_to_vendor_query(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        data = await request.json()
+        vendor_query_id = data.get("vendor_query_id")
+        reply = data.get("reply")
+
+        if not vendor_query_id or not reply:
+            raise ValueError("Vendor query ID and reply are required")
+
+        result = await user_manager.reply_to_vendor_query(
+            current_user=current_user, vendor_query_id=vendor_query_id, reply=reply
+        )
+        return success({"message": "Vendor reply success", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

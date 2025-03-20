@@ -25,12 +25,14 @@ from app.v1.models import (
     category_collection,
     services_collection,
     support_collection,
+    ticket_collection,
     user_collection,
     vendor_collection,
 )
 from app.v1.models.category import Category
 from app.v1.models.services import Service
 from app.v1.models.support import Support
+from app.v1.models.ticket import Ticket
 from app.v1.models.user import *
 from app.v1.models.vendor import Vendor
 from app.v1.schemas.user.auth import *
@@ -143,14 +145,10 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_profile(self, request: Request, token: str) -> dict:
+    async def get_profile(self, current_user: User) -> dict:
         """Retrieve user details by ID."""
         # Validate and convert the ID to ObjectId
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             user = await user_collection.find_one({"_id": ObjectId(current_user.id)})
             if not user:
                 raise ValueError(f"User with ID '{current_user.id}' does not exist")
@@ -364,7 +362,8 @@ class UserManager:
                 # Send OTP to email
                 source = "Resend OTP"
                 context = {"otp": otp}
-                await send_email(email, source, context)
+                to_email = email
+                await send_email(to_email, source, context)
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
                 update_data = {"otp": otp, "otp_expires": otp_expiration_time}
                 await user_collection.update_one({"email": email}, {"$set": update_data})
@@ -423,8 +422,9 @@ class UserManager:
 
                 source = "Forgot Password"
                 context = {"otp": otp}
+                to_email = email
                 # Send OTP to the user's email
-                await send_email(email, source, context)
+                await send_email(to_email, source, context)
                 user.otp = otp
 
                 otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
@@ -572,11 +572,8 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def update_profile(self, request: Request, token: str, profile_update_request: UpdateProfileRequest):
+    async def update_profile(self, current_user: User, profile_update_request: UpdateProfileRequest):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             user = await user_collection.find_one({"_id": ObjectId(current_user.id)})
             if user is None:
                 raise HTTPException(status_code=404, detail="User not found.")
@@ -660,6 +657,7 @@ class UserManager:
                     "id": str(category["_id"]),
                     "name": category["name"],
                     "slug": category["slug"],
+                    "icon": category["icon"] if "icon" in category else None,
                     "status": category["status"],
                 }
                 for category in active_categories
@@ -1557,12 +1555,8 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def change_password(self, request: Request, token: str, old_password: str, new_password: str):
+    async def change_password(self, current_user: User, old_password: str, new_password: str):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             if old_password is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Old Password required")
             if not bcrypt.checkpw(old_password.encode("utf-8"), current_user.password.encode("utf-8")):
@@ -1732,12 +1726,8 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_notifications_list(self, request: Request, token: str) -> dict:
+    async def get_notifications_list(self, current_user: User) -> dict:
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             notifications = current_user.notification_settings
 
             return notifications
@@ -2069,4 +2059,54 @@ class UserManager:
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
+
+    async def create_ticket(
+        self,
+        request: Request,
+        ticket_data: Ticket,
+    ):
+        try:
+            if not ticket_data:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid ticket data")
+
+            # Auto-generate ticket number
+            ticket_data.ticket_number = Ticket.generate_ticket_number()
+            issue_image_url = None
+            # Handle image upload
+            if ticket_data.issue_image:
+                issue_image = ticket_data.issue_image
+                bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+                issue_image_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{issue_image}"
+                ticket_data.issue_image_url = issue_image_url
+
+            # Save ticket to the database
+            ticket = await ticket_collection.insert_one(ticket_data.dict())
+            if ticket:
+                source = "Ticket Created"
+                to_email = ticket_data.email
+                context = {
+                    "ticket_number": ticket_data.ticket_number,
+                    "ticket_type": ticket_data.ticket_type,
+                    "description": ticket_data.description,
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                }
+                await send_email(
+                    to_email,
+                    source,
+                    context,
+                )
+
+            # Convert ObjectId to string
+            ticket_data = ticket_data.dict()
+            ticket_data["id"] = str(ticket.inserted_id)
+
+            # Convert the datetime object to a string
+            return ticket_data
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

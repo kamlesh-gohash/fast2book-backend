@@ -30,11 +30,13 @@ from app.v1.models import (
     slots_collection,
     user_collection,
     vendor_collection,
+    vendor_query_collection,
     vendor_ratings_collection,
     vendor_services_collection,
 )
 from app.v1.models.slots import *
 from app.v1.models.vendor import Vendor
+from app.v1.models.vendor_query import VendorQuery
 from app.v1.schemas.vendor.vendor_auth import *
 from app.v1.utils.email import *
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
@@ -316,6 +318,7 @@ class VendorManager:
 
     async def vendor_list(
         self,
+        request: Request,
         current_user: User,
         page: int,
         limit: int,
@@ -1579,11 +1582,8 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_vendor_availability(self, request: Request, token: str, vendor_user_id: str = None):
+    async def get_vendor_availability(self, current_user: User, vendor_user_id: str = None):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -1605,15 +1605,13 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def update_vendor_availability(self, request: Request, token: str, slots: List[DaySlot]):
+    async def update_vendor_availability(self, current_user: User, slots: List[DaySlot]):
         try:
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
@@ -3109,4 +3107,43 @@ class VendorManager:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
+            )
+
+    async def create_vendor_query(
+        self,
+        request: Request,
+        vendor_query: VendorQuery,
+    ):
+        try:
+            if not vendor_query:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid vendor query data")
+
+            # Save ticket to the database
+            query = await vendor_query_collection.insert_one(vendor_query.dict())
+            if query:
+                source = "Vendor Query Created"
+                to_email = vendor_query.email
+                context = {
+                    "query_type": vendor_query.query_type,
+                    "description": vendor_query.description,
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                }
+                await send_email(
+                    to_email,
+                    source,
+                    context,
+                )
+
+            # Convert ObjectId to string
+            vendor_data = vendor_query.dict()
+            vendor_data["id"] = str(query.inserted_id)
+
+            # Convert the datetime object to a string
+            return vendor_data
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
