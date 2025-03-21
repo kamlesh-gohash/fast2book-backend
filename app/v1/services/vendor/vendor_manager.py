@@ -1170,8 +1170,8 @@ class VendorManager:
 
             vendor_query = {"_id": ObjectId(current_user.vendor_id)}
             vendor_data = {}
-            # if update_vendor_request.location is not None:
-            #     vendor_data["location"] = update_vendor_request.location.dict()
+            if update_vendor_request.location is not None:
+                vendor_data["location"] = update_vendor_request.location.dict()
             if update_vendor_request.business_type is not None:
                 vendor_data["business_type"] = update_vendor_request.business_type
             if update_vendor_request.fees is not None:
@@ -2870,7 +2870,7 @@ class VendorManager:
                 user = await user_collection.find_one({"_id": ObjectId(booking["user_id"])}, {"first_name": 1})
                 vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
                 vendor_user_name = await user_collection.find_one(
-                    {"vendor_id": ObjectId(vendor["_id"])}, {"first_name": 1}
+                    {"_id": ObjectId(booking["vendor_user_id"])}, {"first_name": 1}
                 )
                 category = await category_collection.find_one({"_id": ObjectId(booking["category_id"])}, {"name": 1})
                 service = await services_collection.find_one({"_id": ObjectId(booking["service_id"])}, {"name": 1})
