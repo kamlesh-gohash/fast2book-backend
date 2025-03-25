@@ -262,11 +262,6 @@ class BookingManager:
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # print(booking_collection, 'booking_collection')
-            # async for booking in booking_collection.find({"vendor_id": vendor["_id"]}):
-            #     print(booking, 'booking')
-            #     booking["_id"] = str(booking["_id"])
-            #     bookings.append(booking)
             query = {}
             if start_date or end_date:
                 date_filter = {}
@@ -495,21 +490,17 @@ class BookingManager:
 
                 booking_status = booking.get("booking_status", "").lower()
 
-                if booking_status == "cancelled":
+                if booking_datetime >= current_datetime and booking_status not in ["cancelled", "completed"]:
+                    upcoming_bookings.append(booking)
+                else:
+                    # Handle past bookings (past dates or cancelled/completed)
                     if status_filter:
-                        if status_filter.lower() == "cancelled":
+                        # If filter is applied, only include bookings matching the filter
+                        if booking_status == status_filter.lower() and booking_status in ["completed", "cancelled"]:
                             past_bookings.append(booking)
                     else:
-                        past_bookings.append(booking)
-                else:
-                    if booking_datetime >= current_datetime:
-                        if booking_status == "panding":
-                            upcoming_bookings.append(booking)
-                    else:
-                        if status_filter:
-                            if booking_status == status_filter.lower():
-                                past_bookings.append(booking)
-                        else:
+                        # Without filter, include all completed and cancelled bookings in past
+                        if booking_status in ["completed", "cancelled"]:
                             past_bookings.append(booking)
 
             def sort_by_date(bookings_list):
@@ -692,65 +683,6 @@ class BookingManager:
             raise
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
-
-    # async def booking_payment(self, request: Request, token: str, id: str):
-    #     try:
-    #         current_user = await get_current_user(request=request, token=token)
-    #         if not current_user:
-    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-    #         booking = await booking_collection.find_one({"_id": ObjectId(id)})
-    #         if not booking:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
-    #         if "amount" not in booking or booking["amount"] is None:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST, detail="Amount is missing or invalid in booking"
-    #             )
-
-    #         # amount = int(booking["amount"] * 100)
-    #         # print(amount,'amount in booking payment')
-    #         amount = float(booking["amount"])
-    #         payment_method = "Razorpay"
-    #         payment_config = await payment_collection.find_one({"name": payment_method})
-    #         if not payment_config:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
-
-    #         admin_charge_type = payment_config.get("charge_type")  # 'percentage' or 'fixed'
-    #         admin_charge_value = payment_config.get("charge_value")  # e.g., 10 for 10% or 50 for $50
-
-    #         if admin_charge_type == "percentage":
-    #             admin_charge = (admin_charge_value / 100) * amount
-    #         elif admin_charge_type == "fixed":
-    #             admin_charge = admin_charge_value
-    #         else:
-    #             admin_charge = 0
-
-    #         total_charges = amount + admin_charge
-    #         total_amount = int(total_charges * 100)
-
-    #         order_currency = "INR"
-    #         razorpay_order = razorpay_client.order.create(
-    #             {"amount": total_amount, "currency": order_currency, "receipt": f"booking_{id}", "payment_capture": 1}
-    #         )
-
-    #         await booking_collection.update_one(
-    #             {"_id": ObjectId(id)}, {"$set": {"booking_order_id": razorpay_order["id"], "amount": total_charges}}
-    #         )
-
-    #         return {
-    #             "data": {
-    #                 "order_id": str(booking["_id"]),
-    #                 "razorpay_order_id": razorpay_order["id"],
-    #                 "amount": amount,
-    #                 "currency": order_currency,
-    #             }
-    #         }
-
-    #     except razorpay.errors.BadRequestError as e:
-    #         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    #     except Exception as ex:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
-    #         )
 
     async def booking_payment(
         self,

@@ -63,6 +63,7 @@ super_user_otp_validator = zon.record(
 class SuperUserOtpRequest(BaseModel):
     email: str
     otp: str
+    otp_type: Optional[str] = None
 
     def validate(self):
         try:
@@ -103,6 +104,7 @@ super_user_resend_otp_validator = zon.record(
 
 class SuperUserResendOtpRequest(BaseModel):
     email: str
+    otp_type: Optional[str] = None
 
     def validate(self):
         try:

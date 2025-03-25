@@ -13,14 +13,16 @@ __all__ = [
     "get_permission_manager",
     "get_razor_pay_manager",
     "get_video_manager",
+    "get_rating_manager",
 ]
 
-from app.v1.dependencies.blog_manange import get_blog_manager
+from app.v1.dependencies.blog_manager import get_blog_manager
 from app.v1.dependencies.booking_manager import get_booking_manager
 from app.v1.dependencies.category_manager import get_category_manager
 from app.v1.dependencies.costumer_manager import get_costumer_manager
 from app.v1.dependencies.payment_manager import get_payment_manager
 from app.v1.dependencies.permission_manager import get_permission_manager
+from app.v1.dependencies.rating_manager import get_rating_manager
 from app.v1.dependencies.razor_pay import get_razor_pay_manager
 from app.v1.dependencies.services_manager import get_services_manager
 from app.v1.dependencies.subscription_manager import get_subscription_manager
