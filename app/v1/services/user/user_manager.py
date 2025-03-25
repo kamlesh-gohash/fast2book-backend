@@ -4,7 +4,7 @@ import logging
 import random
 import re
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 import bcrypt
@@ -87,8 +87,8 @@ class UserManager:
 
                 # Update the existing user with new data
                 update_data = {
-                    "otp": otp,
-                    "otp_expires": expiry_time,
+                    "sign_up_otp": otp,
+                    "signup_otp_expires": expiry_time,
                     "password": hashpw(user.password.encode("utf-8"), gensalt()).decode("utf-8"),
                     "roles": user.roles if user.roles else [Role.user],
                     "notification_settings": DEFAULT_NOTIFICATION_PREFERENCES,
@@ -122,17 +122,17 @@ class UserManager:
                 to_phone = user.phone
                 await send_sms_on_phone(to_phone, otp, expiry_minutes)
 
-            # Set user fields
-            user.otp = otp
-            user.otp_expires = expiry_time
-            user.password = hashpw(user.password.encode("utf-8"), gensalt()).decode("utf-8")
+            # Set user fields in dictionary
+            user_dict = user.dict()
+            user_dict["sign_up_otp"] = otp
+            user_dict["signup_otp_expires"] = expiry_time
+            user_dict["password"] = hashpw(user.password.encode("utf-8"), gensalt()).decode("utf-8")
             if not user.roles:
-                user.roles = [Role.user]
-            user.notification_settings = DEFAULT_NOTIFICATION_PREFERENCES
-            user.is_active = False  # New users are not active until OTP verification
+                user_dict["roles"] = [Role.user]
+            user_dict["notification_settings"] = DEFAULT_NOTIFICATION_PREFERENCES
+            user_dict["is_active"] = False  # New users are not active until OTP verification
 
             # Insert the new user into the database
-            user_dict = user.dict()
             result = await user_collection.insert_one(user_dict)
             user_dict["_id"] = str(result.inserted_id)
             return user_dict
@@ -140,7 +140,6 @@ class UserManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            logger.error(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -204,14 +203,13 @@ class UserManager:
     async def sign_in(
         self, email: str = None, phone: int = None, password: str = None, is_login_with_otp: bool = False
     ) -> dict:
-        """Sign in a user by email and password."""
+        """Sign in a user by email or password."""
         try:
             if email:
-                users = await user_collection.find({}).to_list(length=None)
                 result = await user_collection.find_one({"email": {"$regex": f"^{email}$", "$options": "i"}})
                 if not result:
                     raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED, detail="user does not exist with this email"
+                        status_code=status.HTTP_401_UNAUTHORIZED, detail="User does not exist with this email"
                     )
                 if is_login_with_otp:
                     if not result.get("is_active", False):
@@ -219,29 +217,29 @@ class UserManager:
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Please verify your email to activate your account",
                         )
-
-                    # Check if the user's status is inactive
                     if result.get("status") == "inactive":
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Your account is inactive, please contact admin",
                         )
+
                     otp = generate_otp()
                     await user_collection.update_one(
                         {"email": email},
-                        {"$set": {"otp": otp, "otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
+                        {"$set": {"login_otp": otp, "login_otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
                     )
-
                     source = "Login With Otp"
                     context = {"otp": otp}
-                    to_email = email
-                    await send_email(to_email, source, context)
+                    await send_email(email, source, context)
                     return {"message": "OTP sent to your email address"}
+
+                # Password-based login
                 stored_password_hash = result.get("password")
                 if not stored_password_hash:
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
                     )
+                # Check if the entered password matches the stored hashed password
                 if not bcrypt.checkpw(
                     password.encode("utf-8"),
                     (
@@ -261,19 +259,16 @@ class UserManager:
                     )
                 if user.status == "inactive":
                     raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Your account is inactive, please contact admin",
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="Your account is inactive, please contact admin"
                     )
-                user_data = user.dict()
-                user_data["id"] = str(user.id)  # Add the id explicitly
 
+                user_data = user.dict()
+                user_data["id"] = str(user.id)
                 user_data.pop("password", None)
                 user_data.pop("otp", None)
-
-                # Generate access and refresh tokens
                 access_token = create_access_token(data={"sub": user.email})
                 refresh_token = create_refresh_token(data={"sub": user.email})
-                # token = generate_jwt_token(user_id)
+
             if phone:
                 result = await user_collection.find_one({"phone": phone})
                 if not result:
@@ -282,25 +277,23 @@ class UserManager:
                     if not result.get("is_active", False):
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Please verify your email to activate your account",
+                            detail="Please verify your phone to activate your account",
                         )
-
-                    # Check if the user's status is inactive
                     if result.get("status") == "inactive":
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Your account is inactive, please contact admin",
                         )
+
                     otp = generate_otp()
                     await user_collection.update_one(
                         {"phone": phone},
-                        {"$set": {"otp": otp, "otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
+                        {"$set": {"login_otp": otp, "login_otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
                     )
-                    to_phone = phone
-                    expiry_minutes = 10
-                    await send_sms_on_phone(to_phone, otp, expiry_minutes)
+                    await send_sms_on_phone(phone, otp, expiry_minutes=10)
+                    return {"message": "OTP sent to your phone"}
 
-                    return {"message": "OTP sent to your email address"}
+                # Password-based login
                 stored_password_hash = result.get("password")
                 if not stored_password_hash:
                     raise HTTPException(
@@ -326,19 +319,15 @@ class UserManager:
                     )
                 if user.status == "inactive":
                     raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Your account is inactive, please contact admin",
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="Your account is inactive, please contact admin"
                     )
-                user_data = user.dict()
-                user_data["id"] = str(user.id)  # Add the id explicitly
 
+                user_data = user.dict()
+                user_data["id"] = str(user.id)
                 user_data.pop("password", None)
                 user_data.pop("otp", None)
-
-                # Generate access and refresh tokens
-                access_token = create_access_token(data={"sub": user.phone})
-                refresh_token = create_refresh_token(data={"sub": user.phone})
-                # token = generate_jwt_token(user_id)
+                access_token = create_access_token(data={"sub": str(user.phone)})
+                refresh_token = create_refresh_token(data={"sub": str(user.phone)})
 
             return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
         except HTTPException as e:
@@ -348,118 +337,127 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def resend_otp(self, email: Optional[str] = None, phone: Optional[int] = None) -> str:
-        """Send OTP to the user's email or phone."""
-        otp = generate_otp()  # Generate OTP
+    async def resend_otp(
+        self, email: Optional[str] = None, phone: Optional[int] = None, otp_type: Optional[str] = None
+    ) -> str:
+        """Send OTP to the user's email or phone based on the specified otp_type."""
+        try:
+            # Validate otp_type
+            if otp_type not in ["login", "forgot_password", "sign_up"]:
+                raise HTTPException(status_code=400, detail="Invalid OTP type. Must be 'login' or 'forgot_password'")
 
-        if email:
-            try:
-                # Check if email exists in the database
+            otp = generate_otp()
+            otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
+            otp_field = f"{otp_type}_otp"
+            otp_expires_field = f"{otp_type}_otp_expires"
+
+            if email:
                 user = await user_collection.find_one({"email": email})
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found")
 
-                # Send OTP to email
+                # Send OTP via email
                 source = "Resend OTP"
                 context = {"otp": otp}
                 to_email = email
                 await send_email(to_email, source, context)
-                otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-                update_data = {"otp": otp, "otp_expires": otp_expiration_time}
-                await user_collection.update_one({"email": email}, {"$set": update_data})
+
+                # Store OTP dynamically based on otp_type
+                await user_collection.update_one(
+                    {"email": email}, {"$set": {otp_field: otp, otp_expires_field: otp_expiration_time}}
+                )
                 return otp
 
-            except Exception as ex:
-                raise HTTPException(status_code=500, detail="Internal Server Error")
-
-        if phone:
-            try:
-                # Check if phone exists in the database
+            if phone:
+                # Find user using user_collection
                 user = await user_collection.find_one({"phone": phone})
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
-                to_phone = phone
-                expiry_minutes = 10
-                # Send OTP to phone (SMS)
-                await send_sms_on_phone(to_phone, otp, expiry_minutes)
-                otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-                update_data = {"otp": otp, "otp_expires": otp_expiration_time}
 
-                await user_collection.update_one({"phone": phone}, {"$set": update_data})
+                # Send OTP via SMS
+                await send_sms_on_phone(phone, otp, expiry_minutes=10)
 
+                # Store OTP dynamically based on otp_type
+                await user_collection.update_one(
+                    {"phone": phone}, {"$set": {otp_field: otp, otp_expires_field: otp_expiration_time}}
+                )
                 return otp
 
-            except Exception as ex:
-                raise HTTPException(status_code=500, detail="Internal Server Error")
-
-        raise ValueError("Either email or phone must be provided to send OTP.")
+            raise ValueError("Either email or phone must be provided to send OTP.")
+        except HTTPException as e:
+            raise e
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
 
     async def forgot_password(self, email: Optional[str] = None, phone: Optional[int] = None) -> dict:
         """Verify user by email or phone and send OTP."""
         try:
-            otp = generate_otp()  # Generate OTP
-
+            otp = generate_otp()
             if email:
-                # Check if the user exists with the provided email
-                user = await User.find_one(User.email == email)
+                # Find user using user_collection by email
+                user = await user_collection.find_one({"email": email})
                 if user is None:
-                    raise HTTPException(status_code=404, detail="User not found with the provided email.")
-                if not user.is_active:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Please verify your email to activate your account.",
-                    )
-
-                # Check if the user's status is inactive
-                if user.status == "inactive":
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Your account is inactive, please contact admin.",
-                    )
-                # if user.notification_settings and not user.notification_settings.get("forgot_password", False):
-                #     print("kkkkkkkkkkkkkkkkk")
-                #     raise HTTPException(status_code=403, detail="Forgot password notifications are disabled for this user.")
-
-                source = "Forgot Password"
-                context = {"otp": otp}
-                to_email = email
-                # Send OTP to the user's email
-                await send_email(to_email, source, context)
-                user.otp = otp
-
-                otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-                user.otp_expires = otp_expiration_time
-                await user.save()
-                return {"message": "OTP sent to email", "otp": otp}  # Include OTP in response for testing
-
-            if phone:
-                # Check if the user exists with the provided phone
-                user = await user_collection.find_one({"phone": phone})
-                if user is None:
-                    raise HTTPException(status_code=404, detail="User not found with the provided phone.")
+                    raise HTTPException(status_code=404, detail="User not found with the provided email")
                 if not user.get("is_active", False):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Please verify your phone to activate your account.",
+                        detail="Please verify your email to activate your account",
                     )
-
-                # Check if the user's status is inactive
                 if user.get("status") == "inactive":
                     raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Your account is inactive, please contact admin.",
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="Your account is inactive, please contact admin"
                     )
 
-                # Send OTP to the user's phone
-                to_phone = phone
-                expiry_minutes = 10
-                await send_sms_on_phone(to_phone, otp, expiry_minutes)
-                otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-                update_data = {"otp": otp, "otp_expires": otp_expiration_time}
+                # Send OTP via email
+                source = "Forgot Password"
+                context = {"otp": otp}
+                await send_email(email, source, context)
 
-                await user_collection.update_one({"phone": phone}, {"$set": update_data})
+                # Store OTP in user_collection
+                await user_collection.update_one(
+                    {"email": email},
+                    {
+                        "$set": {
+                            "forgot_password_otp": otp,
+                            "forgot_password_otp_expires": datetime.utcnow() + timedelta(minutes=10),
+                        }
+                    },
+                )
+                return {"message": "OTP sent to email", "otp": otp}  # Remove otp from response in production
 
-                return {"otp": otp}
+            if phone:
+                # Find user using user_collection by phone
+                user = await user_collection.find_one({"phone": phone})
+                if user is None:
+                    raise HTTPException(status_code=404, detail="User not found with the provided phone")
+                if not user.get("is_active", False):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Please verify your phone to activate your account",
+                    )
+                if user.get("status") == "inactive":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="Your account is inactive, please contact admin"
+                    )
+
+                # Send OTP via SMS
+                await send_sms_on_phone(phone, otp, expiry_minutes=10)
+
+                # Store OTP in user_collection
+                await user_collection.update_one(
+                    {"phone": phone},
+                    {
+                        "$set": {
+                            "forgot_password_otp": otp,
+                            "forgot_password_otp_expires": datetime.utcnow() + timedelta(minutes=10),
+                        }
+                    },
+                )
+                return {"message": "OTP sent to phone", "otp": otp}  # Remove otp from response in production
 
             raise ValueError("Either email or phone must be provided to send OTP.")
         except HTTPException as e:
@@ -469,69 +467,138 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def validate_otp(self, email: Optional[str] = None, phone: Optional[int] = None, otp: str = None) -> dict:
+    async def validate_otp(
+        self, email: Optional[str] = None, phone: Optional[int] = None, otp: str = None, otp_type: Optional[str] = None
+    ) -> dict:
+        """
+        Validates an OTP for the specified type ('login', 'forgot_password', 'resend_otp').
+        """
         try:
-            if email:
-                user = await User.find_one(User.email == email)
-                if user is None:
-                    raise HTTPException(status_code=404, detail="User not found with the provided email.")
-                if user.otp != otp:
-                    raise HTTPException(status_code=400, detail="Invalid OTP.")
-                if datetime.utcnow() > user.otp_expires:
-                    raise HTTPException(status_code=400, detail="OTP has expired.")
-                user.is_active = True
-                user.otp = None
-                user.otp_expires = None
-                await user.save()
-                user_data = user.dict(by_alias=True)
-                user_data["id"] = str(user_data.pop("_id"))
-                user_data.pop("password", None)
-                user_data.pop("otp", None)
-
-                # Check if vendor_id exists in the user document
-                if hasattr(user, "vendor_id") and user.vendor_id:
-                    vendor = await vendor_collection.find_one({"_id": ObjectId(user.vendor_id)})
-                    if vendor:
-                        vendor_data = vendor.copy()
-                        vendor_data["id"] = str(vendor_data.pop("_id"))
-                        user_data["is_subscription"] = vendor_data.get("is_subscription", False)
-                        user_data["business_type"] = vendor_data.get("business_type", None)
-
-                access_token = create_access_token(data={"sub": user.email})
-                refresh_token = create_refresh_token(data={"sub": user.email})
-                return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
-
-            if phone:
-                user = await user_collection.find_one({"phone": phone})
-                if user is None:
-                    raise HTTPException(status_code=404, detail="User not found with the provided phone.")
-
-                if user.get("otp") != otp:
-                    raise HTTPException(status_code=400, detail="Invalid OTP.")
-                if datetime.utcnow() > user.get("otp_expires"):
-                    raise HTTPException(status_code=400, detail="OTP has expired.")
-                await user_collection.update_one(
-                    {"phone": phone}, {"$set": {"is_active": True, "otp": None, "otp_expires": None}}
+            print(otp_type, "otp_type")
+            if otp_type not in ["login", "forgot_password", "resend_otp", "sign_up"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid OTP type. Must be 'login', 'forgot_password', 'resend_otp', or 'sign_up'",
                 )
-                user_data = user.copy()  # Since `user` is a dictionary, use `copy()`
-                user_data["id"] = str(user_data.pop("_id"))
-                user_data.pop("password", None)
-                user_data.pop("otp", None)
 
-                # Check if vendor_id exists in the user document
+            # Determine the OTP field and expiration field based on otp_type
+            otp_field = f"{otp_type}_otp"
+            otp_expires_field = f"{otp_type}_otp_expires"
+
+            if email:
+                user = await user_collection.find_one({"email": email})
+                if user is None:
+                    raise HTTPException(status_code=404, detail="User not found with the provided email")
+
+                # Check the OTP
+                stored_otp = user.get(otp_field)
+                expires_at = user.get(otp_expires_field)
+                if stored_otp != otp:
+                    raise HTTPException(status_code=400, detail=f"Invalid OTP for {otp_type}")
+                if expires_at and datetime.utcnow() > expires_at:
+                    raise HTTPException(status_code=400, detail=f"OTP for {otp_type} has expired")
+
+                # Clear the OTP fields after successful validation
+                await user_collection.update_one({"email": email}, {"$unset": {otp_field: 1, otp_expires_field: 1}})
+
+                user_data = user.copy()
+                user_data.pop("password", None)
+                user_data.pop("forgot_password_otp", None)
+                user_data.pop("forgot_password_otp_expires", None)
+                user_data.pop("login_otp", None)
+                user_data.pop("login_otp_expires", None)
+                user_data.pop("resend_otp", None)
+                user_data.pop("resend_otp_expires", None)
+                user_data.pop("otp_expires", None)
+                user_data.pop("sign_up_otp", None)
+                user_data.pop("sign_up_otp_expires", None)
+                user_data["id"] = str(user_data.pop("_id"))
+                if "vendor_id" in user_data and user_data["vendor_id"]:
+                    user_data["vendor_id"] = str(user_data["vendor_id"])  # Convert ObjectId to string
+
+                # Add vendor data if applicable
                 if "vendor_id" in user_data and user_data["vendor_id"]:
                     vendor = await vendor_collection.find_one({"_id": ObjectId(user_data["vendor_id"])})
                     if vendor:
                         vendor_data = vendor.copy()
                         vendor_data["id"] = str(vendor_data.pop("_id"))
+                        # Convert nested ObjectId fields to strings
+                        vendor_data["category_id"] = (
+                            str(vendor_data.get("category_id")) if vendor_data.get("category_id") else None
+                        )
+                        if "services" in vendor_data:
+                            for service in vendor_data["services"]:
+                                service["id"] = str(service["id"]) if "id" in service else None
                         user_data["is_subscription"] = vendor_data.get("is_subscription", False)
                         user_data["business_type"] = vendor_data.get("business_type", None)
+                        user_data["vendor_details"] = vendor_data  # Optionally include vendor details
 
-                access_token = create_access_token(data={"sub": user.get("phone")})
-                refresh_token = create_refresh_token(data={"sub": user.get("phone")})
+                access_token = create_access_token(data={"sub": str(user.get("email"))})
+                refresh_token = create_refresh_token(data={"sub": str(user.get("email"))})
                 return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
 
-            raise HTTPException(status_code=400, detail="Either email or phone must be provided.")
+            if phone:
+                user = await user_collection.find_one({"phone": phone})
+                if user is None:
+                    raise HTTPException(status_code=404, detail="User not found with the provided phone")
+
+                # Check the OTP
+                stored_otp = user.get(otp_field)
+                expires_at = user.get(otp_expires_field)
+                if stored_otp != otp:
+                    raise HTTPException(status_code=400, detail=f"Invalid OTP for {otp_type}")
+                if expires_at and datetime.utcnow() > expires_at:
+                    raise HTTPException(status_code=400, detail=f"OTP for {otp_type} has expired")
+
+                # Clear the OTP fields after successful validation
+                await user_collection.update_one(
+                    {"phone": phone},
+                    {
+                        "$set": {
+                            otp_field: None,
+                            otp_expires_field: None,
+                            "is_active": True if otp_type in ["login", "resend_otp"] else user.get("is_active"),
+                        }
+                    },
+                )
+
+                user_data = user.copy()
+                user_data["id"] = str(user_data.pop("_id"))
+                user_data.pop("password", None)
+                user_data.pop("forgot_password_otp", None)
+                user_data.pop("forgot_password_otp_expires", None)
+                user_data.pop("login_otp", None)
+                user_data.pop("login_otp_expires", None)
+                user_data.pop("resend_otp", None)
+                user_data.pop("resend_otp_expires", None)
+                user_data.pop("otp_expires", None)
+                user_data.pop("sign_up_otp", None)
+                user_data.pop("sign_up_otp_expires", None)
+                if "vendor_id" in user_data and user_data["vendor_id"]:
+                    user_data["vendor_id"] = str(user_data["vendor_id"])  # Convert ObjectId to string
+
+                # Add vendor data if applicable
+                if "vendor_id" in user_data and user_data["vendor_id"]:
+                    vendor = await vendor_collection.find_one({"_id": ObjectId(user_data["vendor_id"])})
+                    if vendor:
+                        vendor_data = vendor.copy()
+                        vendor_data["id"] = str(vendor_data.pop("_id"))
+                        # Convert nested ObjectId fields to strings
+                        vendor_data["category_id"] = (
+                            str(vendor_data.get("category_id")) if vendor_data.get("category_id") else None
+                        )
+                        if "services" in vendor_data:
+                            for service in vendor_data["services"]:
+                                service["id"] = str(service["id"]) if "id" in service else None
+                        user_data["is_subscription"] = vendor_data.get("is_subscription", False)
+                        user_data["business_type"] = vendor_data.get("business_type", None)
+                        user_data["vendor_details"] = vendor_data  # Optionally include vendor details
+
+                access_token = create_access_token(data={"sub": str(user.get("phone"))})
+                refresh_token = create_refresh_token(data={"sub": str(user.get("phone"))})
+                return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
+
+            raise HTTPException(status_code=400, detail="Either email or phone must be provided")
         except HTTPException as e:
             raise e
         except Exception as ex:
@@ -699,11 +766,13 @@ class UserManager:
     async def get_vendor_list_for_category(
         self,
         category_slug: str,
+        current_user: Optional[User] = None,
         service_id: Optional[str] = None,
         address: Optional[str] = None,
+        date: Optional[date] = None,
         page: int = 1,
         limit: int = 10,
-    ) -> List[dict]:
+    ) -> dict:
         try:
             skip = (page - 1) * limit
             if not category_slug:
@@ -724,11 +793,12 @@ class UserManager:
                     raise HTTPException(status_code=404, detail="Service not found")
                 vendor_filter["services.id"] = service_id
 
-            current_date = datetime.now().date()
+            current_date = date if date else datetime.now().date()
             date_range = [current_date + timedelta(days=i) for i in range(7)]
             date_strings = [d.strftime("%Y-%m-%d") for d in date_range]
             day_names = [d.strftime("%A") for d in date_range]
 
+            current_user_id = str(current_user.id) if current_user else None
             pipeline = [
                 {"$match": vendor_filter},
                 {
@@ -736,15 +806,7 @@ class UserManager:
                         "from": "users",
                         "let": {"vendor_id": {"$toObjectId": "$_id"}},
                         "pipeline": [
-                            {
-                                "$match": {
-                                    "$expr": {
-                                        "$and": [
-                                            {"$eq": ["$vendor_id", "$$vendor_id"]},
-                                        ]
-                                    }
-                                }
-                            },
+                            {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_id"]}}},
                             {
                                 "$project": {
                                     "_id": {"$toString": "$_id"},
@@ -771,15 +833,7 @@ class UserManager:
                         "from": "users",
                         "let": {"vendor_id": {"$toObjectId": "$_id"}},
                         "pipeline": [
-                            {
-                                "$match": {
-                                    "$expr": {
-                                        "$and": [
-                                            {"$eq": ["$vendor_id", "$$vendor_id"]},
-                                        ]
-                                    }
-                                }
-                            },
+                            {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_id"]}}},
                             {
                                 "$project": {
                                     "_id": {"$toString": "$_id"},
@@ -860,14 +914,29 @@ class UserManager:
                         "let": {
                             "vendor_id": {"$toObjectId": "$_id"},
                             "business_type": "$business_type",
-                            "created_users": {
+                            "created_users_ids": {
                                 "$ifNull": [
-                                    {"$cond": [{"$isArray": "$created_users._id"}, "$created_users._id", []]},
+                                    {
+                                        "$cond": [
+                                            {"$isArray": "$created_users._id"},
+                                            "$created_users._id",
+                                            ["$created_users._id"],
+                                        ]
+                                    },
                                     [],
                                 ]
                             },
-                            "vendor_users": {
-                                "$ifNull": [{"$cond": [{"$isArray": "$vendor_user._id"}, "$vendor_user._id", []]}, []]
+                            "vendor_user_ids": {
+                                "$ifNull": [
+                                    {
+                                        "$cond": [
+                                            {"$isArray": "$vendor_user._id"},
+                                            "$vendor_user._id",
+                                            ["$vendor_user._id"],
+                                        ]
+                                    },
+                                    [],
+                                ]
                             },
                         },
                         "pipeline": [
@@ -879,33 +948,41 @@ class UserManager:
                                             {"$eq": ["$payment_status", "paid"]},
                                             {"$in": ["$booking_date", date_strings]},
                                             {
-                                                "$cond": {
-                                                    "if": {"$eq": ["$$business_type", "business"]},
-                                                    "then": {
-                                                        "$in": [
-                                                            "$vendor_user_id",
-                                                            "$$created_users",
+                                                "$or": [
+                                                    {
+                                                        "$and": [
+                                                            {"$eq": ["$$business_type", "business"]},
+                                                            {"$in": ["$vendor_user_id", "$$created_users_ids"]},
                                                         ]
                                                     },
-                                                    "else": {
-                                                        "$in": [
-                                                            "$vendor_user_id",
-                                                            "$$vendor_users",
+                                                    {
+                                                        "$and": [
+                                                            {"$ne": ["$$business_type", "business"]},
+                                                            {"$in": ["$vendor_user_id", "$$vendor_user_ids"]},
                                                         ]
                                                     },
-                                                }
+                                                ]
                                             },
                                         ]
                                     }
                                 }
-                            }
+                            },
+                            {
+                                "$project": {
+                                    "_id": {"$toString": "$_id"},
+                                    "booking_date": 1,
+                                    "seat_count": 1,
+                                    "vendor_user_id": {"$toString": "$vendor_user_id"},
+                                    "time_slot": 1,
+                                }
+                            },
                         ],
                         "as": "bookings",
                     }
                 },
                 {
                     "$project": {
-                        "_id": 1,
+                        "_id": {"$toString": "$_id"},
                         "vendor_id": {"$toString": "$_id"},
                         "business_name": 1,
                         "business_type": 1,
@@ -926,6 +1003,7 @@ class UserManager:
                                     "date": "$$booking.booking_date",
                                     "seat_count": {"$ifNull": ["$$booking.seat_count", 1]},
                                     "vendor_user_id": "$$booking.vendor_user_id",
+                                    "time_slot": "$$booking.time_slot",
                                 },
                             }
                         },
@@ -945,6 +1023,71 @@ class UserManager:
                                 "then": "$created_users",
                                 "else": "$vendor_user",
                             }
+                        }
+                    }
+                },
+                {
+                    "$lookup": {
+                        "from": "vendor_ratings",
+                        "let": {"user_details_id": "$user_details._id"},
+                        "pipeline": [
+                            {"$match": {"$expr": {"$eq": ["$vendor_id", "$$user_details_id"]}}},
+                            {
+                                "$project": {
+                                    "_id": {"$toString": "$_id"},
+                                    "rating": 1,
+                                    "review": 1,
+                                    "user_id": {"$toString": "$user_id"},
+                                }
+                            },
+                        ],
+                        "as": "ratings",
+                    }
+                },
+                {
+                    "$addFields": {
+                        "average_rating": {
+                            "$cond": {
+                                "if": {"$gt": [{"$size": "$ratings"}, 0]},
+                                "then": {"$divide": [{"$sum": "$ratings.rating"}, {"$size": "$ratings"}]},
+                                "else": 0,
+                            }
+                        },
+                        "current_user_rating": {
+                            "$cond": [
+                                {
+                                    "$or": [
+                                        {"$eq": [current_user_id, None]},
+                                        {
+                                            "$eq": [
+                                                {
+                                                    "$size": {
+                                                        "$filter": {
+                                                            "input": "$ratings",
+                                                            "as": "rating",
+                                                            "cond": {"$eq": ["$$rating.user_id", current_user_id]},
+                                                        }
+                                                    }
+                                                },
+                                                0,
+                                            ]
+                                        },
+                                    ]
+                                },
+                                None,
+                                {
+                                    "$arrayElemAt": [
+                                        {
+                                            "$filter": {
+                                                "input": "$ratings",
+                                                "as": "rating",
+                                                "cond": {"$eq": ["$$rating.user_id", current_user_id]},
+                                            }
+                                        },
+                                        0,
+                                    ]
+                                },
+                            ]
                         },
                     }
                 },
@@ -1026,33 +1169,47 @@ class UserManager:
                                                                             "$$time_slot",
                                                                             {
                                                                                 "booking_count": {
-                                                                                    "$size": {
-                                                                                        "$filter": {
-                                                                                            "input": "$bookings",
-                                                                                            "as": "booking",
-                                                                                            "cond": {
-                                                                                                "$and": [
-                                                                                                    {
-                                                                                                        "$eq": [
-                                                                                                            "$$booking.date",
-                                                                                                            "$$this",
-                                                                                                        ]
-                                                                                                    },
-                                                                                                    {
-                                                                                                        "$eq": [
-                                                                                                            "$$booking.vendor_user_id",
-                                                                                                            "$user_details._id",
-                                                                                                        ]
-                                                                                                    },
-                                                                                                    {
-                                                                                                        "$eq": [
-                                                                                                            "$$booking.time_slot",
-                                                                                                            "$$time_slot.time",
-                                                                                                        ]
-                                                                                                    },
-                                                                                                ]
-                                                                                            },
-                                                                                        }
+                                                                                    "$reduce": {
+                                                                                        "input": {
+                                                                                            "$filter": {
+                                                                                                "input": "$bookings",
+                                                                                                "as": "booking",
+                                                                                                "cond": {
+                                                                                                    "$and": [
+                                                                                                        {
+                                                                                                            "$eq": [
+                                                                                                                "$$booking.date",
+                                                                                                                "$$this",
+                                                                                                            ]
+                                                                                                        },
+                                                                                                        {
+                                                                                                            "$eq": [
+                                                                                                                "$$booking.vendor_user_id",
+                                                                                                                "$user_details._id",
+                                                                                                            ]
+                                                                                                        },
+                                                                                                        {
+                                                                                                            "$eq": [
+                                                                                                                "$$booking.time_slot",
+                                                                                                                "$$time_slot.start_time",
+                                                                                                            ]
+                                                                                                        },
+                                                                                                    ]
+                                                                                                },
+                                                                                            }
+                                                                                        },
+                                                                                        "initialValue": 0,
+                                                                                        "in": {
+                                                                                            "$add": [
+                                                                                                "$$value",
+                                                                                                {
+                                                                                                    "$ifNull": [
+                                                                                                        "$$this.seat_count",
+                                                                                                        1,
+                                                                                                    ]
+                                                                                                },
+                                                                                            ]
+                                                                                        },
                                                                                     }
                                                                                 }
                                                                             },
@@ -1092,9 +1249,10 @@ class UserManager:
                         "services": 1,
                         "fees": 1,
                         "location": 1,
-                        "specialization": 1,
                         "user_details": 1,
                         "booking_count": 1,
+                        "average_rating": 1,
+                        "current_user_rating": 1,
                     }
                 },
                 {"$skip": skip},
@@ -1379,6 +1537,35 @@ class UserManager:
                 "created_at": support_request.created_at,
             }
 
+            source = "Support Request"
+            to_email = support_request.email
+            context = {
+                "name": support_request.name,
+                "subject": support_request.subject,
+                "message": support_request.message,
+                "created_at": support_request.created_at,
+            }
+            await send_email(
+                to_email,
+                source,
+                context,
+            )
+
+            source = "New Support Request"
+            to_email = "fast2book@yopmail.com"
+            context = {
+                "name": support_request.name,
+                "subject": support_request.subject,
+                "message": support_request.message,
+                "phone": support_request.phone,
+                "email": support_request.email,
+                "created_at": support_request.created_at,
+            }
+            await send_email(
+                to_email,
+                source,
+                context,
+            )
             return result_data
 
         except HTTPException:
@@ -1625,7 +1812,7 @@ class UserManager:
         """
         try:
             skip = (page - 1) * limit
-            query = {}  # Start with an empty query
+            query = {"status": "active"}
 
             # Add search filter if search term is provided
             if search:
@@ -1641,7 +1828,6 @@ class UserManager:
 
             # Fetch blogs based on the query
             active_blogs = await blog_collection.find(query).skip(skip).limit(limit).to_list(length=100)
-
             # Format the response
             blog_data = [
                 {
@@ -1679,9 +1865,9 @@ class UserManager:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid blog ID: '{id}'")
 
             # Check if the blog exists
-            existing_blog = await blog_collection.find_one({"_id": ObjectId(id)})
+            existing_blog = await blog_collection.find_one({"_id": ObjectId(id), "status": "active"})
             if not existing_blog:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Blog with ID '{id}' not found")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Blog not found or is not active")
 
             # Format the result
             blog_data = {
@@ -1721,6 +1907,8 @@ class UserManager:
                 "blog": blog_data,
                 "recent_blogs": recent_blog_list,
             }
+        except HTTPException as ex:
+            raise ex
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
@@ -1777,12 +1965,13 @@ class UserManager:
         try:
             cursor = category_collection.aggregate(
                 [
-                    {"$match": {"status": "active"}},
+                    {"$match": {"status": "active"}},  # Only active categories
                     {
                         "$lookup": {
                             "from": "services",
                             "localField": "_id",
                             "foreignField": "category_id",
+                            "pipeline": [{"$match": {"status": "active"}}],  # Only active services
                             "as": "services",
                         }
                     },
@@ -1904,6 +2093,8 @@ class UserManager:
                     vendor["vendor_id"] = str(vendor["vendor_id"])
 
             return data
+        except HTTPException:
+            raise
 
         except Exception as ex:
             raise HTTPException(
@@ -2090,6 +2281,20 @@ class UserManager:
                     "ticket_type": ticket_data.ticket_type,
                     "description": ticket_data.description,
                     "date": datetime.now().strftime("%Y-%m-%d"),
+                }
+                await send_email(
+                    to_email,
+                    source,
+                    context,
+                )
+                source = "New Ticket Created"
+                to_email = "fast2book@yopmail.com"
+                context = {
+                    "ticket_number": ticket_data.ticket_number,
+                    "ticket_type": ticket_data.ticket_type,
+                    "description": ticket_data.description,
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "email": ticket_data.email,
                 }
                 await send_email(
                     to_email,

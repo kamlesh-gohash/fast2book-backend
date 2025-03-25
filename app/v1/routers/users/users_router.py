@@ -9,7 +9,7 @@ from google.auth.transport import requests
 from google.oauth2 import id_token
 
 from app.v1.dependencies import get_support_manager, get_user_manager
-from app.v1.middleware.auth import get_current_user, get_token_from_header
+from app.v1.middleware.auth import get_current_user, get_current_user_optional, get_token_from_header
 from app.v1.models import User, UserToken
 from app.v1.models.services import *
 from app.v1.models.support import Support
@@ -87,7 +87,9 @@ async def resend_otp(resend_otp_request: ResendOtpRequest, user_manager: UserMan
 
     try:
         # Resend OTP logic
-        otp = await user_manager.resend_otp(email=resend_otp_request.email, phone=resend_otp_request.phone)
+        otp = await user_manager.resend_otp(
+            email=resend_otp_request.email, phone=resend_otp_request.phone, otp_type=resend_otp_request.otp_type
+        )
         return success({"message": "OTP resent", "data": None})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -124,7 +126,6 @@ async def forgot_password(
         )
 
 
-# Reset password (POST request) - accepts OTP and new password
 @router.post("/reset-password")
 async def reset_password(
     reset_password_request: ResetPasswordRequest, user_manager: UserManager = Depends(get_user_manager)
@@ -159,7 +160,10 @@ async def validate_otp(validate_otp_request: ValidateOtpRequest, user_manager: U
     try:
         # Validate OTP logic
         result = await user_manager.validate_otp(
-            email=validate_otp_request.email, phone=validate_otp_request.phone, otp=validate_otp_request.otp
+            email=validate_otp_request.email,
+            phone=validate_otp_request.phone,
+            otp=validate_otp_request.otp,
+            otp_type=validate_otp_request.otp_type,
         )
         return success({"message": "OTP validated successfully", "data": result})
     except HTTPException as http_ex:
@@ -295,32 +299,28 @@ async def get_service_list_for_category(category_slug: str, user_manager: UserMa
         )
 
 
-# @router.get("/vendor-list-for-category/{category_slug}", status_code=status.HTTP_200_OK)
-# async def get_vendor_list_for_category(category_slug: str, user_manager: UserManager = Depends(get_user_manager)):
-#     try:
-#         result = await user_manager.get_vendor_list_for_category(category_slug)
-#         return success({"message": "Vendor list fetched successfully", "data": result})
-#     except HTTPException as http_ex:
-#         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
-#     except ValueError as ex:
-#         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
-#     except Exception as ex:
-#         return internal_server_error(
-#             {"message": "An unexpected error occurred", "error": str(ex)},
-#         )
 @router.get("/vendor-list-for-category/{category_slug}", status_code=status.HTTP_200_OK)
 async def get_vendor_list_for_category(
     category_slug: str,
     service_id: str = None,  # Optional query parameter
     address: str = None,  # New optional query parameter
+    date: str = None,  # New optional query parameter for the start date
     page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     user_manager: UserManager = Depends(get_user_manager),
 ):
     try:
+        start_date = datetime.strptime(date, "%Y-%m-%d").date() if date else None
         # Pass service_id to the user manager
         result = await user_manager.get_vendor_list_for_category(
-            category_slug, service_id=service_id, address=address, page=page, limit=limit
+            current_user=current_user,
+            category_slug=category_slug,
+            service_id=service_id,
+            address=address,
+            date=start_date,
+            page=page,
+            limit=limit,
         )
         return success({"message": "Vendor list fetched successfully", "data": result})
     except HTTPException as http_ex:
@@ -667,7 +667,6 @@ async def create_ticket(request: Request, ticket_data: Ticket, user_manager: Use
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

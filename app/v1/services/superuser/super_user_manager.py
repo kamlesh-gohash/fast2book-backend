@@ -18,6 +18,7 @@ from app.v1.models import (
     User,
     booking_collection,
     category_collection,
+    email_monitor_collection,
     plan_collection,
     services_collection,
     subscription_collection,
@@ -54,48 +55,107 @@ def validate_time_format(time_str: str):
 
 class SuperUserManager:
 
+    # async def super_user_sign_in(self, email: str, password: str = None, is_login_with_otp: bool = False) -> dict:
+    #     """Sign in a user by email and password."""
+    #     try:
+    #         result = await user_collection.find_one({"email": email})
+    #         if not result:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    #         # Check if the entered password matches the stored hashed password
+    #         if is_login_with_otp:
+    #             otp = generate_otp()
+    #             otp_expires = datetime.utcnow() + timedelta(minutes=5)
+    #             await user_collection.update_one({"email": email}, {"$set": {"login_otp": otp, "login_otp_expires": datetime.utcnow() + timedelta(minutes=10)}})
+    #             source = "Login With Otp"
+    #             context = {"otp": otp}
+    #             to_email = email
+    #             await send_email(to_email, source, context)
+    #             # return success({"message": "OTP sent successfully", "data": None})
+    #             return {"message": "OTP sent successfully"}
+    #         stored_password_hash = result.get("password")
+    #         if not stored_password_hash:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
+    #             )
+    #         if not bcrypt.checkpw(
+    #             password.encode("utf-8"),
+    #             stored_password_hash.encode("utf-8") if isinstance(stored_password_hash, str) else stored_password_hash,
+    #         ):
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Password")
+    #         user = await User.find_one(User.email == email)
+    #         if user is None:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
+    #         if "admin" not in user.roles and user.user_role != 2:
+    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not authorized as an admin")
+    #         user_data = user.dict()
+    #         user_data.pop("password", None)
+    #         user_data.pop("otp", None)
+    #         user_data.pop("otp_expires", None)
+    #         user_data["id"] = str(user.id)
+    #         # Generate access and refresh tokens
+    #         access_token = create_access_token(data={"sub": user.email})
+    #         refresh_token = create_refresh_token(data={"sub": user.email})
+    #         # token = generate_jwt_token(user_id)
+
+    #         return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
+    #     except HTTPException as e:
+    #         raise e
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+    #         )
+
     async def super_user_sign_in(self, email: str, password: str = None, is_login_with_otp: bool = False) -> dict:
-        """Sign in a user by email and password."""
+        """Sign in a super user by email and password or OTP."""
         try:
-            result = await user_collection.find_one({"email": email})
-            if not result:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-            # Check if the entered password matches the stored hashed password
+            # Find user using user_collection
+            user = await user_collection.find_one({"email": email})
+            if not user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+            # Check if user is an admin or has user_role == 2
+            roles = user.get("roles", [])
+            user_role = user.get("user_role", 0)
+            if "admin" not in roles and user_role != 2:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not authorized as an admin")
+
             if is_login_with_otp:
                 otp = generate_otp()
-                otp_expires = datetime.utcnow() + timedelta(minutes=5)
-                await user_collection.update_one({"email": email}, {"$set": {"otp": otp, "otp_expires": otp_expires}})
+                otp_expires = datetime.utcnow() + timedelta(minutes=10)
+                await user_collection.update_one(
+                    {"email": email}, {"$set": {"login_otp": otp, "login_otp_expires": otp_expires}}
+                )
                 source = "Login With Otp"
                 context = {"otp": otp}
                 to_email = email
                 await send_email(to_email, source, context)
-                # return success({"message": "OTP sent successfully", "data": None})
                 return {"message": "OTP sent successfully"}
-            stored_password_hash = result.get("password")
+
+            # Password-based login
+            stored_password_hash = user.get("password")
             if not stored_password_hash:
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found"
                 )
             if not bcrypt.checkpw(
                 password.encode("utf-8"),
                 stored_password_hash.encode("utf-8") if isinstance(stored_password_hash, str) else stored_password_hash,
             ):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Password")
-            user = await User.find_one(User.email == email)
-            if user is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if "admin" not in user.roles and user.user_role != 2:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not authorized as an admin")
-            user_data = user.dict()
-            user_data.pop("password", None)
-            user_data.pop("otp", None)
-            user_data.pop("otp_expires", None)
-            user_data["id"] = str(user.id)
-            # Generate access and refresh tokens
-            access_token = create_access_token(data={"sub": user.email})
-            refresh_token = create_refresh_token(data={"sub": user.email})
-            # token = generate_jwt_token(user_id)
 
+            # Prepare user data
+            user_data = user.copy()
+            user_data["id"] = str(user_data.pop("_id"))
+            user_data.pop("password", None)
+            user_data.pop("login_otp", None)
+            user_data.pop("login_otp_expires", None)
+            user_data.pop("forgot_password_otp", None)
+            user_data.pop("forgot_password_otp_expires", None)
+            user_data.pop("resend_otp", None)
+            user_data.pop("resend_otp_expires", None)
+
+            access_token = create_access_token(data={"sub": user.get("email")})
+            refresh_token = create_refresh_token(data={"sub": user.get("email")})
             return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
         except HTTPException as e:
             raise e
@@ -104,19 +164,53 @@ class SuperUserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
+    # async def super_user_forget_password(self, email: str) -> dict:
+    #     try:
+    #         user = await User.find_one(User.email == email)
+    #         if user is None:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
+    #         if "admin" not in user.roles and user.user_role != 2:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
+    #         # Generate OTP
+    #         otp = generate_otp()
+    #         user.otp = otp
+    #         otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
+    #         user.otp_expires = otp_expiration_time
+    #         await user.save()
+    #         source = "Forgot Password"
+    #         context = {"otp": otp}
+    #         to_email = email
+    #         await send_email(to_email, source, context)
+    #         return {"message": "OTP sent to email"}
+    #     except HTTPException as e:
+    #         raise e
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+    #         )
+
     async def super_user_forget_password(self, email: str) -> dict:
         try:
-            user = await User.find_one(User.email == email)
-            if user is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if "admin" not in user.roles and user.user_role != 2:
+            # Find user using user_collection
+            user = await user_collection.find_one({"email": email})
+            if not user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+            # Check if user is an admin or has user_role == 2
+            roles = user.get("roles", [])
+            user_role = user.get("user_role", 0)
+            if "admin" not in roles and user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
-            # Generate OTP
+
+            # Generate and store OTP
             otp = generate_otp()
-            user.otp = otp
             otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-            user.otp_expires = otp_expiration_time
-            await user.save()
+            await user_collection.update_one(
+                {"email": email},
+                {"$set": {"forgot_password_otp": otp, "forgot_password_otp_expires": otp_expiration_time}},
+            )
+
+            # Send OTP via email
             source = "Forgot Password"
             context = {"otp": otp}
             to_email = email
@@ -129,27 +223,88 @@ class SuperUserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def super_user_otp_verify(self, email: str, otp: str) -> dict:
+    # async def super_user_otp_verify(self, email: str, otp: str) -> dict:
+    #     try:
+    #         user = await User.find_one(User.email == email)
+    #         if user is None:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
+    #         if "admin" not in user.roles and user.user_role != 2:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
+    #         if user.otp != otp:
+    #             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP")
+    #         if datetime.utcnow() > user.otp_expires:
+    #             raise HTTPException(status_code=400, detail="OTP has expired.")
+    #         user.is_active = True
+    #         user.otp = None
+    #         user.otp_expires = None
+    #         await user.save()
+    #         user_data = user.dict()
+    #         user_data.pop("password", None)
+    #         user_data.pop("otp", None)
+    #         # Generate access and refresh tokens
+    #         access_token = create_access_token(data={"sub": user.email})
+    #         refresh_token = create_refresh_token(data={"sub": user.email})
+    #         return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
+    #     except HTTPException as e:
+    #         raise e
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+    #         )
+
+    async def super_user_otp_verify(self, email: str, otp: str, otp_type: Optional[str] = None) -> dict:
         try:
-            user = await User.find_one(User.email == email)
-            if user is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if "admin" not in user.roles and user.user_role != 2:
+            # Validate otp_type
+            if not otp_type:
+                raise HTTPException(status_code=400, detail="OTP type must be provided")
+            if otp_type not in ["login", "forgot_password", "resend_otp"]:
+                raise HTTPException(
+                    status_code=400, detail="Invalid OTP type. Must be 'login', 'forgot_password', or 'resend_otp'"
+                )
+
+            # Find user using user_collection
+            user = await user_collection.find_one({"email": email})
+            if not user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+            # Check if user is an admin or has user_role == 2
+            roles = user.get("roles", [])
+            user_role = user.get("user_role", 0)
+            if "admin" not in roles and user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
-            if user.otp != otp:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP")
-            if datetime.utcnow() > user.otp_expires:
-                raise HTTPException(status_code=400, detail="OTP has expired.")
-            user.is_active = True
-            user.otp = None
-            user.otp_expires = None
-            await user.save()
-            user_data = user.dict()
+
+            # Determine the OTP field and expiration field based on otp_type
+            otp_field = f"{otp_type}_otp"
+            otp_expires_field = f"{otp_type}_otp_expires"
+
+            # Check the OTP
+            stored_otp = user.get(otp_field)
+            expires_at = user.get(otp_expires_field)
+            if stored_otp != otp:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid OTP for {otp_type}")
+            if expires_at and datetime.utcnow() > expires_at:
+                raise HTTPException(status_code=400, detail=f"OTP for {otp_type} has expired")
+
+            # Clear the OTP fields after successful validation (effectively expires the OTP)
+            update_data = {"$unset": {otp_field: 1, otp_expires_field: 1}}
+            # Update is_active if applicable
+            if otp_type in ["login", "resend_otp"]:
+                update_data["$set"] = {"is_active": True}
+            await user_collection.update_one({"email": email}, update_data)
+
+            # Prepare user data
+            user_data = user.copy()
+            user_data["id"] = str(user_data.pop("_id"))
             user_data.pop("password", None)
-            user_data.pop("otp", None)
-            # Generate access and refresh tokens
-            access_token = create_access_token(data={"sub": user.email})
-            refresh_token = create_refresh_token(data={"sub": user.email})
+            user_data.pop("login_otp", None)
+            user_data.pop("login_otp_expires", None)
+            user_data.pop("forgot_password_otp", None)
+            user_data.pop("forgot_password_otp_expires", None)
+            user_data.pop("resend_otp", None)
+            user_data.pop("resend_otp_expires", None)
+
+            access_token = create_access_token(data={"sub": user.get("email")})
+            refresh_token = create_refresh_token(data={"sub": user.get("email")})
             return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
         except HTTPException as e:
             raise e
@@ -176,18 +331,55 @@ class SuperUserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def super_user_resend_otp(self, email: str) -> dict:
+    # async def super_user_resend_otp(self, email: str) -> dict:
+    #     try:
+    #         user = await User.find_one(User.email == email)
+    #         if user is None:
+    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
+    #         if "admin" not in user.roles and user.user_role != 2:
+    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
+    #         otp = generate_otp()
+    #         user.otp = otp
+    #         otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
+    #         user.otp_expires = otp_expiration_time
+    #         await user.save()
+    #         source = "Resend OTP"
+    #         to_email = email
+    #         context = {"otp": otp}
+    #         await send_email(to_email, source, context)
+    #         return {"message": "OTP resent successfully"}
+    #     except HTTPException as e:
+    #         raise e
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+    #         )
+
+    async def super_user_resend_otp(self, email: str, otp_type: str) -> dict:
         try:
-            user = await User.find_one(User.email == email)
-            if user is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User data not found")
-            if "admin" not in user.roles and user.user_role != 2:
+            # Find user using user_collection
+            user = await user_collection.find_one({"email": email})
+            if not user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+            # Check if user is an admin or has user_role == 2
+            roles = user.get("roles", [])
+            user_role = user.get("user_role", 0)
+            if "admin" not in roles and user_role != 2:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not a super user")
+
+            # Generate and store OTP
             otp = generate_otp()
-            user.otp = otp
             otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-            user.otp_expires = otp_expiration_time
-            await user.save()
+            otp_field = f"{otp_type}_otp"
+            otp_expires_field = f"{otp_type}_otp_expires"
+
+            # Store OTP in the appropriate field
+            await user_collection.update_one(
+                {"email": email}, {"$set": {otp_field: otp, otp_expires_field: otp_expiration_time}}
+            )
+
+            # Send OTP via email
             source = "Resend OTP"
             to_email = email
             context = {"otp": otp}
@@ -592,6 +784,8 @@ class SuperUserManager:
                 "total_bookings": len(booking_data),
                 "bookings": booking_data,
             }
+        except HTTPException as e:
+            raise e
 
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
@@ -673,44 +867,39 @@ class SuperUserManager:
 
     async def get_total_booking_for_year(self, current_user: User, year: int):
         try:
-            # Check if the user has the required permissions
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
-            # Validate the year (optional)
-            if year < 2000 or year > 2100:  # Adjust the range as needed
+            if year < 2000 or year > 2100:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid year")
 
-            # Aggregate bookings by month for the specified year
+            start_date = f"{year}-01-01"
+            end_date = f"{year + 1}-01-01"
             pipeline = [
                 {
                     "$match": {
-                        "payment_status": "paid",  # Only consider paid bookings
-                        "booking_date": {
-                            "$gte": datetime(year, 1, 1),  # Start of the year
-                            "$lt": datetime(year + 1, 1, 1),  # Start of the next year
-                        },
+                        "payment_status": "paid",
+                        "booking_date": {"$gte": start_date, "$lt": end_date},
                     }
                 },
                 {
                     "$group": {
-                        "_id": {"$month": "$booking_date"},  # Group by month
-                        "booking_count": {"$sum": 1},  # Count the number of bookings in each month
+                        "_id": {"$month": {"$dateFromString": {"dateString": "$booking_date"}}},  # Parse string to date
+                        "booking_count": {"$sum": 1},  # Count bookings per month
                     }
                 },
+                {"$sort": {"_id": 1}},  # Sort by month for consistency
             ]
 
             # Execute the aggregation pipeline
             monthly_counts = await booking_collection.aggregate(pipeline).to_list(None)
-
-            # Create a dictionary to store the count for each month
-            month_data = {month: 0 for month in range(1, 13)}  # Initialize all months with 0
+            month_data = {month: 0 for month in range(1, 13)}
             for entry in monthly_counts:
                 month_data[entry["_id"]] = entry["booking_count"]
 
-            # Format the result as required
+            # Format the result
             result = [
                 {"name": "Jan", "booking": month_data[1]},
                 {"name": "Feb", "booking": month_data[2]},
@@ -725,7 +914,6 @@ class SuperUserManager:
                 {"name": "Nov", "booking": month_data[11]},
                 {"name": "Dec", "booking": month_data[12]},
             ]
-
             return result
 
         except HTTPException as e:
@@ -777,7 +965,6 @@ class SuperUserManager:
                 .limit(limit)
                 .to_list(length=limit)
             )
-            print(tickets, "tickets")
             if not tickets:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No tickets found")
 
@@ -993,6 +1180,71 @@ class SuperUserManager:
             await send_email(to_email, source, context)
 
             return {reply}
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_all_email(
+        self,
+        current_user: User,
+        page: int,
+        limit: int,
+        search: str = None,
+        statuss: str = None,
+    ):
+        try:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+            skip = max((page - 1) * limit, 0)
+            query = {}
+
+            if search:
+                search = search.strip()
+                if not search:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Search term cannot be empty")
+                search_regex = {"$regex": search, "$options": "i"}
+                query["$or"] = [
+                    {"first_name": search_regex},
+                    {"last_name": search_regex},
+                    {"email": search_regex},
+                    {"phone": search_regex},
+                ]
+
+            if statuss:
+                statuss = statuss.strip()
+                if not statuss:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status cannot be empty")
+                query["status"] = statuss
+            email_list = await email_monitor_collection.find(query).skip(skip).limit(limit).to_list(length=limit)
+
+            for email in email_list:
+                email["id"] = str(email["_id"])
+                email.pop("_id", None)
+
+            total_email_query = await email_monitor_collection.count_documents(query)
+            total_pages = (total_email_query + limit - 1) // limit
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+            return {
+                "data": email_list,
+                "paginator": {
+                    "itemCount": total_email_query,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
+
         except HTTPException as e:
             raise e
         except Exception as ex:

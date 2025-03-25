@@ -25,25 +25,13 @@ class ServicesManager:
 
     async def service_create(self, current_user: User, service_request: CreateServiceRequest) -> dict:
         try:
+            # Check if the current user has permission
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
-            # service_management_menu = next(
-            #     (menu for menu in current_user.menu if menu["id"] == "service-management"), None
-            # )
-            # if not service_management_menu or not service_management_menu["actions"]["addServices"]:
-            #     raise HTTPException(
-            #         status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to add a service"
-            #     )
-            existing_service = await services_collection.find_one(
-                {"name": {"$regex": f"^{service_request.name}$", "$options": "i"}}
-            )
-            if existing_service:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Service with name '{service_request.name}' already exists.",
-                )
+
+            # Validate the category
             category = await category_collection.find_one({"_id": ObjectId(service_request.category_id)})
             if not category:
                 raise HTTPException(
@@ -51,17 +39,26 @@ class ServicesManager:
                     detail=f"Category with ID '{service_request.category_id}' does not exist.",
                 )
 
-            existing_service = await services_collection.find_one({"name": service_request.name})
+            # Check for existing service with the same name in the same category
+            existing_service = await services_collection.find_one(
+                {
+                    "name": {"$regex": f"^{service_request.name}$", "$options": "i"},  # Case-insensitive match
+                    "category_id": ObjectId(service_request.category_id),  # Match the category
+                }
+            )
             if existing_service:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Service with name '{service_request.name}' already exists.",
+                    detail=f"Service with name '{service_request.name}' already exists in category '{category['name']}'.",
                 )
+
+            # Prepare the service image URL if provided
             file_url = None
             if service_request.service_image:
                 image_name = service_request.service_image
                 bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
                 file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+
             # Prepare service data
             service_data = {
                 "name": service_request.name,
@@ -74,6 +71,7 @@ class ServicesManager:
                 "created_at": datetime.utcnow(),
             }
 
+            # Insert the new service
             result = await services_collection.insert_one(service_data)
 
             # Fetch the inserted service
@@ -214,9 +212,10 @@ class ServicesManager:
 
     async def service_update(self, current_user: User, id: str, service_request: UpdateServiceRequest):
         try:
+            # Check if the current user has permission
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
             # Validate service ID
@@ -227,6 +226,11 @@ class ServicesManager:
             service = await services_collection.find_one({"_id": ObjectId(id)})
             if not service:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+            # Determine the category ID to use for the duplicate name check
+            category_id = (
+                ObjectId(service_request.category_id) if service_request.category_id else service["category_id"]
+            )
 
             # Validate category_id if provided
             if service_request.category_id:
@@ -241,6 +245,9 @@ class ServicesManager:
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Category with ID '{service_request.category_id}' does not exist.",
                     )
+            else:
+                # Fetch the existing category for the error message if needed
+                category = await category_collection.find_one({"_id": service["category_id"]})
 
             # Prepare update data
             update_data = {}
@@ -255,37 +262,54 @@ class ServicesManager:
             else:
                 file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{service.get('service_image')}"
 
-            if service_request.name is not None and service_request.name != service["name"]:
+            # Check for duplicate name in the same category if the name is provided
+            if service_request.name is not None:
+                service_request.name = service_request.name.strip()
+                if not service_request.name:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Service name cannot be empty.")
+
                 existing_service = await services_collection.find_one(
-                    {"name": {"$regex": f"^{service_request.name}$", "$options": "i"}}
+                    {
+                        "name": {"$regex": f"^{service_request.name}$", "$options": "i"},  # Case-insensitive match
+                        "category_id": category_id,  # Match the category
+                        "_id": {"$ne": ObjectId(id)},  # Exclude the current service
+                    }
                 )
                 if existing_service:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Service with name '{service_request.name}' already exists.",
+                        detail=f"Service with name '{service_request.name}' already exists in category '{category['name']}'.",
                     )
                 update_data["name"] = service_request.name
 
+            # Update status if provided
             if service_request.status is not None:
                 update_data["status"] = service_request.status
 
+            # Update category_id and category_name if provided
             if service_request.category_id is not None:
                 update_data["category_id"] = ObjectId(service_request.category_id)
                 update_data["category_name"] = category["name"]
+                update_data["category_slug"] = category["slug"]
 
+            # Check if there are any fields to update
             if not update_data:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields provided for update"
                 )
 
+            # Perform the update
             update_result = await services_collection.update_one({"_id": ObjectId(id)}, {"$set": update_data})
 
+            # Fetch the updated service
             updated_service = await services_collection.find_one({"_id": ObjectId(id)})
 
+            # Fetch the category name for the response
             category_name = None
             if updated_service.get("category_id"):
                 category = await category_collection.find_one({"_id": updated_service["category_id"]})
                 category_name = category["name"] if category else "Unknown Category"
+
             return {
                 "id": str(updated_service["_id"]),
                 "name": updated_service.get("name"),
@@ -296,6 +320,7 @@ class ServicesManager:
                 "category_name": category_name,
                 "updated_at": updated_service.get("updated_at"),
             }
+
         except HTTPException as e:
             raise e
         except Exception as ex:

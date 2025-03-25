@@ -115,13 +115,17 @@ class VendorManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
 
+            existing_user_by_email = None
+            existing_user_by_phone = None
+
             if create_vendor_request.email:
-                existing_user = await user_collection.find_one({"email": create_vendor_request.email})
+                existing_user_by_email = await user_collection.find_one({"email": create_vendor_request.email.lower()})
 
             if create_vendor_request.phone:
-                existing_user = await user_collection.find_one({"phone": create_vendor_request.phone})
+                existing_user_by_phone = await user_collection.find_one({"phone": int(create_vendor_request.phone)})
 
-            if existing_user:
+            # Raise an error if either email or phone already exists
+            if existing_user_by_email or existing_user_by_phone:
                 raise HTTPException(
                     status_code=400, detail="Vendor with this email or phone already exists in the database."
                 )
@@ -300,14 +304,14 @@ class VendorManager:
             }
 
             # Send email to the vendor
-            login_link = "http://192.168.29.173:3000/vendor-admin/sign-in"
+            login_link = "http://fast2book.com//vendor-admin/sign-in"
             source = "Vednor Create"
             context = {
                 "password": plain_text_password,
                 "login_link": login_link,
             }
             to_email = create_vendor_request.email
-            await send_vendor_email(to_email, source, context)
+            await send_email(to_email, source, context)
 
             return {"data": response_data}
 
@@ -477,7 +481,6 @@ class VendorManager:
             result["fees"] = result.get("fees")
             result.pop("vendor_id")
             vendor_details = await vendor_collection.find_one({"_id": ObjectId(id)})
-            print(vendor_details, "vendor_details")
             if vendor_details:
                 result["business_name"] = vendor_details.get("business_name")
                 result["business_type"] = vendor_details.get("business_type")
@@ -491,7 +494,6 @@ class VendorManager:
                 else:
                     result["category_name"] = "Unknown"
                 result["services"] = vendor_details.get("services", [])
-                print(result["services"], "llllllllllllllll")
                 result["service_details"] = vendor_details.get("service_details", [])
                 result["manage_plan"] = vendor_details.get("manage_plan", False)
                 result["manage_fee_and_gst"] = vendor_details.get("manage_fee_and_gst", False)
@@ -510,7 +512,6 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -827,7 +828,8 @@ class VendorManager:
                 otp = generate_otp()
                 otp_expires = datetime.utcnow() + timedelta(minutes=10)
                 await user_collection.update_one(
-                    {"_id": vendor["_id"]}, {"$set": {"otp": otp, "otp_expires": otp_expires}}
+                    {"_id": vendor["_id"]},
+                    {"$set": {"login_otp": otp, "login_otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
                 )
 
                 if vendor.get("email"):
@@ -955,8 +957,8 @@ class VendorManager:
 
                 # Update the existing user with new data
                 user_data = {
-                    "otp": otp,
-                    "otp_expires": expiry_time,
+                    "sign_up_otp": otp,
+                    "sign_up_otp_expires": expiry_time,
                     "password": hashpw(vendor_request.password.encode("utf-8"), gensalt()).decode("utf-8"),
                     "first_name": vendor_request.first_name,
                     "last_name": vendor_request.last_name,
@@ -975,15 +977,15 @@ class VendorManager:
                 await vendor_collection.update_one(
                     {"_id": ObjectId(existing_vendor["vendor_id"])}, {"$set": vendor_data}
                 )
-                # Return the updated user data
 
+                # Return the updated user data
                 update_data = {
                     "first_name": vendor_request.first_name,
                     "last_name": vendor_request.last_name,
                     "email": vendor_request.email,
                     "phone": int(vendor_request.phone) if vendor_request.phone else None,
-                    "otp": otp,
-                    "otp_expires": datetime.utcnow() + timedelta(minutes=10),
+                    "sign_up_otp": otp,
+                    "sign_up_otp_expires": expiry_time,
                     "roles": vendor_request.roles,
                     "is_dashboard_created": vendor_request.is_dashboard_created,
                     "business_name": vendor_request.business_name,
@@ -994,6 +996,9 @@ class VendorManager:
             hashed_password = bcrypt.hashpw(vendor_request.password.encode("utf-8"), bcrypt.gensalt())
             vendor_request.is_dashboard_created = True
             otp = generate_otp()
+            expiry_time = datetime.utcnow() + timedelta(minutes=10)
+            expiry_minutes = 10
+
             vendor_data = {
                 "business_name": vendor_request.business_name,
                 "business_type": vendor_request.business_type,
@@ -1011,8 +1016,8 @@ class VendorManager:
                 "last_name": vendor_request.last_name,
                 "email": vendor_request.email,
                 "phone": int(vendor_request.phone) if vendor_request.phone else None,
-                "otp": otp,
-                "otp_expires": datetime.utcnow() + timedelta(minutes=10),
+                "sign_up_otp": otp,
+                "sign_up_otp_expires": expiry_time,
                 "roles": vendor_request.roles,
                 "password": hashed_password,
                 "status": vendor_request.status,
@@ -1032,7 +1037,7 @@ class VendorManager:
             new_vendor_user["id"] = user_id
             new_vendor_user.pop("_id", None)
             new_vendor_user.pop("password", None)
-            new_vendor_user.pop("otp", None)
+            new_vendor_user.pop("sign_up_otp", None)
             new_vendor_user.pop("vendor_id")
             new_vendor_user["vendor_details"] = {
                 "id": str(vendor_result.inserted_id),
@@ -1048,7 +1053,6 @@ class VendorManager:
                 await send_email(to_email, source, context)
             elif vendor_request.phone:
                 to_phone = vendor_request.phone
-                expiry_minutes = 10
                 await send_sms_on_phone(to_phone, otp, expiry_minutes)
 
             return new_vendor_user
@@ -1066,7 +1070,6 @@ class VendorManager:
             #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
             if "vendor" not in [role.value for role in current_user.roles]:
-                print(current_user.roles)
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
@@ -1305,7 +1308,6 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -1605,7 +1607,6 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -2559,7 +2560,6 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
@@ -3029,10 +3029,8 @@ class VendorManager:
                             )
 
                         payment_data = response.json()
-                        print(payment_data, "payment_data")
                         if payment_data and "items" in payment_data and len(payment_data["items"]) > 0:
                             payment_id = payment_data["items"][0]["id"]
-                            print(payment_id, "payment_id")
                         else:
                             raise HTTPException(
                                 status_code=status.HTTP_404_NOT_FOUND, detail="No payment found for the given order ID"
@@ -3133,13 +3131,76 @@ class VendorManager:
                     source,
                     context,
                 )
+                source = "New Vendor Query"
+                to_email = "fast2book@yopmail.com"
+                context = {
+                    "email": vendor_query.email,
+                    "query_type": vendor_query.query_type,
+                    "description": vendor_query.description,
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                }
+                await send_email(
+                    to_email,
+                    source,
+                    context,
+                )
 
-            # Convert ObjectId to string
             vendor_data = vendor_query.dict()
             vendor_data["id"] = str(query.inserted_id)
 
-            # Convert the datetime object to a string
             return vendor_data
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def total_booking_count(self, request: Request, current_user: User, year: int):
+        try:
+            if year < 2000 or year > 2100:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid year")
+
+            start_date = f"{year}-01-01"
+            end_date = f"{year + 1}-01-01"
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+            pipeline = [
+                {
+                    "$match": {
+                        "vendor_id": ObjectId(vendor["_id"]),
+                        "payment_status": "paid",
+                        "booking_date": {"$gte": start_date, "$lt": end_date},
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": {"$month": {"$dateFromString": {"dateString": "$booking_date"}}},
+                        "booking_count": {"$sum": 1},
+                    }
+                },
+                {"$sort": {"_id": 1}},
+            ]
+
+            monthly_counts = await booking_collection.aggregate(pipeline).to_list(None)
+            month_data = {month: 0 for month in range(1, 13)}
+            for entry in monthly_counts:
+                month_data[entry["_id"]] = entry["booking_count"]
+            result = [
+                {"name": "Jan", "booking": month_data[1]},
+                {"name": "Feb", "booking": month_data[2]},
+                {"name": "Mar", "booking": month_data[3]},
+                {"name": "Apr", "booking": month_data[4]},
+                {"name": "May", "booking": month_data[5]},
+                {"name": "Jun", "booking": month_data[6]},
+                {"name": "Jul", "booking": month_data[7]},
+                {"name": "Aug", "booking": month_data[8]},
+                {"name": "Sep", "booking": month_data[9]},
+                {"name": "Oct", "booking": month_data[10]},
+                {"name": "Nov", "booking": month_data[11]},
+                {"name": "Dec", "booking": month_data[12]},
+            ]
+            return result
 
         except HTTPException:
             raise

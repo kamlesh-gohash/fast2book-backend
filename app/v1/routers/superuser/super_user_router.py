@@ -84,7 +84,9 @@ async def otp_verify(
         return validation_result
     try:
         # OTP verification logic
-        result = await user_manager.super_user_otp_verify(super_user_otp_request.email, super_user_otp_request.otp)
+        result = await user_manager.super_user_otp_verify(
+            super_user_otp_request.email, super_user_otp_request.otp, otp_type=super_user_otp_request.otp_type
+        )
         return success({"message": "OTP verified successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -135,7 +137,7 @@ async def resend_otp(
     try:
         # Resend OTP logic
         await user_manager.super_user_resend_otp(
-            super_user_resend_otp_request.email,
+            super_user_resend_otp_request.email, otp_type=super_user_resend_otp_request.otp_type
         )
         return success({"message": "OTP resent"})
     except HTTPException as http_ex:
@@ -583,6 +585,33 @@ async def reply_to_vendor_query(
             current_user=current_user, vendor_query_id=vendor_query_id, reply=reply
         )
         return success({"message": "Vendor reply success", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/all-email-list", status_code=status.HTTP_200_OK)
+async def all_email_list(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    search: str = Query(None, description="Search term to filter costumers by name, email, or phone"),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
+        result = await user_manager.get_all_email(
+            current_user=current_user, page=page, limit=limit, search=search, statuss=statuss
+        )
+        return success({"message": "All Email list", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:

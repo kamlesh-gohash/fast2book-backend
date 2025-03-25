@@ -29,7 +29,6 @@ class BlogManager:
     async def create_blog(self, create_blog_request: Blog) -> dict:
         try:
             blog_data = create_blog_request.dict()
-            print(blog_data, "blog_data")
             file_url = None
             if create_blog_request.blog_image:
                 image_name = create_blog_request.blog_image
@@ -109,7 +108,7 @@ class BlogManager:
                         "updated_at": blog["updated_at"],
                     }
                 )
-            total_blogs = await blog_collection.count_documents({})
+            total_blogs = await blog_collection.count_documents(query)
             total_pages = (total_blogs + limit - 1) // limit
             has_prev_page = page > 1
             has_next_page = page < total_pages

@@ -121,6 +121,7 @@ resend_otp_validator = zon.record(
 class ResendOtpRequest(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[int] = None
+    otp_type: Optional[str] = None
 
     def validate(self):
         # Ensure either email or phone is provided, but not both
@@ -213,6 +214,7 @@ class ValidateOtpRequest(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[int] = None
     otp: str
+    otp_type: str
 
     def validate(self):
         # Ensure either email or phone is provided, but not both
