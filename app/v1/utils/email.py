@@ -4,6 +4,8 @@ import os
 import random
 import smtplib
 
+from datetime import datetime
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -11,161 +13,24 @@ from string import Template
 
 import boto3
 
+from bs4 import BeautifulSoup
 from fastapi import HTTPException
+
+from app.v1.models import email_monitor_collection
+from app.v1.models.email_monitor import EmailMonitor, EmailStatus
 
 
 def generate_otp() -> str:
     return f"{random.randint(100000, 999999)}"
 
 
-# async def send_email(to_email: str, otp: str):
-#     """Send OTP to user's email."""
-#     from_email = os.getenv('EMAIL_USER')
-#     from_password = os.getenv('EMAIL_PASSWORD')
-
-#     # Set up the email content
-#     subject = "Your OTP Code"
-#     body = f"Your OTP code is {otp}. Please use it within the next 10 minutes."
-
-#     msg = MIMEMultipart()
-#     msg['From'] = from_email
-#     msg['To'] = to_email
-#     msg['Subject'] = subject
-#     msg.attach(MIMEText(body, 'plain'))
-
-#     # Send the email
-#     try:
-#         # Connect to the SMTP server
-#         server = smtplib.SMTP('smtp.gmail.com', 587)
-#         server.starttls()
-#         server.login(from_email, from_password)
-
-#         # Send the email
-#         text = msg.as_string()
-#         server.sendmail(from_email, to_email, text)
-
-#         # Close the connection to the server
-#         server.quit()
-#     except Exception as e:
-#         print(f"Failed to send OTP to {to_email}: {e}")
-
-
-# async def send_email(to_email: str, otp: str):
-#     """Send OTP to user's email using HTML template."""
-#     from_email = os.getenv("EMAIL_USER")
-#     from_password = os.getenv("EMAIL_PASSWORD")
-
-#     project_root = Path(__file__).resolve().parent.parent.parent
-#     template_path = project_root / "templates" / "email" / "forgot_password.html"
-
-#     # Verify if template exists
-#     if not template_path.exists():
-#         raise FileNotFoundError(f"Template not found at: {template_path}")
-#     with open(template_path, "r", encoding="utf-8") as file:
-#         html_template = file.read()
-
-#     # Replace placeholder with actual OTP
-#     html_content = html_template.format(otp=otp)
-
-#     # Set up the email
-#     msg = MIMEMultipart("alternative")
-#     msg["From"] = from_email
-#     msg["To"] = to_email
-#     msg["Subject"] = "Your OTP Code"
-
-#     # Attach both plain text and HTML versions
-#     text_part = MIMEText(f"Your OTP code is {otp}. Please use it within the next 10 minutes.", "plain")
-#     html_part = MIMEText(html_content, "html")
-
-#     msg.attach(text_part)
-#     msg.attach(html_part)
-
-#     # Send the email
-#     try:
-#         server = smtplib.SMTP("smtp.gmail.com", 587)
-#         server.starttls()
-#         server.login(from_email, from_password)
-
-#         text = msg.as_string()
-#         server.sendmail(from_email, to_email, text)
-
-#         server.quit()
-#         return True
-#     except Exception as e:
-#         return False
-
-
-async def send_vendor_email(to_email, password, login_link):
-    from_email = os.getenv("EMAIL_USER")
-    from_password = os.getenv("EMAIL_PASSWORD")
-
-    # Path to the email template
-    project_root = Path(__file__).resolve().parent.parent.parent
-    template_path = project_root / "templates" / "email" / "vendor_create_email.html"
-
-    # Verify if the template exists
-    if not template_path.exists():
-        raise FileNotFoundError(f"Template not found at: {template_path}")
-
-    # Read the HTML template
-    with open(template_path, "r", encoding="utf-8") as file:
-        html_template = file.read()
-    # Replace placeholders with actual values
-    template = Template(html_template)
-    html_content = template.substitute(password=password, login_link=login_link)
-
-    # Set up the email
-    msg = MIMEMultipart("alternative")
-    msg["From"] = from_email
-    msg["To"] = to_email
-    msg["Subject"] = "Vendor Account Activation"
-
-    # Attach both plain text and HTML versions
-    text_part = MIMEText(
-        f"Your login link is {login_link}. Please use this password to login: {password}.",
-        "plain",
-    )
-    html_part = MIMEText(html_content, "html")
-
-    msg.attach(text_part)
-    msg.attach(html_part)
-
-    # Send the email
-    try:
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(from_email, from_password)
-
-        text = msg.as_string()
-        server.sendmail(from_email, to_email, text)
-
-        server.quit()
-        return {"status": "SUCCESS", "message": "Email sent successfully."}
-    except Exception as e:
-        return {"status": "FAILURE", "message": str(e)}
-
-
-import logging
-import os
-import random
-import smtplib
-
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from pathlib import Path
-from string import Template
-
-from bs4 import BeautifulSoup
-
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
 def strip_tags(html_content: str) -> str:
     """Remove HTML tags from the given content."""
     soup = BeautifulSoup(html_content, "lxml")
     return soup.get_text()
+
+
+# Define the image directory
 
 
 async def send_email(to_email: str, source: str, context: dict = None):
@@ -177,6 +42,8 @@ async def send_email(to_email: str, source: str, context: dict = None):
 
     # Define the project root and template paths
     project_root = Path(__file__).resolve().parent.parent.parent
+
+    IMAGE_DIR = Path(project_root / "templates/email/images")
     templates = {
         "Resend OTP": project_root / "templates/email/resend_otp.html",
         "Forgot Password": project_root / "templates/email/forgot_password.html",
@@ -197,6 +64,11 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "Ticket Reply": project_root / "templates/email/ticket_reply.html",
         "Vendor Query Created": project_root / "templates/email/vendor_query.html",
         "Vendor Query Reply": project_root / "templates/email/vendor_query_reply.html",
+        "Support Ticket Reply": project_root / "templates/email/support_ticket_reply.html",
+        "Support Request": project_root / "templates/email/support_request.html",
+        "New Support Request": project_root / "templates/email/new_support_request.html",
+        "New Ticket Created": project_root / "templates/email/new_ticket.html",
+        "New Vendor Query": project_root / "templates/email/new_vendor_query.html",
     }
 
     # Get the template path based on the source
@@ -213,7 +85,6 @@ async def send_email(to_email: str, source: str, context: dict = None):
         with open(template_path, "r", encoding="utf-8") as file:
             html_template = file.read()
     except Exception as e:
-        logger.error(f"Failed to read template file: {e}")
         raise
 
     # Replace placeholders with actual values
@@ -221,16 +92,53 @@ async def send_email(to_email: str, source: str, context: dict = None):
         template = Template(html_template)
         html_content = template.substitute(**context)
     except KeyError as e:
-        logger.error(f"Missing placeholder in template: {e}")
         raise
     except Exception as e:
-        logger.error(f"Failed to substitute placeholders: {e}")
         raise
+
+    # Parse the HTML to find all image tags
+    soup = BeautifulSoup(html_content, "lxml")
+    img_tags = soup.find_all("img")
+
+    # Dictionary to keep track of embedded images (to avoid duplicates)
+    embedded_images = {}
+
+    # Embed images and update the src attributes
+    for idx, img in enumerate(img_tags):
+        src = img.get("src", "")
+        if not src:
+            continue
+
+        # Assume src is the filename (e.g., "fast2 book logo-05 2 1.png")
+        image_filename = src
+        image_path = IMAGE_DIR / image_filename
+
+        if not image_path.exists():
+            raise FileNotFoundError(f"Image not found: {image_path}")
+
+        # Generate a unique cid for each image
+        cid = f"image_{idx}"
+        img["src"] = f"cid:{cid}"
+
+        # Embed the image if not already embedded
+        if image_filename not in embedded_images:
+            try:
+                with open(image_path, "rb") as img_file:
+                    mime_image = MIMEImage(img_file.read())
+                    mime_image.add_header("Content-ID", f"<{cid}>")
+                    mime_image.add_header("Content-Disposition", "inline", filename=image_filename)
+                    embedded_images[image_filename] = mime_image
+            except Exception as e:
+                raise
+
+    # Update the HTML content with the modified image tags
+    html_content = str(soup)
 
     # Create plain text version by stripping HTML tags
     plain_text_content = strip_tags(html_content)
+
     # Set up the email
-    msg = MIMEMultipart("alternative")
+    msg = MIMEMultipart("related")  # Use "related" for embedding images
     msg["From"] = from_email
     msg["To"] = to_email
     subject_map = {
@@ -240,23 +148,53 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "Account created": "Account created",
         "Login With Otp": "Login With Otp",
         "Vednor Create": "Vednor Create",
-        "APP Link": "APP Link",
+        "APP Link": "Download Our App",
         "Payment Success": "Payment Success",
         "Booking Confirmation": "Booking Confirm",
         "Ticket Created": "Ticket Created",
         "Ticket Reply": "Ticket Reply",
         "Vendor Query Created": "Vendor Query Created",
         "Vendor Query Reply": "Vendor Query Reply",
-        # Add other sources and subjects here
+        "Support Ticket Reply": "Support Ticket Reply",
+        "Support Request": "Support Request",
+        "New Support Request": "New Support Request",
+        "New Ticket Created": "New Ticket Created",
+        "New Vendor Query": "New Vendor Query",
     }
     msg["Subject"] = subject_map.get(source, "Welcome")  # Default subject
+
+    # Create a multipart/alternative for text and HTML
+    msg_alternative = MIMEMultipart("alternative")
+    msg.attach(msg_alternative)
 
     # Attach both plain text and HTML versions
     text_part = MIMEText(plain_text_content, "plain")
     html_part = MIMEText(html_content, "html")
-    msg.attach(text_part)
-    msg.attach(html_part)
+    msg_alternative.attach(text_part)
+    msg_alternative.attach(html_part)
 
+    # Attach all embedded images
+    for mime_image in embedded_images.values():
+        msg.attach(mime_image)
+    email_log = {
+        "to_email": to_email,
+        "subject": msg["Subject"],
+        "source": source,
+        "status": EmailStatus.FAILURE.value,  # Use .value to get the string
+        "message": "Pending send",
+        "context": context,
+        "html_content": html_content,  # Add the final HTML content here
+        "sent_at": datetime.utcnow(),
+    }
+
+    # Skip logging if to_email is fast2book@yopmail.com
+    log_id = None
+    if to_email != "fast2book@yopmail.com":
+        try:
+            result = await email_monitor_collection.insert_one(email_log)
+            log_id = result.inserted_id
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to log email: {str(e)}")
     # Send the email
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
@@ -267,10 +205,18 @@ async def send_email(to_email: str, source: str, context: dict = None):
         server.sendmail(from_email, to_email, text)
 
         server.quit()
-        logger.info(f"Email sent successfully to {to_email}.")
+        if log_id:
+            await email_monitor_collection.update_one(
+                {"_id": email_log["_id"]}, {"$set": {"status": "SUCCESS", "message": "Email sent successfully."}}
+            )
+
         return {"status": "SUCCESS", "message": "Email sent successfully."}
     except Exception as e:
-        logger.error(f"Failed to send email to {to_email}: {e}")
+        if log_id:
+            await email_monitor_collection.update_one(
+                {"_id": email_log["_id"]}, {"$set": {"status": "FAILURE", "message": str(e)}}
+            )
+
         return {"status": "FAILURE", "message": str(e)}
 
 

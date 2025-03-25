@@ -101,7 +101,6 @@ async def vendor_list(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -287,7 +286,6 @@ async def vendor_profile(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -409,7 +407,6 @@ async def get_vendor_availability(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -730,7 +727,6 @@ async def get_plan_list(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -881,17 +877,37 @@ async def upgrade_vendor_subscription(
 
 @router.post("/create-vendor-query", status_code=status.HTTP_200_OK)
 async def create_vendor_query(
-    request: Request, vendor_query: VendorQuery, user_manager: VendorManager = Depends(get_vendor_manager)
+    request: Request, vendor_query: VendorQuery, vendor_manager: VendorManager = Depends(get_vendor_manager)
 ):
     try:
-        result = await user_manager.create_vendor_query(request=request, vendor_query=vendor_query)
+        result = await vendor_manager.create_vendor_query(request=request, vendor_query=vendor_query)
         return success({"message": "Vendor query created successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/total-booking-of-vendor", status_code=status.HTTP_200_OK)
+async def total_booking_count(
+    year: int,  # Add year as a query parameter
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.total_booking_count(request=request, current_user=current_user, year=year)
+        return success({"message": f"Total bookings for year {year}", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

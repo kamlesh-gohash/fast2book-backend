@@ -7,6 +7,7 @@ from app.v1.routers.common import common_router
 from app.v1.routers.costumer import costumer_router
 from app.v1.routers.payment import payment_router
 from app.v1.routers.permission import permission_router
+from app.v1.routers.rating import rating_router
 from app.v1.routers.razorpay import razor_pay
 from app.v1.routers.service import service_router
 from app.v1.routers.subscription import subscription_router
@@ -33,3 +34,4 @@ router.include_router(support_router.router, prefix="/support", tags=["Support"]
 router.include_router(permission_router.router, prefix="/permission", tags=["Permission"])
 router.include_router(razor_pay.router, prefix="/razorpay", tags=["RazorPay"])
 router.include_router(video_router.router, prefix="/video", tags=["Video"])
+router.include_router(rating_router.router, prefix="/rating", tags=["Rating"])

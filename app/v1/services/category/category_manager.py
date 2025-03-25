@@ -44,11 +44,12 @@ class CategoryManager:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Category with name '{category_request.name}' already exists.",
                 )
-            slug = slugify(category_request.name)
+            # slug = slugify(category_request.name)
             category_data = {
                 "name": category_request.name,
-                "slug": slug,
+                "slug": category_request.slug,
                 "status": category_request.status.value,
+                "icon": category_request.icon,
                 "created_at": datetime.utcnow(),
             }
 
@@ -125,7 +126,7 @@ class CategoryManager:
                         "created_at": category["created_at"],
                     }
                 )
-            total_categories = await category_collection.count_documents({})
+            total_categories = await category_collection.count_documents(query)
             total_pages = (total_categories + limit - 1) // limit
             has_prev_page = page > 1
             has_next_page = page < total_pages
@@ -145,7 +146,6 @@ class CategoryManager:
                     "next": next_page,
                 },
             }
-            # return {"data": category_data, "total_items": total_categories, "total_pages": total_pages}
 
         except HTTPException as e:
             raise e

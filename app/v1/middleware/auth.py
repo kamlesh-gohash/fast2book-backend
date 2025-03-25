@@ -6,6 +6,7 @@ from typing import Optional
 
 import httpx
 
+from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
@@ -21,20 +22,7 @@ from app.v1.utils.token import create_access_token, create_refresh_token, get_oa
 
 
 # OAuth2PasswordBearer handles the token extraction from Authorization header
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-# async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)):
-#     """Get the current authenticated user from the OAuth token."""
-#     try:
-#         # Extract user information from the token
-#         print(token,"token in request")
-#         user_info = await oauth.google.parse_id_token(request, token)
-#         print(user_info,'user info')
-#         user = await User.get_user_by_email(user_info["email"])
-#         print(user,'user')
-#         return user
-#     except Exception as e:
-#         raise HTTPException(status_code=401, detail="Unauthorized")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 import jwt  # PyJWT library
 
@@ -51,42 +39,6 @@ SECRET_KEY = os.getenv("SECRET_KEY")  # Use the same secret key that signs the J
 ALGORITHM = "HS256"  # Ensure this matches the algorithm used to sign the token
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-
-
-# async def get_current_user(request: Request = None, token: str = Depends(oauth2_scheme)):
-#     """Get the current authenticated user from either a JWT token or a Google ID token."""
-#     try:
-#         # Handle JWT token
-#         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-#         sub = payload.get("sub")
-
-#         if not sub:
-#             raise HTTPException(status_code=401, detail="Invalid token: Missing 'sub' claim.")
-#         sub = str(sub).strip()
-#         # Try to fetch user by email or phone
-#         user = None
-#         if "@" in sub:
-#             user = await User.get_user_by_email(sub)
-#             if not user:
-#                 raise HTTPException(status_code=404, detail="User not found by email.")
-#         elif sub.isdigit():
-#             user = await User.get_user_by_phone(sub)
-#             if not user:
-#                 raise HTTPException(status_code=404, detail="User not found by phone.")
-#         else:
-#             raise HTTPException(status_code=401, detail="Invalid token: 'sub' is neither email nor phone.")
-
-#         return user
-
-#     except ExpiredSignatureError:
-#         raise HTTPException(status_code=401, detail="Token has expired.")
-
-#     except InvalidTokenError as e:
-#         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-#     except GoogleAuthError as e:
-#         raise HTTPException(status_code=401, detail=f"Invalid Google token: {str(e)}")
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -281,3 +233,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Proceed to the next middleware or route handler
         return await call_next(request)
+
+
+async def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme)) -> Optional[User]:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            return None
+        user = await user_collection.find_one({"email": str(user_id)})
+        if user is None:
+            return None
+        return User(**user)
+    except (ExpiredSignatureError, Exception):
+        return None

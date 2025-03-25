@@ -7,6 +7,7 @@ from fastapi import HTTPException, Request, status
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import support_collection
 from app.v1.models.support import *
+from app.v1.utils.email import generate_otp, send_email
 
 
 class SupportManager:
@@ -120,6 +121,17 @@ class SupportManager:
             updated_support = await support_collection.find_one({"_id": ObjectId(support_id)})
             updated_support["id"] = str(updated_support.pop("_id"))
 
+            # Send email notification to the user
+            source = "Support Ticket Reply"
+            to_email = support["email"]
+            context = {
+                "name": support["name"],
+                "email": support["email"],
+                "subject": support["subject"],
+                "message": support["message"],
+                "reply": reply,
+            }
+            await send_email(to_email, source, context)
             return updated_support
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))

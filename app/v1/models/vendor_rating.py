@@ -15,8 +15,8 @@ from app.v1.models.vendor import *
 
 
 class VendorRating(Document):
-    vendor_user_id: Link[User]
-    vendor_id: Link[Vendor]
+    vendor_id: Link[User]
+    user_id: Link[User]
     rating: float
     review: str
 
