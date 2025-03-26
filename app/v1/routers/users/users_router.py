@@ -582,11 +582,11 @@ async def get_notifications_list(
 @router.put("/update-notification", status_code=status.HTTP_200_OK)
 async def update_notification(
     request: Request,
-    token: str = Depends(get_token_from_header),
+    current_user: User = Depends(get_current_user),
     user_manager: UserManager = Depends(get_user_manager),
 ):
     try:
-        result = await user_manager.update_notification(request=request, token=token)
+        result = await user_manager.update_notification(request=request, current_user=current_user)
         return success({"message": "Notifications update successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)

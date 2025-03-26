@@ -1377,6 +1377,7 @@ class VendorManager:
                 "user_image": vendor_user_create_request.user_image,
                 "user_image_url": file_url,
                 "specialization": vendor_user_create_request.specialization,
+                "created_at": datetime.utcnow(),
                 "services": [
                     {
                         "id": str(service["id"]),
@@ -1461,9 +1462,17 @@ class VendorManager:
             if not vendor_users:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No vendor users found")
             formatted_users = []
+
             for user in vendor_users:
                 user["id"] = str(user.pop("_id", ""))
                 user.pop("vendor_id", None)
+                ist_timezone = pytz.timezone("Asia/Kolkata")
+
+                created_at = user.get("created_at")
+                if isinstance(created_at, datetime):
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    user["created_at"] = created_at_ist.isoformat()
                 formatted_users.append(user)
             total_users = await user_collection.count_documents(query)
             total_pages = (total_users + limit - 1) // limit
