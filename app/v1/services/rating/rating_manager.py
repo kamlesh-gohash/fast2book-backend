@@ -46,7 +46,7 @@ class RatingManager:
                     "user_id": ObjectId(current_user.id),
                     "vendor_user_id": vendor_id,
                     "payment_status": "paid",
-                    "booking_status": "completed",
+                    # "booking_status": "completed",
                 }
             )
 

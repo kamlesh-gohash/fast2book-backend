@@ -239,11 +239,6 @@ class VendorManager:
             if create_vendor_request.business_type.lower() == "individual":
                 user_data["availability_slots"] = default_availability_slots()
             user_result = await user_collection.insert_one(user_data)
-            # image_name = create_vendor_request.vendor_image
-            # bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-            # print(bucket_name, "bucket_name")
-            # file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
-            # Prepare Vendor data
             vendor_service_data = {
                 "vendor_id": ObjectId(vendor_result.inserted_id),
                 "vendor_user_id": ObjectId(user_result.inserted_id),
@@ -1832,15 +1827,6 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
             vendor = await vendor_collection.find_one({"_id": ObjectId(user_data["vendor_id"])})
             if not vendor:
-
-                # vendor_user = await user_collection.find_one({"created_by": str(vendor_id), "roles": "vendor_user"})
-                # print(vendor,'vendorddddddddddd')
-                # if not vendor:
-                #     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
-
-                # # Get the parent vendor
-                # vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_user["vendor_id"])})
-                # if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent vendor not found")
 
             # availability_slots = user_data.get("availability_slots", [])
@@ -1853,11 +1839,6 @@ class VendorManager:
                     "business_type": business_type,
                     "availability_slots": availability_slots,
                 }
-
-            # user = await user_collection.find_one({"vendor_id": str(user_data["_id"]), "roles": "vendor_user"})
-            # print(user,'user')
-            # if not user:
-            #     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user ddd not found")
 
             parent_vendor = await vendor_collection.find_one({"_id": ObjectId(user_data["vendor_id"])})
             if not parent_vendor:
@@ -2147,103 +2128,6 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
-
-    # async def create_vendor_subscription(
-    #     self, request: Request, token: str, vendor_subscription_request: VendorSubscriptionRequest
-    # ):
-    #     try:
-    #         current_user = await get_current_user(request=request, token=token)
-    #         if not current_user:
-    #             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-    #         if "vendor" not in [role.value for role in current_user.roles]:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
-    #             )
-
-    #         current_user_id = str(current_user.vendor_id)
-    #         vendor = await vendor_collection.find_one({"_id": ObjectId(current_user_id)})
-    #         if not vendor:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-    #         plan_details = razorpay_client.plan.fetch(vendor_subscription_request.plan_id)
-    #         print(plan_details,'plan_details')
-    #         if not plan_details:
-    #             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
-
-    #         interval = plan_details.get("interval", 1)
-    #         period = plan_details.get("period", "monthly").lower()
-    #         # period = vendor_subscription_request.type
-
-    #         if period not in ["daily", "weekly", "monthly", "yearly"]:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
-    #             )
-    #         if period == "monthly":
-    #             total_count = vendor_subscription_request.total_count * 12
-    #         elif period == "yearly":
-    #             total_count = vendor_subscription_request.total_count
-    #         elif period == "weekly":
-    #             total_count = vendor_subscription_request.total_count * 52
-    #         elif period == "daily":
-    #             total_count = vendor_subscription_request.total_count * 365
-
-    #         razorpay_subscription_data = {
-    #             "plan_id": vendor_subscription_request.plan_id,
-    #             "total_count": total_count,
-    #             "quantity": vendor_subscription_request.quantity,
-    #             "customer_notify": True,
-    #         }
-
-    #         try:
-    #             razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
-    #         except Exception as e:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #                 detail=f"Failed to create Razorpay subscription: {str(e)}",
-    #             )
-
-    #         order_data = {
-    #             "amount": int(plan_details["item"]["amount"]),
-    #             "currency": "INR",
-    #             "receipt": f"sub_{razorpay_subscription['id']}",
-    #             "notes": {
-    #                 "subscription_id": razorpay_subscription["id"],
-    #                 "vendor_id": str(vendor["_id"]),
-    #             },
-    #             "payment_capture": 1,
-    #         }
-
-    #         try:
-    #             razorpay_order = razorpay_client.order.create(data=order_data)
-    #         except Exception as e:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #                 detail=f"Failed to create Razorpay order: {str(e)}",
-    #             )
-    #         vendor_update_data = {
-    #             "razorpay_order_id": razorpay_order["id"],
-    #         }
-
-    #         result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
-    #         if result.modified_count == 0:
-    #             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
-
-    #         return {
-    #             "subscription_id": razorpay_subscription["id"],
-    #             "order_id": razorpay_order["id"],
-    #             "amount": order_data["amount"],
-    #             "currency": order_data["currency"],
-    #             # "paymnet_link_id": payment_link["id"],
-    #             # "payment_link": payment_link["short_url"],
-    #         }
-
-    #     except HTTPException as e:
-    #         raise e
-    #     except Exception as ex:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #             detail=f"An unexpected error occurred: {str(ex)}",
-    #         )
 
     async def create_or_upgrade_vendor_subscription(
         self, current_user: User, vendor_subscription_request: VendorSubscriptionRequest

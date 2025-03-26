@@ -5,7 +5,7 @@ from typing import List
 from beanie import Link
 from pydantic import BaseModel
 
-from app.v1.models.user import StatusEnum, User
+from app.v1.models.user import *
 from app.v1.models.vendor import Vendor
 
 
@@ -19,31 +19,31 @@ class DayEnum(str, Enum):
     sunday = "Sunday"
 
 
-class TimeSlot(BaseModel):
-    start_time: time  # Only time
-    end_time: time  # Only time
-    duration: int = 0  # Duration will be calculated on the backend
-    max_seat: int = 10
+# class TimeSlot(BaseModel):
+#     start_time: time  # Only time
+#     end_time: time  # Only time
+#     duration: int = 0  # Duration will be calculated on the backend
+#     max_seat: int = 10
 
-    # Calculate duration based on start_time and end_time
-    def calculate_duration(self):
-        start_seconds = (self.start_time.hour * 3600) + (self.start_time.minute * 60) + self.start_time.second
-        end_seconds = (self.end_time.hour * 3600) + (self.end_time.minute * 60) + self.end_time.second
-        self.duration = (end_seconds - start_seconds) // 60
-        return self.duration
+#     # Calculate duration based on start_time and end_time
+#     def calculate_duration(self):
+#         start_seconds = (self.start_time.hour * 3600) + (self.start_time.minute * 60) + self.start_time.second
+#         end_seconds = (self.end_time.hour * 3600) + (self.end_time.minute * 60) + self.end_time.second
+#         self.duration = (end_seconds - start_seconds) // 60
+#         return self.duration
 
-    # Override the dict method to convert times to strings
-    class Config:
-        json_encoders = {time: lambda v: v.strftime("%H:%M")}  # Convert `time` to string format "HH:MM"
+#     # Override the dict method to convert times to strings
+#     class Config:
+#         json_encoders = {time: lambda v: v.strftime("%H:%M")}  # Convert `time` to string format "HH:MM"
 
-    def dict(self, *args, **kwargs):
-        data = super().dict(*args, **kwargs)
-        return data
+#     def dict(self, *args, **kwargs):
+#         data = super().dict(*args, **kwargs)
+#         return data
 
 
-class DaySlot(BaseModel):
-    day: DayEnum
-    time_slots: List[TimeSlot]
+# class DaySlot(BaseModel):
+#     day: DayEnum
+#     time_slots: List[TimeSlot]
 
 
 class SlotRequest(BaseModel):

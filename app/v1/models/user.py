@@ -48,6 +48,20 @@ class TimeSlot(BaseModel):
     max_seat: int = Field(..., gt=0, description="Maximum number of seats for the time slot")
     duration: int = Field(default=0, description="Duration of the time slot in minutes")
 
+    @field_validator("start_time", "end_time", mode="before")
+    def validate_time_format(cls, value):
+        """Ensure time is in 12-hour AM/PM format."""
+        if isinstance(value, str) and " " not in value:  # If it’s in 24-hour format (e.g., "09:00")
+            hour = int(value.split(":")[0])
+            period = "AM" if hour < 12 else "PM"
+            hour_12 = hour if hour <= 12 else hour - 12
+            if hour == 0:
+                hour_12 = 12
+            elif hour == 12:
+                period = "PM"
+            return f"{hour_12}:00 {period}"
+        return value
+
     def calculate_duration(self):
         """
         Calculate the duration between start_time and end_time in minutes.
@@ -65,31 +79,35 @@ class DaySlot(BaseModel):
     time_slots: List[TimeSlot]
 
 
+# def default_availability_slots():
+#     time_slots = [
+#         {"start_time": f"{hour:02}:00", "end_time": f"{hour+1:02}:00", "max_seat": 10} for hour in range(9, 17)
+#     ]
+#     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+#     return [{"day": day, "time_slots": time_slots} for day in days]
+
+
 def default_availability_slots():
-    time_slots = [
-        {"start_time": f"{hour:02}:00", "end_time": f"{hour+1:02}:00", "max_seat": 10} for hour in range(9, 17)
-    ]
+    def convert_to_12_hour(hour):
+        """Convert 24-hour format to 12-hour format with AM/PM."""
+        period = "AM" if hour < 12 else "PM"
+        hour_12 = hour if hour <= 12 else hour - 12
+        if hour == 0:
+            hour_12 = 12
+        elif hour == 12:
+            period = "PM"
+        return hour_12, period
+
+    time_slots = []
+    for hour in range(9, 17):
+        start_hour, start_period = convert_to_12_hour(hour)
+        end_hour, end_period = convert_to_12_hour(hour + 1)
+        time_slots.append(
+            {"start_time": f"{start_hour}:00 {start_period}", "end_time": f"{end_hour}:00 {end_period}", "max_seat": 10}
+        )
+
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     return [{"day": day, "time_slots": time_slots} for day in days]
-
-
-# def default_availability_slots():
-#     def format_time(hour):
-#         if hour == 12:
-#             return f"12:00 PM"
-#         elif hour > 12:
-#             return f"{hour - 12}:00 PM"
-#         else:
-#             return f"{hour}:00 AM"
-
-#     time_slots = [
-#         {"start_time": format_time(hour), "end_time": format_time(hour + 1), "max_seat": 10}
-#         for hour in range(9, 17)
-#     ]
-
-#     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-
-#     return [{"day": day, "time_slots": time_slots} for day in days]
 
 
 class NotificationType(str, Enum):
@@ -183,6 +201,8 @@ class User(Document, BaseModel):
     provider: Optional[str] = None
     fees: float = Field(default=0.0)
     specialization: Optional[str] = None
+    user_location: Optional[dict] = Field(default=None, description="GeoJSON Point with user location")
+    location_history: List[dict] = Field(default=[], description="History of previous locations with timestamps")
 
     @field_validator("blood_group", mode="before")
     def validate_blood_group(cls, value):
