@@ -1944,13 +1944,8 @@ class UserManager:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def update_notification(self, request: Request, token: str) -> dict:
+    async def update_notification(self, request: Request, current_user: User) -> dict:
         try:
-            # Get the current user
-            current_user = await get_current_user(request=request, token=token)
-            if not current_user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
             # Get the update data from the request body
             update_data = await request.json()
             if not update_data:
@@ -1976,7 +1971,6 @@ class UserManager:
                 },  # Update the notification settings
             )
 
-            # Return the updated notification settings
             return current_user.notification_settings
 
         except Exception as e:
