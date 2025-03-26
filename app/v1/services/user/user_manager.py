@@ -1986,7 +1986,7 @@ class UserManager:
         try:
             cursor = category_collection.aggregate(
                 [
-                    {"$match": {"status": "active"}},  # Only active categories
+                    {"$match": {"status": "active"}},
                     {
                         "$lookup": {
                             "from": "services",
@@ -1996,7 +1996,7 @@ class UserManager:
                                 {"$match": {"status": "active"}},
                                 {
                                     "$project": {
-                                        "_id": {"$toString": "$_id"},  # Stringify service _id
+                                        "_id": {"$toString": "$_id"},
                                         "name": 1,
                                         "service_image": 1,
                                         "service_image_url": 1,
@@ -2020,7 +2020,6 @@ class UserManager:
                                         "is_subscription": True,
                                     }
                                 },
-                                # Lookup creator user for business type
                                 {
                                     "$lookup": {
                                         "from": "users",
@@ -2034,7 +2033,7 @@ class UserManager:
                                             {"$match": {"roles": "vendor_user"}},
                                             {
                                                 "$project": {
-                                                    "_id": {"$toString": "$_id"},  # Stringify user _id
+                                                    "_id": {"$toString": "$_id"},
                                                     "first_name": 1,
                                                     "last_name": 1,
                                                     "user_image": 1,
@@ -2045,7 +2044,6 @@ class UserManager:
                                         "as": "creator_user",
                                     }
                                 },
-                                # Lookup vendor user
                                 {
                                     "$lookup": {
                                         "from": "users",
@@ -2058,7 +2056,7 @@ class UserManager:
                                             },
                                             {
                                                 "$project": {
-                                                    "_id": {"$toString": "$_id"},  # Stringify user _id
+                                                    "_id": {"$toString": "$_id"},
                                                     "first_name": 1,
                                                     "last_name": 1,
                                                     "user_image": 1,
@@ -2069,19 +2067,28 @@ class UserManager:
                                         "as": "vendor_user",
                                     }
                                 },
-                                # Determine user_details based on business_type
                                 {
-                                    "$addFields": {
-                                        "user_details": {
-                                            "$cond": {
-                                                "if": {"$eq": ["$business_type", "business"]},
-                                                "then": {"$arrayElemAt": ["$creator_user", 0]},
-                                                "else": {"$arrayElemAt": ["$vendor_user", 0]},
-                                            }
-                                        }
+                                    "$facet": {
+                                        "business_vendors": [
+                                            {"$match": {"business_type": "business"}},
+                                            {"$unwind": "$creator_user"},
+                                            {"$addFields": {"user_details": "$creator_user"}},
+                                        ],
+                                        "non_business_vendors": [
+                                            {"$match": {"business_type": {"$ne": "business"}}},
+                                            {"$unwind": "$vendor_user"},  # Expand vendor_user array
+                                            {"$addFields": {"user_details": "$vendor_user"}},
+                                        ],
                                     }
                                 },
-                                # Lookup vendor ratings (vendor_id is already a string)
+                                {
+                                    "$project": {
+                                        "vendors": {"$concatArrays": ["$business_vendors", "$non_business_vendors"]}
+                                    }
+                                },
+                                {"$unwind": "$vendors"},  # Flatten the merged array
+                                {"$replaceRoot": {"newRoot": "$vendors"}},  # Promote vendor docs to root
+                                # Lookup vendor ratings
                                 {
                                     "$lookup": {
                                         "from": "vendor_ratings",
@@ -2090,16 +2097,15 @@ class UserManager:
                                             {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_user_id"]}}},
                                             {
                                                 "$project": {
-                                                    "_id": {"$toString": "$_id"},  # Stringify rating _id
+                                                    "_id": {"$toString": "$_id"},
                                                     "rating": 1,
-                                                    "user_id": {"$toString": "$user_id"},  # Stringify user_id
+                                                    "user_id": {"$toString": "$user_id"},
                                                 }
                                             },
                                         ],
                                         "as": "ratings",
                                     }
                                 },
-                                # Calculate average rating
                                 {
                                     "$addFields": {
                                         "average_rating": {
@@ -2118,10 +2124,9 @@ class UserManager:
                                         "vendor_image_url": "$user_details.user_image_url",
                                     }
                                 },
-                                # Project vendor fields early
                                 {
                                     "$project": {
-                                        "_id": {"$toString": "$_id"},  # Stringify vendor _id
+                                        "_id": {"$toString": "$_id"},
                                         "vendor_id": 1,
                                         "business_name": 1,
                                         "business_type": 1,
@@ -2132,14 +2137,12 @@ class UserManager:
                                         "average_rating": 1,
                                     }
                                 },
-                                # Sort vendors by average rating in descending order
-                                {"$sort": {"average_rating": -1}},
+                                {"$sort": {"average_rating": -1}},  # Sort by rating
                             ],
                             "as": "vendors",
                         }
                     },
-                    # Limit to top 5 vendors per category
-                    {"$addFields": {"vendors": {"$slice": ["$vendors", 0, 5]}}},
+                    {"$addFields": {"vendors": {"$slice": ["$vendors", 0, 5]}}},  # Limit to top 5 vendors
                     {
                         "$project": {
                             "_id": 0,
@@ -2187,7 +2190,6 @@ class UserManager:
                 category = item["category"]
                 services = item["services"]
                 vendors = item["vendors"]
-
                 data[category] = {"services": services, "vendors": vendors}
 
             return data
