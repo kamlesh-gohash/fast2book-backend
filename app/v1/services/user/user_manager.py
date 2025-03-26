@@ -474,7 +474,6 @@ class UserManager:
         Validates an OTP for the specified type ('login', 'forgot_password', 'resend_otp').
         """
         try:
-            print(otp_type, "otp_type")
             if otp_type not in ["login", "forgot_password", "resend_otp", "sign_up"]:
                 raise HTTPException(
                     status_code=400,
@@ -799,465 +798,493 @@ class UserManager:
             day_names = [d.strftime("%A") for d in date_range]
 
             current_user_id = str(current_user.id) if current_user else None
-            pipeline = [
-                {"$match": vendor_filter},
-                {
-                    "$lookup": {
-                        "from": "users",
-                        "let": {"vendor_id": {"$toObjectId": "$_id"}},
-                        "pipeline": [
-                            {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_id"]}}},
-                            {
-                                "$project": {
-                                    "_id": {"$toString": "$_id"},
-                                    "id": {"$toString": "$_id"},
-                                    "first_name": 1,
-                                    "last_name": 1,
-                                    "email": 1,
-                                    "phone": 1,
-                                    "user_image": 1,
-                                    "user_image_url": 1,
-                                    "specialization": 1,
-                                    "fees": 1,
-                                    "roles": 1,
-                                    "availability_slots": 1,
-                                }
-                            },
-                            {"$match": {"availability_slots": {"$exists": True, "$ne": []}}},
-                        ],
-                        "as": "vendor_user",
-                    }
-                },
-                {
-                    "$lookup": {
-                        "from": "users",
-                        "let": {"vendor_id": {"$toObjectId": "$_id"}},
-                        "pipeline": [
-                            {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_id"]}}},
-                            {
-                                "$project": {
-                                    "_id": {"$toString": "$_id"},
-                                    "id": {"$toString": "$_id"},
-                                    "first_name": 1,
-                                    "last_name": 1,
-                                    "email": 1,
-                                    "phone": 1,
-                                    "roles": 1,
-                                    "user_image": 1,
-                                    "user_image_url": 1,
-                                    "specialization": 1,
-                                    "fees": 1,
-                                    "availability_slots": 1,
-                                }
-                            },
-                            {"$match": {"availability_slots": {"$exists": True, "$ne": []}}},
-                        ],
-                        "as": "created_users",
-                    }
-                },
-                {
-                    "$unwind": {
-                        "path": "$created_users",
-                        "preserveNullAndEmptyArrays": True,
-                    }
-                },
-                {
-                    "$lookup": {
-                        "from": "vendor_services",
-                        "let": {
-                            "vendor_id": {"$toObjectId": "$_id"},
-                            "vendor_user_id": {"$toObjectId": "$created_users._id"},
-                        },
-                        "pipeline": [
-                            {
-                                "$match": {
-                                    "$expr": {
-                                        "$and": [
-                                            {"$eq": ["$vendor_id", "$$vendor_id"]},
-                                            {"$eq": ["$vendor_user_id", "$$vendor_user_id"]},
-                                        ]
-                                    }
-                                }
-                            },
-                            {
-                                "$project": {
-                                    "_id": {"$toString": "$_id"},
-                                    "services": {
-                                        "$map": {
-                                            "input": "$services",
-                                            "as": "service",
-                                            "in": {
-                                                "id": {
-                                                    "$ifNull": [{"$toString": "$$service.service_id"}, "$$service.id"]
-                                                },
-                                                "name": {"$ifNull": ["$$service.service_name", "$$service.name"]},
-                                                "service_image": "$$service.service_image",
-                                                "service_image_url": "$$service.service_image_url",
-                                            },
-                                        }
-                                    },
-                                }
-                            },
-                        ],
-                        "as": "vendor_service",
-                    }
-                },
-                {
-                    "$unwind": {
-                        "path": "$vendor_service",
-                        "preserveNullAndEmptyArrays": True,
-                    }
-                },
-                {
-                    "$lookup": {
-                        "from": "bookings",
-                        "let": {
-                            "vendor_id": {"$toObjectId": "$_id"},
-                            "business_type": "$business_type",
-                            "created_users_ids": {
-                                "$ifNull": [
-                                    {
-                                        "$cond": [
-                                            {"$isArray": "$created_users._id"},
-                                            "$created_users._id",
-                                            ["$created_users._id"],
-                                        ]
-                                    },
-                                    [],
-                                ]
-                            },
-                            "vendor_user_ids": {
-                                "$ifNull": [
-                                    {
-                                        "$cond": [
-                                            {"$isArray": "$vendor_user._id"},
-                                            "$vendor_user._id",
-                                            ["$vendor_user._id"],
-                                        ]
-                                    },
-                                    [],
-                                ]
-                            },
-                        },
-                        "pipeline": [
-                            {
-                                "$match": {
-                                    "$expr": {
-                                        "$and": [
-                                            {"$eq": [{"$toObjectId": "$vendor_id"}, "$$vendor_id"]},
-                                            {"$eq": ["$payment_status", "paid"]},
-                                            {"$in": ["$booking_date", date_strings]},
-                                            {
-                                                "$or": [
-                                                    {
-                                                        "$and": [
-                                                            {"$eq": ["$$business_type", "business"]},
-                                                            {"$in": ["$vendor_user_id", "$$created_users_ids"]},
-                                                        ]
-                                                    },
-                                                    {
-                                                        "$and": [
-                                                            {"$ne": ["$$business_type", "business"]},
-                                                            {"$in": ["$vendor_user_id", "$$vendor_user_ids"]},
-                                                        ]
-                                                    },
-                                                ]
-                                            },
-                                        ]
-                                    }
-                                }
-                            },
-                            {
-                                "$project": {
-                                    "_id": {"$toString": "$_id"},
-                                    "booking_date": 1,
-                                    "seat_count": 1,
-                                    "vendor_user_id": {"$toString": "$vendor_user_id"},
-                                    "time_slot": 1,
-                                }
-                            },
-                        ],
-                        "as": "bookings",
-                    }
-                },
-                {
-                    "$project": {
-                        "_id": {"$toString": "$_id"},
-                        "vendor_id": {"$toString": "$_id"},
-                        "business_name": 1,
-                        "business_type": 1,
-                        "business_address": 1,
-                        "business_details": 1,
-                        "is_payment_required": 1,
-                        "category_id": {"$toString": "$category_id"},
-                        "services": "$vendor_service.services",
-                        "location": 1,
-                        "created_users": 1,
-                        "vendor_user": {"$arrayElemAt": ["$vendor_user", 0]},
-                        "booking_count": {"$size": "$bookings"},
-                        "bookings": {
-                            "$map": {
-                                "input": "$bookings",
-                                "as": "booking",
-                                "in": {
-                                    "date": "$$booking.booking_date",
-                                    "seat_count": {"$ifNull": ["$$booking.seat_count", 1]},
-                                    "vendor_user_id": "$$booking.vendor_user_id",
-                                    "time_slot": "$$booking.time_slot",
-                                },
-                            }
-                        },
-                    }
-                },
-                {
-                    "$unwind": {
-                        "path": "$created_users",
-                        "preserveNullAndEmptyArrays": True,
-                    }
-                },
-                {
-                    "$addFields": {
-                        "user_details": {
-                            "$cond": {
-                                "if": {"$eq": ["$business_type", "business"]},
-                                "then": "$created_users",
-                                "else": "$vendor_user",
+
+            user_location = None
+            if current_user:
+                user = await user_collection.find_one({"_id": current_user.id})
+                if user and "user_location" in user and user["user_location"]["type"] == "Point":
+                    user_location = user["user_location"]
+                else:
+                    pass
+
+            pipeline = [{"$match": vendor_filter}]
+
+            if user_location:
+                radius_km = 10
+                radius_radians = radius_km / 6378.1
+                pipeline.insert(
+                    1,
+                    {
+                        "$addFields": {
+                            "geo_point": {
+                                "type": "Point",
+                                "coordinates": ["$location.geometry.location.lng", "$location.geometry.location.lat"],
                             }
                         }
-                    }
-                },
-                {
-                    "$lookup": {
-                        "from": "vendor_ratings",
-                        "let": {"user_details_id": "$user_details._id"},
-                        "pipeline": [
-                            {"$match": {"$expr": {"$eq": ["$vendor_id", "$$user_details_id"]}}},
-                            {
-                                "$project": {
-                                    "_id": {"$toString": "$_id"},
-                                    "rating": 1,
-                                    "review": 1,
-                                    "user_id": {"$toString": "$user_id"},
-                                }
-                            },
-                        ],
-                        "as": "ratings",
-                    }
-                },
-                {
-                    "$addFields": {
-                        "average_rating": {
-                            "$cond": {
-                                "if": {"$gt": [{"$size": "$ratings"}, 0]},
-                                "then": {"$divide": [{"$sum": "$ratings.rating"}, {"$size": "$ratings"}]},
-                                "else": 0,
+                    },
+                )
+                pipeline.insert(
+                    2,
+                    {
+                        "$match": {
+                            "geo_point": {
+                                "$geoWithin": {"$centerSphere": [user_location["coordinates"], radius_radians]}
                             }
-                        },
-                        "current_user_rating": {
-                            "$cond": [
+                        }
+                    },
+                )
+
+            # Rest of the pipeline
+            pipeline.extend(
+                [
+                    {
+                        "$lookup": {
+                            "from": "users",
+                            "let": {"vendor_id": {"$toObjectId": "$_id"}},
+                            "pipeline": [
+                                {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_id"]}}},
                                 {
-                                    "$or": [
-                                        {"$eq": [current_user_id, None]},
-                                        {
-                                            "$eq": [
-                                                {
-                                                    "$size": {
-                                                        "$filter": {
-                                                            "input": "$ratings",
-                                                            "as": "rating",
-                                                            "cond": {"$eq": ["$$rating.user_id", current_user_id]},
-                                                        }
-                                                    }
-                                                },
-                                                0,
-                                            ]
-                                        },
-                                    ]
+                                    "$project": {
+                                        "_id": {"$toString": "$_id"},
+                                        "id": {"$toString": "$_id"},
+                                        "first_name": 1,
+                                        "last_name": 1,
+                                        "email": 1,
+                                        "phone": 1,
+                                        "user_image": 1,
+                                        "user_image_url": 1,
+                                        "specialization": 1,
+                                        "fees": 1,
+                                        "roles": 1,
+                                        "availability_slots": 1,
+                                    }
                                 },
-                                None,
+                                {"$match": {"availability_slots": {"$exists": True, "$ne": []}}},
+                            ],
+                            "as": "vendor_user",
+                        }
+                    },
+                    {
+                        "$lookup": {
+                            "from": "users",
+                            "let": {"vendor_id": {"$toObjectId": "$_id"}},
+                            "pipeline": [
+                                {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_id"]}}},
                                 {
-                                    "$arrayElemAt": [
-                                        {
-                                            "$filter": {
-                                                "input": "$ratings",
-                                                "as": "rating",
-                                                "cond": {"$eq": ["$$rating.user_id", current_user_id]},
+                                    "$project": {
+                                        "_id": {"$toString": "$_id"},
+                                        "id": {"$toString": "$_id"},
+                                        "first_name": 1,
+                                        "last_name": 1,
+                                        "email": 1,
+                                        "phone": 1,
+                                        "roles": 1,
+                                        "user_image": 1,
+                                        "user_image_url": 1,
+                                        "specialization": 1,
+                                        "fees": 1,
+                                        "availability_slots": 1,
+                                    }
+                                },
+                                {"$match": {"availability_slots": {"$exists": True, "$ne": []}}},
+                            ],
+                            "as": "created_users",
+                        }
+                    },
+                    {"$unwind": {"path": "$created_users", "preserveNullAndEmptyArrays": True}},
+                    {
+                        "$lookup": {
+                            "from": "vendor_services",
+                            "let": {
+                                "vendor_id": {"$toObjectId": "$_id"},
+                                "vendor_user_id": {"$toObjectId": "$created_users._id"},
+                            },
+                            "pipeline": [
+                                {
+                                    "$match": {
+                                        "$expr": {
+                                            "$and": [
+                                                {"$eq": ["$vendor_id", "$$vendor_id"]},
+                                                {"$eq": ["$vendor_user_id", "$$vendor_user_id"]},
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "$project": {
+                                        "_id": {"$toString": "$_id"},
+                                        "services": {
+                                            "$map": {
+                                                "input": "$services",
+                                                "as": "service",
+                                                "in": {
+                                                    "id": {
+                                                        "$ifNull": [
+                                                            {"$toString": "$$service.service_id"},
+                                                            "$$service.id",
+                                                        ]
+                                                    },
+                                                    "name": {"$ifNull": ["$$service.service_name", "$$service.name"]},
+                                                    "service_image": "$$service.service_image",
+                                                    "service_image_url": "$$service.service_image_url",
+                                                },
                                             }
                                         },
-                                        0,
+                                    }
+                                },
+                            ],
+                            "as": "vendor_service",
+                        }
+                    },
+                    {"$unwind": {"path": "$vendor_service", "preserveNullAndEmptyArrays": True}},
+                    {
+                        "$lookup": {
+                            "from": "bookings",
+                            "let": {
+                                "vendor_id": {"$toObjectId": "$_id"},
+                                "business_type": "$business_type",
+                                "created_users_ids": {
+                                    "$ifNull": [
+                                        {
+                                            "$cond": [
+                                                {"$isArray": "$created_users._id"},
+                                                "$created_users._id",
+                                                ["$created_users._id"],
+                                            ]
+                                        },
+                                        [],
                                     ]
                                 },
-                            ]
-                        },
-                    }
-                },
-                {
-                    "$addFields": {
-                        "user_details.availability_slots": {
-                            "$reduce": {
-                                "input": date_strings,
-                                "initialValue": [],
-                                "in": {
-                                    "$concatArrays": [
-                                        "$$value",
+                                "vendor_user_ids": {
+                                    "$ifNull": [
                                         {
-                                            "$map": {
-                                                "input": {
-                                                    "$filter": {
-                                                        "input": "$user_details.availability_slots",
-                                                        "as": "slot",
-                                                        "cond": {
-                                                            "$eq": [
-                                                                "$$slot.day",
-                                                                {
-                                                                    "$arrayElemAt": [
-                                                                        day_names,
-                                                                        {"$indexOfArray": [date_strings, "$$this"]},
-                                                                    ]
-                                                                },
+                                            "$cond": [
+                                                {"$isArray": "$vendor_user._id"},
+                                                "$vendor_user._id",
+                                                ["$vendor_user._id"],
+                                            ]
+                                        },
+                                        [],
+                                    ]
+                                },
+                            },
+                            "pipeline": [
+                                {
+                                    "$match": {
+                                        "$expr": {
+                                            "$and": [
+                                                {"$eq": [{"$toObjectId": "$vendor_id"}, "$$vendor_id"]},
+                                                {"$eq": ["$payment_status", "paid"]},
+                                                {"$in": ["$booking_date", date_strings]},
+                                                {
+                                                    "$or": [
+                                                        {
+                                                            "$and": [
+                                                                {"$eq": ["$$business_type", "business"]},
+                                                                {"$in": ["$vendor_user_id", "$$created_users_ids"]},
                                                             ]
                                                         },
-                                                    }
-                                                },
-                                                "as": "slot",
-                                                "in": {
-                                                    "$mergeObjects": [
-                                                        "$$slot",
                                                         {
-                                                            "date": "$$this",
-                                                            "daily_booking_count": {
-                                                                "$reduce": {
-                                                                    "input": {
-                                                                        "$filter": {
-                                                                            "input": "$bookings",
-                                                                            "as": "booking",
-                                                                            "cond": {
-                                                                                "$and": [
-                                                                                    {
-                                                                                        "$eq": [
-                                                                                            "$$booking.date",
-                                                                                            "$$this",
-                                                                                        ]
-                                                                                    },
-                                                                                    {
-                                                                                        "$eq": [
-                                                                                            "$$booking.vendor_user_id",
-                                                                                            "$user_details._id",
-                                                                                        ]
-                                                                                    },
-                                                                                ]
-                                                                            },
-                                                                        }
-                                                                    },
-                                                                    "initialValue": 0,
-                                                                    "in": {"$add": ["$$value", "$$this.seat_count"]},
-                                                                }
-                                                            },
-                                                            "max_seat_count": {
-                                                                "$reduce": {
-                                                                    "input": "$$slot.time_slots",
-                                                                    "initialValue": 0,
-                                                                    "in": {"$add": ["$$value", "$$this.max_seat"]},
-                                                                }
-                                                            },
-                                                            "time_slots": {
-                                                                "$map": {
-                                                                    "input": "$$slot.time_slots",
-                                                                    "as": "time_slot",
-                                                                    "in": {
-                                                                        "$mergeObjects": [
-                                                                            "$$time_slot",
-                                                                            {
-                                                                                "booking_count": {
-                                                                                    "$reduce": {
-                                                                                        "input": {
-                                                                                            "$filter": {
-                                                                                                "input": "$bookings",
-                                                                                                "as": "booking",
-                                                                                                "cond": {
-                                                                                                    "$and": [
-                                                                                                        {
-                                                                                                            "$eq": [
-                                                                                                                "$$booking.date",
-                                                                                                                "$$this",
-                                                                                                            ]
-                                                                                                        },
-                                                                                                        {
-                                                                                                            "$eq": [
-                                                                                                                "$$booking.vendor_user_id",
-                                                                                                                "$user_details._id",
-                                                                                                            ]
-                                                                                                        },
-                                                                                                        {
-                                                                                                            "$eq": [
-                                                                                                                "$$booking.time_slot",
-                                                                                                                "$$time_slot.start_time",
-                                                                                                            ]
-                                                                                                        },
-                                                                                                    ]
-                                                                                                },
-                                                                                            }
-                                                                                        },
-                                                                                        "initialValue": 0,
-                                                                                        "in": {
-                                                                                            "$add": [
-                                                                                                "$$value",
-                                                                                                {
-                                                                                                    "$ifNull": [
-                                                                                                        "$$this.seat_count",
-                                                                                                        1,
-                                                                                                    ]
-                                                                                                },
-                                                                                            ]
-                                                                                        },
-                                                                                    }
-                                                                                }
-                                                                            },
-                                                                        ]
-                                                                    },
-                                                                }
-                                                            },
+                                                            "$and": [
+                                                                {"$ne": ["$$business_type", "business"]},
+                                                                {"$in": ["$vendor_user_id", "$$vendor_user_ids"]},
+                                                            ]
                                                         },
                                                     ]
                                                 },
-                                            }
-                                        },
-                                    ]
+                                            ]
+                                        }
+                                    }
                                 },
+                                {
+                                    "$project": {
+                                        "_id": {"$toString": "$_id"},
+                                        "booking_date": 1,
+                                        "seat_count": 1,
+                                        "vendor_user_id": {"$toString": "$vendor_user_id"},
+                                        "time_slot": 1,
+                                    }
+                                },
+                            ],
+                            "as": "bookings",
+                        }
+                    },
+                    {
+                        "$project": {
+                            "_id": {"$toString": "$_id"},
+                            "vendor_id": {"$toString": "$_id"},
+                            "business_name": 1,
+                            "business_type": 1,
+                            "business_address": 1,
+                            "business_details": 1,
+                            "is_payment_required": 1,
+                            "category_id": {"$toString": "$category_id"},
+                            "services": "$vendor_service.services",
+                            "location": 1,
+                            "created_users": 1,
+                            "vendor_user": {"$arrayElemAt": ["$vendor_user", 0]},
+                            "booking_count": {"$size": "$bookings"},
+                            "bookings": {
+                                "$map": {
+                                    "input": "$bookings",
+                                    "as": "booking",
+                                    "in": {
+                                        "date": "$$booking.booking_date",
+                                        "seat_count": {"$ifNull": ["$$booking.seat_count", 1]},
+                                        "vendor_user_id": "$$booking.vendor_user_id",
+                                        "time_slot": "$$booking.time_slot",
+                                    },
+                                }
+                            },
+                        }
+                    },
+                    {"$unwind": {"path": "$created_users", "preserveNullAndEmptyArrays": True}},
+                    {
+                        "$addFields": {
+                            "user_details": {
+                                "$cond": {
+                                    "if": {"$eq": ["$business_type", "business"]},
+                                    "then": "$created_users",
+                                    "else": "$vendor_user",
+                                }
                             }
                         }
-                    }
-                },
-                {
-                    "$match": {
-                        "$and": [
-                            {"user_details.availability_slots": {"$ne": None}},
-                            {"user_details.availability_slots": {"$ne": []}},
-                        ]
-                    }
-                },
-                {
-                    "$project": {
-                        "id": {"$toString": "$_id"},
-                        "_id": 0,
-                        "vendor_id": 1,
-                        "business_name": 1,
-                        "business_type": 1,
-                        "business_address": 1,
-                        "business_details": 1,
-                        "category_id": 1,
-                        "services": 1,
-                        "fees": 1,
-                        "location": 1,
-                        "user_details": 1,
-                        "booking_count": 1,
-                        "average_rating": 1,
-                        "current_user_rating": 1,
-                    }
-                },
-                {"$skip": skip},
-                {"$limit": limit},
-            ]
+                    },
+                    {
+                        "$lookup": {
+                            "from": "vendor_ratings",
+                            "let": {"user_details_id": "$user_details._id"},
+                            "pipeline": [
+                                {"$match": {"$expr": {"$eq": ["$vendor_id", "$$user_details_id"]}}},
+                                {
+                                    "$project": {
+                                        "_id": {"$toString": "$_id"},
+                                        "rating": 1,
+                                        "review": 1,
+                                        "user_id": {"$toString": "$user_id"},
+                                    }
+                                },
+                            ],
+                            "as": "ratings",
+                        }
+                    },
+                    {
+                        "$addFields": {
+                            "average_rating": {
+                                "$cond": {
+                                    "if": {"$gt": [{"$size": "$ratings"}, 0]},
+                                    "then": {"$divide": [{"$sum": "$ratings.rating"}, {"$size": "$ratings"}]},
+                                    "else": 0,
+                                }
+                            },
+                            "current_user_rating": {
+                                "$cond": [
+                                    {
+                                        "$or": [
+                                            {"$eq": [current_user_id, None]},
+                                            {
+                                                "$eq": [
+                                                    {
+                                                        "$size": {
+                                                            "$filter": {
+                                                                "input": "$ratings",
+                                                                "as": "rating",
+                                                                "cond": {"$eq": ["$$rating.user_id", current_user_id]},
+                                                            }
+                                                        }
+                                                    },
+                                                    0,
+                                                ]
+                                            },
+                                        ]
+                                    },
+                                    None,
+                                    {
+                                        "$arrayElemAt": [
+                                            {
+                                                "$filter": {
+                                                    "input": "$ratings",
+                                                    "as": "rating",
+                                                    "cond": {"$eq": ["$$rating.user_id", current_user_id]},
+                                                }
+                                            },
+                                            0,
+                                        ]
+                                    },
+                                ]
+                            },
+                        }
+                    },
+                    {
+                        "$addFields": {
+                            "user_details.availability_slots": {
+                                "$reduce": {
+                                    "input": date_strings,
+                                    "initialValue": [],
+                                    "in": {
+                                        "$concatArrays": [
+                                            "$$value",
+                                            {
+                                                "$map": {
+                                                    "input": {
+                                                        "$filter": {
+                                                            "input": "$user_details.availability_slots",
+                                                            "as": "slot",
+                                                            "cond": {
+                                                                "$eq": [
+                                                                    "$$slot.day",
+                                                                    {
+                                                                        "$arrayElemAt": [
+                                                                            day_names,
+                                                                            {"$indexOfArray": [date_strings, "$$this"]},
+                                                                        ]
+                                                                    },
+                                                                ]
+                                                            },
+                                                        }
+                                                    },
+                                                    "as": "slot",
+                                                    "in": {
+                                                        "$mergeObjects": [
+                                                            "$$slot",
+                                                            {
+                                                                "date": "$$this",
+                                                                "daily_booking_count": {
+                                                                    "$reduce": {
+                                                                        "input": {
+                                                                            "$filter": {
+                                                                                "input": "$bookings",
+                                                                                "as": "booking",
+                                                                                "cond": {
+                                                                                    "$and": [
+                                                                                        {
+                                                                                            "$eq": [
+                                                                                                "$$booking.date",
+                                                                                                "$$this",
+                                                                                            ]
+                                                                                        },
+                                                                                        {
+                                                                                            "$eq": [
+                                                                                                "$$booking.vendor_user_id",
+                                                                                                "$user_details._id",
+                                                                                            ]
+                                                                                        },
+                                                                                    ]
+                                                                                },
+                                                                            }
+                                                                        },
+                                                                        "initialValue": 0,
+                                                                        "in": {
+                                                                            "$add": ["$$value", "$$this.seat_count"]
+                                                                        },
+                                                                    }
+                                                                },
+                                                                "max_seat_count": {
+                                                                    "$reduce": {
+                                                                        "input": "$$slot.time_slots",
+                                                                        "initialValue": 0,
+                                                                        "in": {"$add": ["$$value", "$$this.max_seat"]},
+                                                                    }
+                                                                },
+                                                                "time_slots": {
+                                                                    "$map": {
+                                                                        "input": "$$slot.time_slots",
+                                                                        "as": "time_slot",
+                                                                        "in": {
+                                                                            "$mergeObjects": [
+                                                                                "$$time_slot",
+                                                                                {
+                                                                                    "booking_count": {
+                                                                                        "$reduce": {
+                                                                                            "input": {
+                                                                                                "$filter": {
+                                                                                                    "input": "$bookings",
+                                                                                                    "as": "booking",
+                                                                                                    "cond": {
+                                                                                                        "$and": [
+                                                                                                            {
+                                                                                                                "$eq": [
+                                                                                                                    "$$booking.date",
+                                                                                                                    "$$this",
+                                                                                                                ]
+                                                                                                            },
+                                                                                                            {
+                                                                                                                "$eq": [
+                                                                                                                    "$$booking.vendor_user_id",
+                                                                                                                    "$user_details._id",
+                                                                                                                ]
+                                                                                                            },
+                                                                                                            {
+                                                                                                                "$eq": [
+                                                                                                                    "$$booking.time_slot",
+                                                                                                                    "$$time_slot.start_time",
+                                                                                                                ]
+                                                                                                            },
+                                                                                                        ]
+                                                                                                    },
+                                                                                                }
+                                                                                            },
+                                                                                            "initialValue": 0,
+                                                                                            "in": {
+                                                                                                "$add": [
+                                                                                                    "$$value",
+                                                                                                    {
+                                                                                                        "$ifNull": [
+                                                                                                            "$$this.seat_count",
+                                                                                                            1,
+                                                                                                        ]
+                                                                                                    },
+                                                                                                ]
+                                                                                            },
+                                                                                        }
+                                                                                    }
+                                                                                },
+                                                                            ]
+                                                                        },
+                                                                    }
+                                                                },
+                                                            },
+                                                        ]
+                                                    },
+                                                }
+                                            },
+                                        ]
+                                    },
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "$match": {
+                            "$and": [
+                                {"user_details.availability_slots": {"$ne": None}},
+                                {"user_details.availability_slots": {"$ne": []}},
+                            ]
+                        }
+                    },
+                    {
+                        "$project": {
+                            "id": {"$toString": "$_id"},
+                            "_id": 0,
+                            "vendor_id": 1,
+                            "business_name": 1,
+                            "business_type": 1,
+                            "business_address": 1,
+                            "business_details": 1,
+                            "category_id": 1,
+                            "services": 1,
+                            "fees": 1,
+                            "location": 1,
+                            "user_details": 1,
+                            "booking_count": 1,
+                            "average_rating": 1,
+                            "current_user_rating": 1,
+                        }
+                    },
+                    {"$skip": skip},
+                    {"$limit": limit},
+                ]
+            )
 
             if address:
                 address = address.strip()
@@ -1304,13 +1331,6 @@ class UserManager:
             formatted_date = target_date.strftime("%Y-%m-%d")
 
             all_bookings = await booking_collection.find({"vendor_id": vendor_id_str}).to_list(length=None)
-            # print(target_date,'target_date in get_booking_count_for_slot')
-            # Combine date and time
-            # slot_datetime = datetime.combine(
-            #     target_date,
-            #     datetime.strptime(start_time, "%H:%M").time()
-            # )
-            # Count bookings for this specific slot
             date_bookings = await booking_collection.find(
                 {"vendor_id": vendor_id_str, "booking_date": formatted_date}
             ).to_list(length=None)
@@ -1971,7 +1991,19 @@ class UserManager:
                             "from": "services",
                             "localField": "_id",
                             "foreignField": "category_id",
-                            "pipeline": [{"$match": {"status": "active"}}],  # Only active services
+                            "pipeline": [
+                                {"$match": {"status": "active"}},
+                                {
+                                    "$project": {
+                                        "_id": {"$toString": "$_id"},  # Stringify service _id
+                                        "name": 1,
+                                        "service_image": 1,
+                                        "service_image_url": 1,
+                                        "category_name": 1,
+                                        "category_slug": 1,
+                                    }
+                                },
+                            ],
                             "as": "services",
                         }
                     },
@@ -1987,7 +2019,7 @@ class UserManager:
                                         "is_subscription": True,
                                     }
                                 },
-                                # For business type - lookup the creator user
+                                # Lookup creator user for business type
                                 {
                                     "$lookup": {
                                         "from": "users",
@@ -1999,20 +2031,44 @@ class UserManager:
                                                 }
                                             },
                                             {"$match": {"roles": "vendor_user"}},
+                                            {
+                                                "$project": {
+                                                    "_id": {"$toString": "$_id"},  # Stringify user _id
+                                                    "first_name": 1,
+                                                    "last_name": 1,
+                                                    "user_image": 1,
+                                                    "user_image_url": 1,
+                                                }
+                                            },
                                         ],
                                         "as": "creator_user",
                                     }
                                 },
+                                # Lookup vendor user
                                 {
                                     "$lookup": {
                                         "from": "users",
                                         "let": {"vendor_id": {"$toString": "$_id"}},
                                         "pipeline": [
-                                            {"$match": {"$expr": {"$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]}}}
+                                            {
+                                                "$match": {
+                                                    "$expr": {"$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]}
+                                                }
+                                            },
+                                            {
+                                                "$project": {
+                                                    "_id": {"$toString": "$_id"},  # Stringify user _id
+                                                    "first_name": 1,
+                                                    "last_name": 1,
+                                                    "user_image": 1,
+                                                    "user_image_url": 1,
+                                                }
+                                            },
                                         ],
                                         "as": "vendor_user",
                                     }
                                 },
+                                # Determine user_details based on business_type
                                 {
                                     "$addFields": {
                                         "user_details": {
@@ -2024,8 +2080,36 @@ class UserManager:
                                         }
                                     }
                                 },
+                                # Lookup vendor ratings (vendor_id is already a string)
+                                {
+                                    "$lookup": {
+                                        "from": "vendor_ratings",
+                                        "let": {"vendor_user_id": "$user_details._id"},
+                                        "pipeline": [
+                                            {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_user_id"]}}},
+                                            {
+                                                "$project": {
+                                                    "_id": {"$toString": "$_id"},  # Stringify rating _id
+                                                    "rating": 1,
+                                                    "user_id": {"$toString": "$user_id"},  # Stringify user_id
+                                                }
+                                            },
+                                        ],
+                                        "as": "ratings",
+                                    }
+                                },
+                                # Calculate average rating
                                 {
                                     "$addFields": {
+                                        "average_rating": {
+                                            "$cond": {
+                                                "if": {"$gt": [{"$size": "$ratings"}, 0]},
+                                                "then": {
+                                                    "$divide": [{"$sum": "$ratings.rating"}, {"$size": "$ratings"}]
+                                                },
+                                                "else": 0,
+                                            }
+                                        },
                                         "vendor_id": "$user_details._id",
                                         "vendor_first_name": "$user_details.first_name",
                                         "vendor_last_name": "$user_details.last_name",
@@ -2033,10 +2117,28 @@ class UserManager:
                                         "vendor_image_url": "$user_details.user_image_url",
                                     }
                                 },
+                                # Project vendor fields early
+                                {
+                                    "$project": {
+                                        "_id": {"$toString": "$_id"},  # Stringify vendor _id
+                                        "vendor_id": 1,
+                                        "business_name": 1,
+                                        "business_type": 1,
+                                        "vendor_first_name": 1,
+                                        "vendor_last_name": 1,
+                                        "vendor_image": 1,
+                                        "vendor_image_url": 1,
+                                        "average_rating": 1,
+                                    }
+                                },
+                                # Sort vendors by average rating in descending order
+                                {"$sort": {"average_rating": -1}},
                             ],
                             "as": "vendors",
                         }
                     },
+                    # Limit to top 5 vendors per category
+                    {"$addFields": {"vendors": {"$slice": ["$vendors", 0, 5]}}},
                     {
                         "$project": {
                             "_id": 0,
@@ -2068,6 +2170,7 @@ class UserManager:
                                         "vendor_last_name": "$$vendor.vendor_last_name",
                                         "vendor_image": "$$vendor.vendor_image",
                                         "vendor_image_url": "$$vendor.vendor_image_url",
+                                        "average_rating": "$$vendor.average_rating",
                                     },
                                 }
                             },
@@ -2086,16 +2189,9 @@ class UserManager:
 
                 data[category] = {"services": services, "vendors": vendors}
 
-                for service in data[category]["services"]:
-                    service["service_id"] = str(service["service_id"])
-
-                for vendor in data[category]["vendors"]:
-                    vendor["vendor_id"] = str(vendor["vendor_id"])
-
             return data
         except HTTPException:
             raise
-
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
@@ -2308,6 +2404,73 @@ class UserManager:
 
             # Convert the datetime object to a string
             return ticket_data
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def get_user_location(self, request: Request, current_user: User):
+        try:
+            if not current_user:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+            lat = request.query_params.get("lat")
+            lng = request.query_params.get("lng")
+            if not lat or not lng:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Latitude and longitude are required"
+                )
+
+            try:
+                lat = float(lat)
+                lng = float(lng)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid latitude or longitude values"
+                )
+
+            current_user_doc = await user_collection.find_one({"_id": current_user.id})
+            if not current_user_doc:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+            new_geo_point = {"type": "Point", "coordinates": [lng, lat], "timestamp": datetime.utcnow().isoformat()}
+
+            current_location = current_user_doc.get("user_location", None)
+            location_history = current_user_doc.get("location_history", [])
+
+            coords_exist = False
+            new_coords = [lng, lat]
+            if current_location and "coordinates" in current_location:
+                if current_location["coordinates"] == new_coords:
+                    coords_exist = True
+            if not coords_exist:
+                for hist_loc in location_history:
+                    if hist_loc.get("coordinates") == new_coords:
+                        coords_exist = True
+                        break
+
+            update_data = {"user_location": new_geo_point}
+            if not coords_exist and new_coords:
+                location_history.append(new_geo_point)
+                update_data["location_history"] = location_history
+
+            update_result = await user_collection.update_one({"_id": current_user.id}, {"$set": update_data})
+            if update_result.matched_count == 0:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+            user_location = await user_collection.find_one({"_id": current_user.id})
+            if not user_location:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+            if "_id" in user_location:
+                user_location["_id"] = str(user_location["_id"])
+            if "vendor_id" in user_location:
+                user_location["vendor_id"] = str(user_location["vendor_id"])
+
+            return user_location
 
         except HTTPException:
             raise
