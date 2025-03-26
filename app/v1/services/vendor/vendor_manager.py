@@ -1943,6 +1943,10 @@ class VendorManager:
             #         status_code=status.HTTP_400_BAD_REQUEST, detail="Vendor's business type is not 'business'"
             #     )
             users = await user_collection.find({"created_by": vendor_id}).to_list(None)
+            if not users:
+                users = await user_collection.find({"vendor_id": ObjectId(vendor_id), "roles": "vendor_user"}).to_list(
+                    None
+                )
             vendor_user_data = []
 
             for user in users:
