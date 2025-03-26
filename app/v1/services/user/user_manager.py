@@ -773,6 +773,7 @@ class UserManager:
         limit: int = 10,
     ) -> dict:
         try:
+
             skip = (page - 1) * limit
             if not category_slug:
                 raise HTTPException(status_code=400, detail="Invalid category slug")
