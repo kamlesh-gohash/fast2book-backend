@@ -7,6 +7,7 @@ import zon
 
 from pydantic import BaseModel, EmailStr, Field, root_validator, validator
 
+from app.v1.models.services import Service
 from app.v1.models.user import *
 from app.v1.models.vendor import *
 from app.v1.utils.response.response_format import validation_error
@@ -20,6 +21,8 @@ class BusinessType(str, Enum):
 class Service(BaseModel):
     id: str
     name: Optional[str] = None
+    service_image: Optional[str] = None
+    service_image_url: Optional[str] = None
 
 
 # Validator for vendor creation
@@ -428,7 +431,8 @@ update_vendor_user_validator = zon.record(
         "email": zon.string().email().optional(),
         "phone": zon.string().min(10).max(10).optional(),
         "category": zon.string().optional(),
-        "fees": zon.string().optional(),
+        "fees": zon.number().optional(),
+        "specialization": zon.string().optional(),
         "gander": zon.enum(["male", "female", "other"]).optional(),
         "status": zon.enum(["Active", "Inactive"]).optional(),
     }
@@ -439,12 +443,15 @@ class VendorUserUpdateRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
+    user_image: Optional[str] = None
+    user_image_url: Optional[str] = None
     category: Optional[str] = None
     services: Optional[List[Service]] = None
     phone: Optional[str] = None
     fees: Optional[float] = None
     gender: Optional[Gender] = None
     status: Optional[StatusEnum] = None
+    specialization: Optional[str] = None
     roles: list[Role] = [Role.vendor_user]
 
     def validate(self):

@@ -2007,38 +2007,87 @@ class VendorManager:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You are not authorized to update this user"
                 )
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+            user_vendor_update_data = {}
 
-            update_data = {key: value for key, value in vendor_user_request.dict().items() if value is not None}
-            if not update_data:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields provided for update"
-                )
+            if vendor_user_request.first_name is not None:
+                user_vendor_update_data["first_name"] = vendor_user_request.first_name.capitalize()
+            if vendor_user_request.last_name is not None:
+                user_vendor_update_data["last_name"] = vendor_user_request.last_name.capitalize()
+            if vendor_user_request.email is not None:
+                user_vendor_update_data["email"] = vendor_user_request.email
+            if vendor_user_request.phone is not None:
+                user_vendor_update_data["phone"] = vendor_user_request.phone
+            if vendor_user_request.fees is not None:
+                user_vendor_update_data["fees"] = vendor_user_request.fees
+            if vendor_user_request.status is not None:
+                user_vendor_update_data["status"] = vendor_user_request.status
+            if vendor_user_request.gender is not None:
+                user_vendor_update_data["gender"] = vendor_user_request.gender
+            if vendor_user_request.specialization is not None:
+                user_vendor_update_data["specialization"] = vendor_user_request.specialization
+            if vendor_user_request.services is not None:
+                services = vendor_user_request.services
+                if not isinstance(services, list):
+                    services = [services]
 
-            # Check if services are being updated
-            if "services" in update_data:
-                # If services are updated, we need to update them in the vendor_service_collection as well
-                new_services = update_data["services"]
-                vendor_services = vendor_user.get("services", [])
+                service_ids = [
+                    ObjectId(service.id) if isinstance(service, Service) else ObjectId(service["id"])
+                    for service in services
+                ]
 
-                # Get the current vendor service document
-                vendor_service_data = await vendor_services_collection.find_one({"vendor_user_id": ObjectId(id)})
-                if vendor_service_data:
-                    # Update the services in the vendor_service collection
-                    vendor_service_data["services"] = [
-                        {
-                            "service_id": ObjectId(service["id"]),
-                            "service_name": service["name"],
-                            "service_image": service["service_image"],
-                            "service_image_url": service["service_image_url"],
-                        }
-                        for service in new_services
-                    ]
-                    await vendor_services_collection.update_one(
-                        {"vendor_user_id": ObjectId(id)}, {"$set": {"services": vendor_service_data["services"]}}
+                query = {
+                    "category_id": ObjectId(vendor.get("category_id")),
+                    "_id": {"$in": service_ids},
+                    "status": "active",
+                }
+                valid_services = await services_collection.find(query).to_list(None)
+
+                if len(valid_services) != len(service_ids):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="One or more services are invalid for the selected category.",
                     )
 
+                # vendor_update_data["services"] = [
+                #     {
+                #         "id": str(service["_id"]),
+                #         "name": service["name"],
+                #         "service_image": service["service_image"],
+                #         "service_image_url": service["service_image_url"],
+                #     }
+                #     for service in valid_services
+                # ]
+                updated_services = [
+                    {
+                        "id": str(service["_id"]),
+                        "name": service["name"],
+                        "service_image": service["service_image"],
+                        "service_image_url": service["service_image_url"],
+                    }
+                    for service in valid_services
+                ]
+
+                # Update vendor collection with the new services
+                user_vendor_update_data["services"] = updated_services
+
+                # Update the vendor_services_collection with the updated services
+                vendor_service_update_result = await vendor_services_collection.update_one(
+                    {"vendor_id": ObjectId(id)},
+                    {"$set": {"services": updated_services}},
+                )
+
+            if vendor_user_request.user_image:
+                image_name = vendor_user_request.user_image
+                bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+                user_vendor_update_data["user_image"] = image_name
+                user_vendor_update_data["user_image_url"] = file_url
+            else:
+                file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{vendor_user.get('user_image')}"
+
             # Update the user document with the new data
-            result = await user_collection.update_one({"_id": ObjectId(id)}, {"$set": update_data})
+            result = await user_collection.update_one({"_id": ObjectId(id)}, {"$set": user_vendor_update_data})
 
             updated_user = await user_collection.find_one({"_id": ObjectId(id)})
             if updated_user:
