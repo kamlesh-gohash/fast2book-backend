@@ -498,7 +498,13 @@ class UserManager:
                     raise HTTPException(status_code=400, detail=f"OTP for {otp_type} has expired")
 
                 # Clear the OTP fields after successful validation
-                await user_collection.update_one({"email": email}, {"$unset": {otp_field: 1, otp_expires_field: 1}})
+                await user_collection.update_one(
+                    {"email": email},
+                    {
+                        "$unset": {otp_field: 1, otp_expires_field: 1},
+                        "$set": {"is_active": True if otp_type == "sign_up" else user.get("is_active")},
+                    },
+                )
 
                 user_data = user.copy()
                 user_data.pop("password", None)
@@ -556,7 +562,7 @@ class UserManager:
                         "$set": {
                             otp_field: None,
                             otp_expires_field: None,
-                            "is_active": True if otp_type in ["login", "resend_otp"] else user.get("is_active"),
+                            "is_active": True if otp_type == "sign_up" else user.get("is_active"),
                         }
                     },
                 )
