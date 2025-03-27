@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 from beanie import Document, Link
 from pydantic import BaseModel, Field
 
+from app.v1.models.services import Service
 from app.v1.models.user import Location, StatusEnum, User
 
 
@@ -36,9 +37,9 @@ class DaySlot(BaseModel):
     time_slots: List[TimeSlot]
 
 
-class Service(BaseModel):
-    id: str
-    name: Optional[str] = None
+# class Service(BaseModel):
+#     id: str
+#     name: Optional[str] = None
 
 
 # class Location(BaseModel):
