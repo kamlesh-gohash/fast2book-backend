@@ -37,6 +37,7 @@ video_collection = get_model("videos")
 ticket_collection = get_model("tickets")
 vendor_query_collection = get_model("vendor_queries")
 email_monitor_collection = get_model("email_monitor")
+search_query_collection = get_model("search_query")
 
 
 __all__ = {
@@ -61,4 +62,5 @@ __all__ = {
     "ticket_collection": ticket_collection,
     "vendor_query_collection": vendor_query_collection,
     "email_monitor_collection": email_monitor_collection,
+    "search_query_collection": search_query_collection,
 }

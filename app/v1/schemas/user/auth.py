@@ -18,7 +18,7 @@ signup_validator = (
             "last_name": zon.string().min(0).max(50),
             "email": zon.string().email().optional(),  # Optional but must pass refinement
             "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional but must pass refinement
-            "gender": zon.string().min(1).max(10),  # Allow values like "male", "female", or "other"
+            "gender": zon.string().min(1).max(30),  # Allow values like "male", "female", or "other"
             "password": zon.string().min(6).max(20),
             "otp": zon.string().min(6).max(6).optional(),
             "otp_expires": zon.string().datetime().optional(),
