@@ -23,6 +23,7 @@ from app.v1.models import (
     blog_collection,
     booking_collection,
     category_collection,
+    search_query_collection,
     services_collection,
     support_collection,
     ticket_collection,
@@ -30,6 +31,7 @@ from app.v1.models import (
     vendor_collection,
 )
 from app.v1.models.category import Category
+from app.v1.models.search_query import SearchQuery
 from app.v1.models.services import Service
 from app.v1.models.support import Support
 from app.v1.models.ticket import Ticket
@@ -751,7 +753,7 @@ class UserManager:
             category = await category_collection.find_one({"slug": category_slug})
             if not category:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
-
+            category_id = str(category["_id"])
             active_services = await services_collection.find(
                 {"category_id": category["_id"], "status": "active"}
             ).to_list(length=None)
@@ -760,7 +762,42 @@ class UserManager:
                 for service in active_services
             ]
 
-            return service_data
+            top_services_pipeline = [
+                {
+                    "$match": {
+                        "category_id": PydanticObjectId(category_id),
+                    }
+                },
+                {"$group": {"_id": "$service_id", "search_count": {"$sum": 1}}},
+                {"$sort": {"search_count": -1}},
+                {"$limit": 3},
+                {
+                    "$lookup": {
+                        "from": "services",
+                        "let": {"service_id": "$_id"},
+                        "pipeline": [
+                            {
+                                "$match": {
+                                    "$expr": {"$eq": ["$_id", "$$service_id"]},
+                                    "category_id": PydanticObjectId(category_id),
+                                    "status": "active",
+                                }
+                            }
+                        ],
+                        "as": "service_info",
+                    }
+                },
+                {"$unwind": "$service_info"},
+                {"$project": {"id": {"$toString": "$_id"}, "name": "$service_info.name", "search_count": 1}},
+            ]
+
+            top_services = await search_query_collection.aggregate(top_services_pipeline).to_list(length=None)
+            top_services_data = [
+                {"id": service["id"], "name": service["name"], "search_count": service["search_count"]}
+                for service in top_services
+            ]
+
+            return {"services": service_data, "top_services": top_services_data}
         except HTTPException:
             raise
         except Exception as ex:
@@ -812,7 +849,14 @@ class UserManager:
                     user_location = user["user_location"]
                 else:
                     pass
-
+            if service_id or address:
+                search_query = {
+                    "user_id": ObjectId(current_user_id),
+                    "category_id": ObjectId(category_id),
+                    "service_id": ObjectId(service_id if service_id else None),
+                    "location": address if address else None,
+                }
+                await search_query_collection.insert_one(search_query)
             pipeline = [{"$match": vendor_filter}]
 
             if user_location:
@@ -840,7 +884,6 @@ class UserManager:
                     },
                 )
 
-            # Rest of the pipeline
             pipeline.extend(
                 [
                     {
@@ -851,7 +894,7 @@ class UserManager:
                                 {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_id"]}}},
                                 {
                                     "$project": {
-                                        "_id": {"$toString": "$_id"},
+                                        "_id": 0,
                                         "id": {"$toString": "$_id"},
                                         "first_name": 1,
                                         "last_name": 1,
@@ -878,7 +921,7 @@ class UserManager:
                                 {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_id"]}}},
                                 {
                                     "$project": {
-                                        "_id": {"$toString": "$_id"},
+                                        "_id": 0,
                                         "id": {"$toString": "$_id"},
                                         "first_name": 1,
                                         "last_name": 1,
@@ -903,7 +946,7 @@ class UserManager:
                             "from": "vendor_services",
                             "let": {
                                 "vendor_id": {"$toObjectId": "$_id"},
-                                "vendor_user_id": {"$toObjectId": "$created_users._id"},
+                                "vendor_user_id": {"$toObjectId": "$created_users.id"},
                             },
                             "pipeline": [
                                 {
@@ -953,9 +996,9 @@ class UserManager:
                                     "$ifNull": [
                                         {
                                             "$cond": [
-                                                {"$isArray": "$created_users._id"},
-                                                "$created_users._id",
-                                                ["$created_users._id"],
+                                                {"$isArray": "$created_users.id"},
+                                                "$created_users.id",
+                                                ["$created_users.id"],
                                             ]
                                         },
                                         [],
@@ -965,9 +1008,9 @@ class UserManager:
                                     "$ifNull": [
                                         {
                                             "$cond": [
-                                                {"$isArray": "$vendor_user._id"},
-                                                "$vendor_user._id",
-                                                ["$vendor_user._id"],
+                                                {"$isArray": "$vendor_user.id"},
+                                                "$vendor_user.id",
+                                                ["$vendor_user.id"],
                                             ]
                                         },
                                         [],
@@ -1059,7 +1102,7 @@ class UserManager:
                     {
                         "$lookup": {
                             "from": "vendor_ratings",
-                            "let": {"user_details_id": "$user_details._id"},
+                            "let": {"user_details_id": "$user_details.id"},
                             "pipeline": [
                                 {"$match": {"$expr": {"$eq": ["$vendor_id", "$$user_details_id"]}}},
                                 {
@@ -1152,10 +1195,15 @@ class UserManager:
                                                     },
                                                     "as": "slot",
                                                     "in": {
-                                                        "$mergeObjects": [
-                                                            "$$slot",
-                                                            {
-                                                                "date": "$$this",
+                                                        "$let": {
+                                                            "vars": {
+                                                                "max_seat_count": {
+                                                                    "$reduce": {
+                                                                        "input": "$$slot.time_slots",
+                                                                        "initialValue": 0,
+                                                                        "in": {"$add": ["$$value", "$$this.max_seat"]},
+                                                                    }
+                                                                },
                                                                 "daily_booking_count": {
                                                                     "$reduce": {
                                                                         "input": {
@@ -1173,7 +1221,7 @@ class UserManager:
                                                                                         {
                                                                                             "$eq": [
                                                                                                 "$$booking.vendor_user_id",
-                                                                                                "$user_details._id",
+                                                                                                "$user_details.id",
                                                                                             ]
                                                                                         },
                                                                                     ]
@@ -1182,76 +1230,116 @@ class UserManager:
                                                                         },
                                                                         "initialValue": 0,
                                                                         "in": {
-                                                                            "$add": ["$$value", "$$this.seat_count"]
-                                                                        },
-                                                                    }
-                                                                },
-                                                                "max_seat_count": {
-                                                                    "$reduce": {
-                                                                        "input": "$$slot.time_slots",
-                                                                        "initialValue": 0,
-                                                                        "in": {"$add": ["$$value", "$$this.max_seat"]},
-                                                                    }
-                                                                },
-                                                                "time_slots": {
-                                                                    "$map": {
-                                                                        "input": "$$slot.time_slots",
-                                                                        "as": "time_slot",
-                                                                        "in": {
-                                                                            "$mergeObjects": [
-                                                                                "$$time_slot",
-                                                                                {
-                                                                                    "booking_count": {
-                                                                                        "$reduce": {
-                                                                                            "input": {
-                                                                                                "$filter": {
-                                                                                                    "input": "$bookings",
-                                                                                                    "as": "booking",
-                                                                                                    "cond": {
-                                                                                                        "$and": [
-                                                                                                            {
-                                                                                                                "$eq": [
-                                                                                                                    "$$booking.date",
-                                                                                                                    "$$this",
-                                                                                                                ]
-                                                                                                            },
-                                                                                                            {
-                                                                                                                "$eq": [
-                                                                                                                    "$$booking.vendor_user_id",
-                                                                                                                    "$user_details._id",
-                                                                                                                ]
-                                                                                                            },
-                                                                                                            {
-                                                                                                                "$eq": [
-                                                                                                                    "$$booking.time_slot",
-                                                                                                                    "$$time_slot.start_time",
-                                                                                                                ]
-                                                                                                            },
-                                                                                                        ]
-                                                                                                    },
-                                                                                                }
-                                                                                            },
-                                                                                            "initialValue": 0,
-                                                                                            "in": {
-                                                                                                "$add": [
-                                                                                                    "$$value",
-                                                                                                    {
-                                                                                                        "$ifNull": [
-                                                                                                            "$$this.seat_count",
-                                                                                                            1,
-                                                                                                        ]
-                                                                                                    },
-                                                                                                ]
-                                                                                            },
-                                                                                        }
-                                                                                    }
-                                                                                },
+                                                                            "$add": [
+                                                                                "$$value",
+                                                                                {"$ifNull": ["$$this.seat_count", 1]},
                                                                             ]
                                                                         },
                                                                     }
                                                                 },
                                                             },
-                                                        ]
+                                                            "in": {
+                                                                "$mergeObjects": [
+                                                                    "$$slot",
+                                                                    {
+                                                                        "date": "$$this",
+                                                                        "daily_booking_count": "$$daily_booking_count",
+                                                                        "daily_bookings_left": {
+                                                                            "$subtract": [
+                                                                                {"$ifNull": ["$$max_seat_count", 0]},
+                                                                                {
+                                                                                    "$ifNull": [
+                                                                                        "$$daily_booking_count",
+                                                                                        0,
+                                                                                    ]
+                                                                                },
+                                                                            ]
+                                                                        },
+                                                                        "max_seat_count": "$$max_seat_count",
+                                                                        "time_slots": {
+                                                                            "$map": {
+                                                                                "input": "$$slot.time_slots",
+                                                                                "as": "time_slot",
+                                                                                "in": {
+                                                                                    "$let": {
+                                                                                        "vars": {
+                                                                                            "booking_count": {
+                                                                                                "$reduce": {
+                                                                                                    "input": {
+                                                                                                        "$filter": {
+                                                                                                            "input": "$bookings",
+                                                                                                            "as": "booking",
+                                                                                                            "cond": {
+                                                                                                                "$and": [
+                                                                                                                    {
+                                                                                                                        "$eq": [
+                                                                                                                            "$$booking.date",
+                                                                                                                            "$$this",
+                                                                                                                        ]
+                                                                                                                    },
+                                                                                                                    {
+                                                                                                                        "$eq": [
+                                                                                                                            "$$booking.vendor_user_id",
+                                                                                                                            "$user_details.id",
+                                                                                                                        ]
+                                                                                                                    },
+                                                                                                                    {
+                                                                                                                        "$eq": [
+                                                                                                                            {
+                                                                                                                                "$arrayElemAt": [
+                                                                                                                                    {
+                                                                                                                                        "$split": [
+                                                                                                                                            "$$booking.time_slot",
+                                                                                                                                            " - ",
+                                                                                                                                        ]
+                                                                                                                                    },
+                                                                                                                                    0,
+                                                                                                                                ]
+                                                                                                                            },
+                                                                                                                            "$$time_slot.start_time",
+                                                                                                                        ]
+                                                                                                                    },
+                                                                                                                ]
+                                                                                                            },
+                                                                                                        }
+                                                                                                    },
+                                                                                                    "initialValue": 0,
+                                                                                                    "in": {
+                                                                                                        "$add": [
+                                                                                                            "$$value",
+                                                                                                            {
+                                                                                                                "$ifNull": [
+                                                                                                                    "$$this.seat_count",
+                                                                                                                    1,
+                                                                                                                ]
+                                                                                                            },
+                                                                                                        ]
+                                                                                                    },
+                                                                                                }
+                                                                                            }
+                                                                                        },
+                                                                                        "in": {
+                                                                                            "$mergeObjects": [
+                                                                                                "$$time_slot",
+                                                                                                {
+                                                                                                    "booking_count": "$$booking_count",
+                                                                                                    "bookings_left": {
+                                                                                                        "$subtract": [
+                                                                                                            "$$time_slot.max_seat",
+                                                                                                            "$$booking_count",
+                                                                                                        ]
+                                                                                                    },
+                                                                                                },
+                                                                                            ]
+                                                                                        },
+                                                                                    }
+                                                                                },
+                                                                            }
+                                                                        },
+                                                                    },
+                                                                ]
+                                                            },
+                                                        }
                                                     },
                                                 }
                                             },
@@ -1912,7 +2000,7 @@ class UserManager:
                 "updated_at": existing_blog["updated_at"],
             }
             recent_blogs = (
-                await blog_collection.find({"_id": {"$ne": ObjectId(id)}})
+                await blog_collection.find({"_id": {"$ne": ObjectId(id)}, "status": "active"})
                 .sort("created_at", -1)
                 .limit(3)
                 .to_list(length=3)
@@ -2265,7 +2353,6 @@ class UserManager:
                     }
                 )
                 slot["total_bookings"] = total_bookings_for_slot
-
                 slot["max_seats"] = slot.get("max_seat", 0)
 
             vendor_data = {
@@ -2293,6 +2380,8 @@ class UserManager:
                     "duration": slot.get("duration", None),
                     "max_seats": slot.get("max_seats", 0),
                     "total_bookings": slot.get("total_bookings", 0),
+                    "bookings_left": slot.get("max_seats", 0)
+                    - slot.get("total_bookings", 0),  # Calculate bookings_left
                 }
                 for slot in filtered_slots
             ]

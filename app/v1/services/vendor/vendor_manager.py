@@ -1085,6 +1085,8 @@ class VendorManager:
                 vendor["phone"] = vendor["phone"] or ""
             if vendor["email"]:
                 vendor["email"] = vendor["email"] or ""
+            if vendor["gender"]:
+                vendor["gender"] = vendor["gender"] or ""
 
             vendor["created_by"] = vendor.get("created_by", "Unknown")
             vendor["user_image"] = vendor.get("user_image", "")
@@ -1147,6 +1149,8 @@ class VendorManager:
                         status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists with this phone"
                     )
                 user_data["phone"] = update_vendor_request.phone
+            if update_vendor_request.gender is not None:
+                user_data["gender"] = update_vendor_request.gender
             if update_vendor_request.specialization is not None:
                 user_data["specialization"] = update_vendor_request.specialization
             if update_vendor_request.fees is not None:
@@ -1275,6 +1279,7 @@ class VendorManager:
                 "last_name": updated_user.get("last_name"),
                 "email": updated_user.get("email"),
                 "phone": updated_user.get("phone"),
+                "gender": updated_user.get("gender"),
                 "user_image": updated_user.get("user_image"),
                 "user_image_url": updated_user.get("user_image_url"),
                 "specialization": updated_user.get("specialization"),
@@ -1533,12 +1538,12 @@ class VendorManager:
                         # Convert time objects to strings if necessary
                         if isinstance(time_slot["start_time"], time):
                             time_slot["start_time"] = time_slot["start_time"].strftime("%H:%M")
+                            print(time_slot["start_time"], "time_slot['start_time']")
                         if isinstance(time_slot["end_time"], time):
                             time_slot["end_time"] = time_slot["end_time"].strftime("%H:%M")
                     new_availability_slots.append(day_slot_data)
-
                 await user_collection.update_one(
-                    {"created_by": ObjectId(current_user.vendor_id)},
+                    {"_id": ObjectId(vendor_user_id)},
                     {"$set": {"availability_slots": new_availability_slots}},
                 )
 
@@ -2077,9 +2082,9 @@ class VendorManager:
                     {"$set": {"services": updated_services}},
                 )
 
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
             if vendor_user_request.user_image:
                 image_name = vendor_user_request.user_image
-                bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
                 file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
                 user_vendor_update_data["user_image"] = image_name
                 user_vendor_update_data["user_image_url"] = file_url
