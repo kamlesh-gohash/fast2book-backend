@@ -47,8 +47,6 @@ from app.v1.routers.base_router import router
 # app.include_router(router)
 
 
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
