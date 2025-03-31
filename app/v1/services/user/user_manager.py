@@ -1658,6 +1658,8 @@ class UserManager:
                 "name": support_request.name,
                 "subject": support_request.subject,
                 "message": support_request.message,
+                "phone": support_request.phone,
+                "email": support_request.email,
                 "created_at": support_request.created_at,
             }
             await send_email(
