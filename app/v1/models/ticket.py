@@ -13,6 +13,7 @@ from app.v1.models.user import StatusEnum
 
 
 class Ticket(BaseModel):
+    user: Optional[str] = None
     email: str
     issue_image: Optional[str] = None
     issue_image_url: Optional[str] = None
