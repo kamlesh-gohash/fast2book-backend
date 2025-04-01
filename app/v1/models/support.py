@@ -23,6 +23,10 @@ class Support(BaseModel):
     message: str
     subject: str
     reply: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    zipcode: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:

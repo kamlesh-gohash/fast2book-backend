@@ -710,6 +710,72 @@ class BookingManager:
             if not vendor_user:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor User not found")
 
+            booking_datetime = datetime.strptime(booking_date, "%Y-%m-%d")
+            day_of_week = booking_datetime.strftime("%A")
+
+            # Check slot availability
+            availability_slots = vendor_user.get("availability_slots", [])
+            day_slots = next((d for d in availability_slots if d["day"] == day_of_week), None)
+
+            if not day_slots:
+                raise HTTPException(status_code=400, detail=f"No availability defined for {day_of_week}")
+
+            # Parse requested slot
+            try:
+                slot_start_str, slot_end_str = slot.split("-")
+                slot_start = datetime.strptime(slot_start_str.strip(), "%I:%M %p")
+                slot_end = datetime.strptime(slot_end_str.strip(), "%I:%M %p")
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid slot format. Use 'HH:MM AM-HH:MM PM' (e.g., '9:00 AM-10:00 AM')",
+                )
+
+            # Check if slot matches any available time slot exactly
+            slot_available = False
+            selected_time_slot = None
+            for time_slot in day_slots["time_slots"]:
+                ts_start = datetime.strptime(time_slot["start_time"], "%I:%M %p")
+                ts_end = datetime.strptime(time_slot["end_time"], "%I:%M %p")
+
+                if slot_start == ts_start and slot_end == ts_end:
+                    slot_available = True
+                    selected_time_slot = time_slot
+                    break
+
+            if not slot_available:
+                raise HTTPException(status_code=400, detail=f"Slot {slot} is not available on {day_of_week}")
+
+            # Check current bookings against max_seat
+            booking_count = await booking_collection.count_documents(
+                {
+                    "vendor_user_id": vendor_user_id,
+                    "booking_date": booking_date,
+                    "time_slot": slot,
+                    "booking_status": {"$ne": "cancelled"},
+                }
+            )
+
+            if booking_count >= selected_time_slot["max_seat"]:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail=f"Slot {slot} on {booking_date} is fully booked"
+                )
+            user_bookings = await booking_collection.find(
+                {
+                    "user_id": current_user.id,
+                    "booking_status": {"$ne": "cancelled"},
+                    "booking_date": booking_date,
+                    "time_slot": slot,
+                    "vendor_user_id": vendor_user_id,
+                }
+            ).to_list(length=None)
+
+            if user_bookings:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"You already have a booking on {booking_date} at {slot}",
+                )
+
             is_payment_required = vendor.get("is_payment_required", True)
             booking_data = {
                 "user_id": current_user.id,  # Access the user ID using dot notation
@@ -837,6 +903,8 @@ class BookingManager:
 
         except razorpay.errors.BadRequestError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        except HTTPException as e:
+            raise e
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"

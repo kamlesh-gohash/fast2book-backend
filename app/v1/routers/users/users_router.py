@@ -658,9 +658,14 @@ async def get_category_service(
 
 
 @router.post("/create-ticket", status_code=status.HTTP_200_OK)
-async def create_ticket(request: Request, ticket_data: Ticket, user_manager: UserManager = Depends(get_user_manager)):
+async def create_ticket(
+    request: Request,
+    ticket_data: Ticket,
+    current_user: User = Depends(get_current_user_optional),
+    user_manager: UserManager = Depends(get_user_manager),
+):
     try:
-        result = await user_manager.create_ticket(request=request, ticket_data=ticket_data)
+        result = await user_manager.create_ticket(request=request, ticket_data=ticket_data, current_user=current_user)
         return success({"message": "Ticket created successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -682,6 +687,26 @@ async def get_user_location(
     try:
         result = await user_manager.get_user_location(request=request, current_user=current_user)
         return success({"message": "User location found successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-user-ticket-list", status_code=status.HTTP_200_OK)
+async def get_user_ticket_list(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    try:
+        result = await user_manager.get_user_ticket_list(request=request, current_user=current_user)
+        return success({"message": "User ticket list found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:

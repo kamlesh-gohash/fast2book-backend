@@ -1,17 +1,16 @@
 # app/v1/utils/email.py
-
 import os
 import random
 import smtplib
 
 from datetime import datetime
-from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 from string import Template
 
 import boto3
+import requests
 
 from bs4 import BeautifulSoup
 from fastapi import HTTPException
@@ -30,20 +29,74 @@ def strip_tags(html_content: str) -> str:
     return soup.get_text()
 
 
-# Define the image directory
+def validate_image_urls(html_content: str) -> list:
+    """Check if image URLs are accessible."""
+    soup = BeautifulSoup(html_content, "lxml")
+    img_tags = soup.find_all("img")
+    inaccessible_urls = []
+    for img in img_tags:
+        src = img.get("src", "")
+        if src.startswith("http"):
+            try:
+                response = requests.head(src, timeout=5)
+                if response.status_code != 200:
+                    inaccessible_urls.append(src)
+            except requests.RequestException:
+                inaccessible_urls.append(src)
+    return inaccessible_urls
 
 
 async def send_email(to_email: str, source: str, context: dict = None):
-    """Send email based on the source and context provided."""
-    from_email = os.getenv("EMAIL_USER")
-    from_password = os.getenv("EMAIL_PASSWORD")
+    """Send email based on the source and context provided with different sender emails."""
+    # Define email categories and their corresponding sender addresses
+    auth_emails = {
+        "Resend OTP",
+        "Forgot Password",
+        "Signup Successful",
+        "Verification Email",
+        "Activation_code",
+        "sign_in",
+        "Forgot_Password",
+        "validate_otp",
+        "Account created",
+        "Login With Otp",
+    }
+    payment_emails = {"Order Placed", "Payment Success"}
+    support_emails = {
+        "Booking Confirmation",
+        "Ticket Created",
+        "Ticket Reply",
+        "Vendor Query Created",
+        "Vendor Query Reply",
+        "Support Ticket Reply",
+        "Support Request",
+        "New Support Request",
+        "New Ticket Created",
+        "New Vendor Query",
+        "Vednor Create",
+        "APP Link",
+    }
+
+    # Determine the sender email based on the source
+    if source in auth_emails:
+        from_email = "noreply@fast2book.com"
+        from_password = os.getenv("EMAIL_PASSWORD")
+    elif source in payment_emails:
+        from_email = "payment@fast2book.com"
+        from_password = os.getenv("EMAIL_PASSWORD")
+    elif source in support_emails:
+        from_email = "support@fast2book.com"
+        from_password = os.getenv("EMAIL_PASSWORD")
+    else:
+        from_email = os.getenv("EMAIL_USER")  # Default fallback
+        from_password = os.getenv("EMAIL_PASSWORD")
+
     if not from_email or not from_password:
-        raise ValueError("Email credentials (EMAIL_USER and EMAIL_PASSWORD) are not set in environment variables.")
+        raise ValueError(f"Email credentials for {source} are not set in environment variables.")
 
     # Define the project root and template paths
     project_root = Path(__file__).resolve().parent.parent.parent
 
-    IMAGE_DIR = Path(project_root / "templates/email/images")
     templates = {
         "Resend OTP": project_root / "templates/email/resend_otp.html",
         "Forgot Password": project_root / "templates/email/forgot_password.html",
@@ -96,49 +149,16 @@ async def send_email(to_email: str, source: str, context: dict = None):
     except Exception as e:
         raise
 
-    # Parse the HTML to find all image tags
-    soup = BeautifulSoup(html_content, "lxml")
-    img_tags = soup.find_all("img")
-
-    # Dictionary to keep track of embedded images (to avoid duplicates)
-    embedded_images = {}
-
-    # Embed images and update the src attributes
-    for idx, img in enumerate(img_tags):
-        src = img.get("src", "")
-        if not src:
-            continue
-
-        # Assume src is the filename (e.g., "fast2 book logo-05 2 1.png")
-        image_filename = src
-        image_path = IMAGE_DIR / image_filename
-
-        if not image_path.exists():
-            raise FileNotFoundError(f"Image not found: {image_path}")
-
-        # Generate a unique cid for each image
-        cid = f"image_{idx}"
-        img["src"] = f"cid:{cid}"
-
-        # Embed the image if not already embedded
-        if image_filename not in embedded_images:
-            try:
-                with open(image_path, "rb") as img_file:
-                    mime_image = MIMEImage(img_file.read())
-                    mime_image.add_header("Content-ID", f"<{cid}>")
-                    mime_image.add_header("Content-Disposition", "inline", filename=image_filename)
-                    embedded_images[image_filename] = mime_image
-            except Exception as e:
-                raise
-
-    # Update the HTML content with the modified image tags
-    html_content = str(soup)
+    # Validate image URLs
+    inaccessible_urls = validate_image_urls(html_content)
+    if inaccessible_urls:
+        raise ValueError(f"Inaccessible image URLs: {', '.join(inaccessible_urls)}")
 
     # Create plain text version by stripping HTML tags
     plain_text_content = strip_tags(html_content)
 
     # Set up the email
-    msg = MIMEMultipart("related")  # Use "related" for embedding images
+    msg = MIMEMultipart("alternative")
     msg["From"] = from_email
     msg["To"] = to_email
     subject_map = {
@@ -163,61 +183,58 @@ async def send_email(to_email: str, source: str, context: dict = None):
     }
     msg["Subject"] = subject_map.get(source, "Welcome")  # Default subject
 
-    # Create a multipart/alternative for text and HTML
-    msg_alternative = MIMEMultipart("alternative")
-    msg.attach(msg_alternative)
-
     # Attach both plain text and HTML versions
-    text_part = MIMEText(plain_text_content, "plain")
-    html_part = MIMEText(html_content, "html")
-    msg_alternative.attach(text_part)
-    msg_alternative.attach(html_part)
+    text_part = MIMEText(plain_text_content, "plain", "utf-8")
+    html_part = MIMEText(html_content, "html", "utf-8")
+    msg.attach(text_part)
+    msg.attach(html_part)
 
-    # Attach all embedded images
-    for mime_image in embedded_images.values():
-        msg.attach(mime_image)
     email_log = {
         "to_email": to_email,
         "subject": msg["Subject"],
         "source": source,
-        "status": EmailStatus.FAILURE.value,  # Use .value to get the string
+        "status": EmailStatus.FAILURE.value,
         "message": "Pending send",
         "context": context,
-        "html_content": html_content,  # Add the final HTML content here
+        "html_content": html_content,
         "sent_at": datetime.utcnow(),
+        "inaccessible_urls": inaccessible_urls if inaccessible_urls else None,
     }
 
-    # Skip logging if to_email is fast2book@yopmail.com
+    # Skip logging if to_email is support@fast2book.com
     log_id = None
-    if to_email != "fast2book@yopmail.com":
+    if to_email != "support@fast2book.com":
         try:
             result = await email_monitor_collection.insert_one(email_log)
             log_id = result.inserted_id
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to log email: {str(e)}")
-    # Send the email
-    try:
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(from_email, from_password)
 
+    try:
+        server = smtplib.SMTP_SSL("smtp.zeptomail.com", 465)
+        server.login(from_email, from_password)
         text = msg.as_string()
         server.sendmail(from_email, to_email, text)
-
         server.quit()
+
+        success_message = "Email sent successfully."
+        if inaccessible_urls:
+            success_message += " Note: Some images may not display due to inaccessible URLs."
+
         if log_id:
             await email_monitor_collection.update_one(
-                {"_id": email_log["_id"]}, {"$set": {"status": "SUCCESS", "message": "Email sent successfully."}}
+                {"_id": log_id}, {"$set": {"status": "SUCCESS", "message": success_message}}
             )
-
-        return {"status": "SUCCESS", "message": "Email sent successfully."}
+        return {"status": "SUCCESS", "message": success_message}
     except Exception as e:
+        error_message = f"Failed to send email: {str(e)}"
+        if inaccessible_urls:
+            error_message += f" Inaccessible image URLs: {', '.join(inaccessible_urls)}"
         if log_id:
             await email_monitor_collection.update_one(
-                {"_id": email_log["_id"]}, {"$set": {"status": "FAILURE", "message": str(e)}}
+                {"_id": log_id}, {"$set": {"status": "FAILURE", "message": error_message}}
             )
-
-        return {"status": "FAILURE", "message": str(e)}
+        return {"status": "FAILURE", "message": error_message}
 
 
 # AWS SNS Configuration (Set your credentials in environment variables or AWS config)

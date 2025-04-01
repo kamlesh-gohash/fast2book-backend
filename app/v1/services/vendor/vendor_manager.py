@@ -3083,7 +3083,7 @@ class VendorManager:
                     context,
                 )
                 source = "New Vendor Query"
-                to_email = "fast2book@yopmail.com"
+                to_email = "support@fast2book.com"
                 context = {
                     "email": vendor_query.email,
                     "query_type": vendor_query.query_type,
