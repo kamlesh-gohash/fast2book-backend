@@ -231,7 +231,7 @@ class UserManager:
                         {"$set": {"login_otp": otp, "login_otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
                     )
                     source = "Login With Otp"
-                    context = {"otp": otp}
+                    context = {"otp": otp, "first_name": result.get("first_name")}
                     await send_email(email, source, context)
                     return {"message": "OTP sent to your email address"}
 
@@ -335,6 +335,7 @@ class UserManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -1649,6 +1650,10 @@ class UserManager:
                 "subject": support_request.subject,
                 "phone": support_request.phone,
                 "message": support_request.message,
+                "country": support_request.country,
+                "state": support_request.state,
+                "city": support_request.city,
+                "zipcode": support_request.zipcode,
                 "created_at": support_request.created_at,
             }
 
@@ -1660,6 +1665,10 @@ class UserManager:
                 "message": support_request.message,
                 "phone": support_request.phone,
                 "email": support_request.email,
+                "country": support_request.country,
+                "state": support_request.state,
+                "city": support_request.city,
+                "zipcode": support_request.zipcode,
                 "created_at": support_request.created_at,
             }
             await send_email(
@@ -1669,13 +1678,17 @@ class UserManager:
             )
 
             source = "New Support Request"
-            to_email = "fast2book@yopmail.com"
+            to_email = "support@fast2book.com"
             context = {
                 "name": support_request.name,
                 "subject": support_request.subject,
                 "message": support_request.message,
                 "phone": support_request.phone,
                 "email": support_request.email,
+                "country": support_request.country,
+                "state": support_request.state,
+                "city": support_request.city,
+                "zipcode": support_request.zipcode,
                 "created_at": support_request.created_at,
             }
             await send_email(
@@ -2074,207 +2087,254 @@ class UserManager:
 
     async def get_vendor_list(self, request: Request):
         try:
-            cursor = category_collection.aggregate(
-                [
-                    {"$match": {"status": "active"}},
+            user = request.state.user if hasattr(request.state, "user") else None
+            lat = request.query_params.get("lat")
+            lng = request.query_params.get("lng")
+
+            # Prepare geo filter if location is available
+            geo_filter = []
+            if user and user.get("user_location"):
+                # Use authenticated user's location
+                user_location = user["user_location"]
+                radius_km = 10
+                radius_radians = radius_km / 6378.1
+                geo_filter = [
                     {
-                        "$lookup": {
-                            "from": "services",
-                            "localField": "_id",
-                            "foreignField": "category_id",
-                            "pipeline": [
-                                {"$match": {"status": "active"}},
-                                {
-                                    "$project": {
-                                        "_id": {"$toString": "$_id"},
-                                        "name": 1,
-                                        "service_image": 1,
-                                        "service_image_url": 1,
-                                        "category_name": 1,
-                                        "category_slug": 1,
-                                    }
-                                },
-                            ],
-                            "as": "services",
+                        "$addFields": {
+                            "geo_point": {
+                                "type": "Point",
+                                "coordinates": [
+                                    {"$toDouble": "$location.geometry.location.lng"},
+                                    {"$toDouble": "$location.geometry.location.lat"},
+                                ],
+                            }
                         }
                     },
                     {
-                        "$lookup": {
-                            "from": "vendors",
-                            "let": {"category_id_str": {"$toString": "$_id"}},
-                            "pipeline": [
-                                {
-                                    "$match": {
-                                        "$expr": {"$eq": ["$category_id", "$$category_id_str"]},
-                                        "status": "active",
-                                        "is_subscription": True,
-                                    }
-                                },
-                                {
-                                    "$lookup": {
-                                        "from": "users",
-                                        "let": {"vendor_id": {"$toString": "$_id"}},
-                                        "pipeline": [
-                                            {
-                                                "$match": {
-                                                    "$expr": {"$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]}
-                                                }
-                                            },
-                                            {"$match": {"roles": "vendor_user"}},
-                                            {
-                                                "$project": {
-                                                    "_id": {"$toString": "$_id"},
-                                                    "first_name": 1,
-                                                    "last_name": 1,
-                                                    "user_image": 1,
-                                                    "user_image_url": 1,
-                                                }
-                                            },
-                                        ],
-                                        "as": "creator_user",
-                                    }
-                                },
-                                {
-                                    "$lookup": {
-                                        "from": "users",
-                                        "let": {"vendor_id": {"$toString": "$_id"}},
-                                        "pipeline": [
-                                            {
-                                                "$match": {
-                                                    "$expr": {"$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]}
-                                                }
-                                            },
-                                            {
-                                                "$project": {
-                                                    "_id": {"$toString": "$_id"},
-                                                    "first_name": 1,
-                                                    "last_name": 1,
-                                                    "user_image": 1,
-                                                    "user_image_url": 1,
-                                                }
-                                            },
-                                        ],
-                                        "as": "vendor_user",
-                                    }
-                                },
-                                {
-                                    "$facet": {
-                                        "business_vendors": [
-                                            {"$match": {"business_type": "business"}},
-                                            {"$unwind": "$creator_user"},
-                                            {"$addFields": {"user_details": "$creator_user"}},
-                                        ],
-                                        "non_business_vendors": [
-                                            {"$match": {"business_type": {"$ne": "business"}}},
-                                            {"$unwind": "$vendor_user"},  # Expand vendor_user array
-                                            {"$addFields": {"user_details": "$vendor_user"}},
-                                        ],
-                                    }
-                                },
-                                {
-                                    "$project": {
-                                        "vendors": {"$concatArrays": ["$business_vendors", "$non_business_vendors"]}
-                                    }
-                                },
-                                {"$unwind": "$vendors"},  # Flatten the merged array
-                                {"$replaceRoot": {"newRoot": "$vendors"}},  # Promote vendor docs to root
-                                # Lookup vendor ratings
-                                {
-                                    "$lookup": {
-                                        "from": "vendor_ratings",
-                                        "let": {"vendor_user_id": "$user_details._id"},
-                                        "pipeline": [
-                                            {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_user_id"]}}},
-                                            {
-                                                "$project": {
-                                                    "_id": {"$toString": "$_id"},
-                                                    "rating": 1,
-                                                    "user_id": {"$toString": "$user_id"},
-                                                }
-                                            },
-                                        ],
-                                        "as": "ratings",
-                                    }
-                                },
-                                {
-                                    "$addFields": {
-                                        "average_rating": {
-                                            "$cond": {
-                                                "if": {"$gt": [{"$size": "$ratings"}, 0]},
-                                                "then": {
-                                                    "$divide": [{"$sum": "$ratings.rating"}, {"$size": "$ratings"}]
-                                                },
-                                                "else": 0,
-                                            }
-                                        },
-                                        "vendor_id": "$user_details._id",
-                                        "vendor_first_name": "$user_details.first_name",
-                                        "vendor_last_name": "$user_details.last_name",
-                                        "vendor_image": "$user_details.user_image",
-                                        "vendor_image_url": "$user_details.user_image_url",
-                                    }
-                                },
-                                {
-                                    "$project": {
-                                        "_id": {"$toString": "$_id"},
-                                        "vendor_id": 1,
-                                        "business_name": 1,
-                                        "business_type": 1,
-                                        "vendor_first_name": 1,
-                                        "vendor_last_name": 1,
-                                        "vendor_image": 1,
-                                        "vendor_image_url": 1,
-                                        "average_rating": 1,
-                                    }
-                                },
-                                {"$sort": {"average_rating": -1}},  # Sort by rating
-                            ],
-                            "as": "vendors",
-                        }
-                    },
-                    {"$addFields": {"vendors": {"$slice": ["$vendors", 0, 5]}}},  # Limit to top 5 vendors
-                    {
-                        "$project": {
-                            "_id": 0,
-                            "category": "$name",
-                            "category_slug": "$slug",
-                            "services": {
-                                "$map": {
-                                    "input": "$services",
-                                    "as": "service",
-                                    "in": {
-                                        "service_id": "$$service._id",
-                                        "name": "$$service.name",
-                                        "service_image": "$$service.service_image",
-                                        "service_image_url": "$$service.service_image_url",
-                                        "category_name": "$$service.category_name",
-                                        "category_slug": "$$service.category_slug",
-                                    },
-                                }
-                            },
-                            "vendors": {
-                                "$map": {
-                                    "input": "$vendors",
-                                    "as": "vendor",
-                                    "in": {
-                                        "vendor_id": "$$vendor.vendor_id",
-                                        "business_name": "$$vendor.business_name",
-                                        "business_type": "$$vendor.business_type",
-                                        "vendor_first_name": "$$vendor.vendor_first_name",
-                                        "vendor_last_name": "$$vendor.vendor_last_name",
-                                        "vendor_image": "$$vendor.vendor_image",
-                                        "vendor_image_url": "$$vendor.vendor_image_url",
-                                        "average_rating": "$$vendor.average_rating",
-                                    },
-                                }
-                            },
+                        "$match": {
+                            "geo_point": {
+                                "$geoWithin": {"$centerSphere": [user_location["coordinates"], radius_radians]}
+                            }
                         }
                     },
                 ]
-            )
+            elif lat and lng:
+                try:
+                    lat_float = float(lat)
+                    lng_float = float(lng)
+                    radius_km = 10
+                    radius_radians = radius_km / 6378.1
+                    geo_filter = [
+                        {
+                            "$addFields": {
+                                "geo_point": {
+                                    "type": "Point",
+                                    "coordinates": [
+                                        {"$toDouble": "$location.geometry.location.lng"},
+                                        {"$toDouble": "$location.geometry.location.lat"},
+                                    ],
+                                }
+                            }
+                        },
+                        {
+                            "$match": {
+                                "geo_point": {"$geoWithin": {"$centerSphere": [[lng_float, lat_float], radius_radians]}}
+                            }
+                        },
+                    ]
+                except ValueError:
+                    pass
 
+            pipeline = [
+                {"$match": {"status": "active"}},
+                {
+                    "$lookup": {
+                        "from": "services",
+                        "localField": "_id",
+                        "foreignField": "category_id",
+                        "pipeline": [
+                            {"$match": {"status": "active"}},
+                            {
+                                "$project": {
+                                    "_id": {"$toString": "$_id"},
+                                    "name": 1,
+                                    "service_image": 1,
+                                    "service_image_url": 1,
+                                    "category_name": 1,
+                                    "category_slug": 1,
+                                }
+                            },
+                        ],
+                        "as": "services",
+                    }
+                },
+                {
+                    "$lookup": {
+                        "from": "vendors",
+                        "let": {"category_id_str": {"$toString": "$_id"}},
+                        "pipeline": [
+                            {
+                                "$match": {
+                                    "$expr": {"$eq": ["$category_id", "$$category_id_str"]},
+                                    "status": "active",
+                                    "is_subscription": True,
+                                }
+                            },
+                            *geo_filter,
+                            {
+                                "$lookup": {
+                                    "from": "users",
+                                    "let": {"vendor_id": {"$toString": "$_id"}},
+                                    "pipeline": [
+                                        {"$match": {"$expr": {"$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]}}},
+                                        {"$match": {"roles": "vendor_user"}},
+                                        {
+                                            "$project": {
+                                                "_id": {"$toString": "$_id"},
+                                                "first_name": 1,
+                                                "last_name": 1,
+                                                "user_image": 1,
+                                                "user_image_url": 1,
+                                            }
+                                        },
+                                    ],
+                                    "as": "creator_user",
+                                }
+                            },
+                            {
+                                "$lookup": {
+                                    "from": "users",
+                                    "let": {"vendor_id": {"$toString": "$_id"}},
+                                    "pipeline": [
+                                        {"$match": {"$expr": {"$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]}}},
+                                        {
+                                            "$project": {
+                                                "_id": {"$toString": "$_id"},
+                                                "first_name": 1,
+                                                "last_name": 1,
+                                                "user_image": 1,
+                                                "user_image_url": 1,
+                                            }
+                                        },
+                                    ],
+                                    "as": "vendor_user",
+                                }
+                            },
+                            {
+                                "$facet": {
+                                    "business_vendors": [
+                                        {"$match": {"business_type": "business"}},
+                                        {"$unwind": "$creator_user"},
+                                        {"$addFields": {"user_details": "$creator_user"}},
+                                    ],
+                                    "non_business_vendors": [
+                                        {"$match": {"business_type": {"$ne": "business"}}},
+                                        {"$unwind": "$vendor_user"},  # Expand vendor_user array
+                                        {"$addFields": {"user_details": "$vendor_user"}},
+                                    ],
+                                }
+                            },
+                            {
+                                "$project": {
+                                    "vendors": {"$concatArrays": ["$business_vendors", "$non_business_vendors"]}
+                                }
+                            },
+                            {"$unwind": "$vendors"},  # Flatten the merged array
+                            {"$replaceRoot": {"newRoot": "$vendors"}},  # Promote vendor docs to root
+                            # Lookup vendor ratings
+                            {
+                                "$lookup": {
+                                    "from": "vendor_ratings",
+                                    "let": {"vendor_user_id": "$user_details._id"},
+                                    "pipeline": [
+                                        {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_user_id"]}}},
+                                        {
+                                            "$project": {
+                                                "_id": {"$toString": "$_id"},
+                                                "rating": 1,
+                                                "user_id": {"$toString": "$user_id"},
+                                            }
+                                        },
+                                    ],
+                                    "as": "ratings",
+                                }
+                            },
+                            {
+                                "$addFields": {
+                                    "average_rating": {
+                                        "$cond": {
+                                            "if": {"$gt": [{"$size": "$ratings"}, 0]},
+                                            "then": {"$divide": [{"$sum": "$ratings.rating"}, {"$size": "$ratings"}]},
+                                            "else": 0,
+                                        }
+                                    },
+                                    "vendor_id": "$user_details._id",
+                                    "vendor_first_name": "$user_details.first_name",
+                                    "vendor_last_name": "$user_details.last_name",
+                                    "vendor_image": "$user_details.user_image",
+                                    "vendor_image_url": "$user_details.user_image_url",
+                                }
+                            },
+                            {
+                                "$project": {
+                                    "_id": {"$toString": "$_id"},
+                                    "vendor_id": 1,
+                                    "business_name": 1,
+                                    "business_type": 1,
+                                    "vendor_first_name": 1,
+                                    "vendor_last_name": 1,
+                                    "vendor_image": 1,
+                                    "vendor_image_url": 1,
+                                    "average_rating": 1,
+                                }
+                            },
+                            {"$sort": {"average_rating": -1}},
+                        ],
+                        "as": "vendors",
+                    }
+                },
+                {"$addFields": {"vendors": {"$slice": ["$vendors", 0, 5]}}},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "category": "$name",
+                        "category_slug": "$slug",
+                        "services": {
+                            "$map": {
+                                "input": "$services",
+                                "as": "service",
+                                "in": {
+                                    "service_id": "$$service._id",
+                                    "name": "$$service.name",
+                                    "service_image": "$$service.service_image",
+                                    "service_image_url": "$$service.service_image_url",
+                                    "category_name": "$$service.category_name",
+                                    "category_slug": "$$service.category_slug",
+                                },
+                            }
+                        },
+                        "vendors": {
+                            "$map": {
+                                "input": "$vendors",
+                                "as": "vendor",
+                                "in": {
+                                    "vendor_id": "$$vendor.vendor_id",
+                                    "business_name": "$$vendor.business_name",
+                                    "business_type": "$$vendor.business_type",
+                                    "vendor_first_name": "$$vendor.vendor_first_name",
+                                    "vendor_last_name": "$$vendor.vendor_last_name",
+                                    "vendor_image": "$$vendor.vendor_image",
+                                    "vendor_image_url": "$$vendor.vendor_image_url",
+                                    "average_rating": "$$vendor.average_rating",
+                                },
+                            }
+                        },
+                    }
+                },
+            ]
+
+            cursor = category_collection.aggregate(pipeline)
             result = await cursor.to_list(length=100)
-
             data = {}
             for item in result:
                 category = item["category"]
@@ -2446,12 +2506,15 @@ class UserManager:
         self,
         request: Request,
         ticket_data: Ticket,
+        current_user: Optional[User] = None,
     ):
         try:
             if not ticket_data:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid ticket data")
 
             # Auto-generate ticket number
+            if current_user:
+                ticket_data.user = str(current_user.id)
             ticket_data.ticket_number = Ticket.generate_ticket_number()
             issue_image_url = None
             # Handle image upload
@@ -2470,6 +2533,7 @@ class UserManager:
                     "ticket_number": ticket_data.ticket_number,
                     "ticket_type": ticket_data.ticket_type,
                     "description": ticket_data.description,
+                    "email": ticket_data.email,
                     "date": datetime.now().strftime("%Y-%m-%d"),
                 }
                 await send_email(
@@ -2478,7 +2542,7 @@ class UserManager:
                     context,
                 )
                 source = "New Ticket Created"
-                to_email = "fast2book@yopmail.com"
+                to_email = "support@fast2book.com"
                 context = {
                     "ticket_number": ticket_data.ticket_number,
                     "ticket_type": ticket_data.ticket_type,
@@ -2565,6 +2629,30 @@ class UserManager:
                 user_location["vendor_id"] = str(user_location["vendor_id"])
 
             return user_location
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def get_user_ticket_list(
+        self,
+        request: Request,
+        current_user: User,
+    ):
+        try:
+            tickets = (
+                await ticket_collection.find({"user": str(current_user.id)}).sort("created_at", -1).to_list(length=None)
+            )
+            if not tickets:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tickets not found")
+            for ticket in tickets:
+                ticket["id"] = str(ticket["_id"])
+                ticket.pop("_id")
+
+            return tickets
 
         except HTTPException:
             raise
