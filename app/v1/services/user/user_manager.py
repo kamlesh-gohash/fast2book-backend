@@ -361,7 +361,7 @@ class UserManager:
 
                 # Send OTP via email
                 source = "Resend OTP"
-                context = {"otp": otp}
+                context = {"otp": otp, "user_name": user.get("first_name")}
                 to_email = email
                 await send_email(to_email, source, context)
 
@@ -755,6 +755,8 @@ class UserManager:
             if not category:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
             category_id = str(category["_id"])
+
+            # Get all active services
             active_services = await services_collection.find(
                 {"category_id": category["_id"], "status": "active"}
             ).to_list(length=None)
@@ -763,6 +765,7 @@ class UserManager:
                 for service in active_services
             ]
 
+            # Get top services pipeline
             top_services_pipeline = [
                 {
                     "$match": {
@@ -797,6 +800,24 @@ class UserManager:
                 {"id": service["id"], "name": service["name"], "search_count": service["search_count"]}
                 for service in top_services
             ]
+
+            # If less than 3 top services, fill with other active services
+            if len(top_services_data) < 3:
+                # Get IDs of top services
+                top_service_ids = {service["id"] for service in top_services_data}
+                # Get additional services that aren't in top services
+                additional_services = [service for service in service_data if service["id"] not in top_service_ids]
+                # Calculate how many more services we need
+                needed = 3 - len(top_services_data)
+                # Add additional services up to the needed amount
+                for service in additional_services[:needed]:
+                    top_services_data.append(
+                        {
+                            "id": service["id"],
+                            "name": service["name"],
+                            "search_count": 0,  # Set search_count to 0 for non-top services
+                        }
+                    )
 
             return {"services": service_data, "top_services": top_services_data}
         except HTTPException:
@@ -1670,6 +1691,7 @@ class UserManager:
                 "city": support_request.city,
                 "zipcode": support_request.zipcode,
                 "created_at": support_request.created_at,
+                "website": "https://fast2book.com",
             }
             await send_email(
                 to_email,
@@ -2293,7 +2315,7 @@ class UserManager:
                         "as": "vendors",
                     }
                 },
-                {"$addFields": {"vendors": {"$slice": ["$vendors", 0, 5]}}},
+                {"$addFields": {"vendors": {"$slice": ["$vendors", 0, 4]}}},
                 {
                     "$project": {
                         "_id": 0,
@@ -2427,9 +2449,7 @@ class UserManager:
                 "business_type": vendor.get("business_type"),
                 "vendor_id": str(vendor.get("_id")),
                 "services": vendor_user.get("services") if vendor_user.get("services") else vendor.get("services"),
-                "category_id": (
-                    vendor_user.get("category_id") if vendor_user.get("category") else vendor.get("category_id")
-                ),
+                "category_id": (vendor.get("category_id")),
                 "fess": vendor_user.get("fess"),
                 "specialization": vendor_user.get("specialization"),
                 "location": vendor.get("location"),

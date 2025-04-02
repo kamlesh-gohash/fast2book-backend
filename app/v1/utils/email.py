@@ -8,6 +8,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 from string import Template
+from typing import Optional
 
 import boto3
 import requests
@@ -46,7 +47,8 @@ def validate_image_urls(html_content: str) -> list:
     return inaccessible_urls
 
 
-async def send_email(to_email: str, source: str, context: dict = None):
+async def send_email(to_email: str, source: str, context: dict = None, cc_email: Optional[str] = None):
+    print(to_email, source, context, cc_email, "email")
     """Send email based on the source and context provided with different sender emails."""
     # Define email categories and their corresponding sender addresses
     auth_emails = {
@@ -60,32 +62,43 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "validate_otp",
         "Account created",
         "Login With Otp",
+        "APP Link",
+        "Vednor Create",
     }
-    payment_emails = {"Order Placed", "Payment Success"}
-    support_emails = {
+    payment_emails = {
+        "Order Placed",
+        "Payment Success",
         "Booking Confirmation",
+        "Booking Notification",
+        "Booking Cancelled",
+        "Booking Cancelled Vendor",
+    }
+    support_emails = {
+        "Support Ticket Reply",
+        "Support Request",
+        "New Support Request",
+    }
+    contact_emails = {
         "Ticket Created",
         "Ticket Reply",
         "Vendor Query Created",
         "Vendor Query Reply",
-        "Support Ticket Reply",
-        "Support Request",
-        "New Support Request",
         "New Ticket Created",
         "New Vendor Query",
-        "Vednor Create",
-        "APP Link",
     }
 
     # Determine the sender email based on the source
     if source in auth_emails:
-        from_email = "noreply@fast2book.com"
+        from_email = "no-reply@fast2book.com"
         from_password = os.getenv("EMAIL_PASSWORD")
     elif source in payment_emails:
-        from_email = "payment@fast2book.com"
+        from_email = "billing@fast2book.com"
         from_password = os.getenv("EMAIL_PASSWORD")
     elif source in support_emails:
         from_email = "support@fast2book.com"
+        from_password = os.getenv("EMAIL_PASSWORD")
+    elif source in contact_emails:
+        from_email = "contact@fast2book.com"
         from_password = os.getenv("EMAIL_PASSWORD")
     else:
         from_email = os.getenv("EMAIL_USER")  # Default fallback
@@ -122,6 +135,9 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "New Support Request": project_root / "templates/email/new_support_request.html",
         "New Ticket Created": project_root / "templates/email/new_ticket.html",
         "New Vendor Query": project_root / "templates/email/new_vendor_query.html",
+        "Booking Notification": project_root / "templates/email/booking_notification.html",
+        "Booking Cancelled": project_root / "templates/email/booking_cancel.html",
+        "Booking Cancelled Vendor": project_root / "templates/email/booking_cancel_email_to_vendor.html",
     }
 
     # Get the template path based on the source
@@ -161,6 +177,8 @@ async def send_email(to_email: str, source: str, context: dict = None):
     msg = MIMEMultipart("alternative")
     msg["From"] = from_email
     msg["To"] = to_email
+    if cc_email:
+        msg["Cc"] = cc_email
     subject_map = {
         "Activation_code": "Your Activation Code",
         "Forgot Password": "Forgot Password",
@@ -180,6 +198,9 @@ async def send_email(to_email: str, source: str, context: dict = None):
         "New Support Request": "New Support Request",
         "New Ticket Created": "New Ticket Created",
         "New Vendor Query": "New Vendor Query",
+        "Booking Notification": "New Booking",
+        "Booking Cancelled": "Booking Cancelled",
+        "Booking Cancelled Vendor": "Booking Cancelled Vendor",
     }
     msg["Subject"] = subject_map.get(source, "Welcome")  # Default subject
 

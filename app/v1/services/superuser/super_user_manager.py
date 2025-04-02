@@ -382,7 +382,7 @@ class SuperUserManager:
             # Send OTP via email
             source = "Resend OTP"
             to_email = email
-            context = {"otp": otp}
+            context = {"otp": otp, "user_name": user.get("first_name")}
             await send_email(to_email, source, context)
             return {"message": "OTP resent successfully"}
         except HTTPException as e:

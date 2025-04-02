@@ -299,11 +299,12 @@ class VendorManager:
             }
 
             # Send email to the vendor
-            login_link = "http://fast2book.com//vendor-admin/sign-in"
+            login_link = "https://fast2book.com/vendor-admin/sign-in"
             source = "Vednor Create"
             context = {
                 "password": plain_text_password,
                 "login_link": login_link,
+                "vendor_name": create_vendor_request.first_name,
             }
             to_email = create_vendor_request.email
             await send_email(to_email, source, context)
@@ -941,7 +942,7 @@ class VendorManager:
                 # Send OTP to email if provided
                 if vendor_request.email:
                     source = "Activation_code"
-                    context = {"otp": otp, "to_email": vendor_request.email}
+                    context = {"otp": otp, "to_email": vendor_request.email, "name": vendor_request.first_name}
                     to_email = vendor_request.email
                     await send_email(to_email, source, context)
 
@@ -957,6 +958,9 @@ class VendorManager:
                     "password": hashpw(vendor_request.password.encode("utf-8"), gensalt()).decode("utf-8"),
                     "first_name": vendor_request.first_name,
                     "last_name": vendor_request.last_name,
+                    "email": vendor_request.email if vendor_request.email else None,
+                    "phone": int(vendor_request.phone) if vendor_request.phone else None,
+                    "gender": vendor_request.gender,
                 }
 
                 # Update the user in the database
@@ -1009,7 +1013,7 @@ class VendorManager:
             new_vendor_user = {
                 "first_name": vendor_request.first_name,
                 "last_name": vendor_request.last_name,
-                "email": vendor_request.email,
+                "email": vendor_request.email if vendor_request.email else None,
                 "phone": int(vendor_request.phone) if vendor_request.phone else None,
                 "sign_up_otp": otp,
                 "sign_up_otp_expires": expiry_time,
@@ -1018,6 +1022,7 @@ class VendorManager:
                 "status": vendor_request.status,
                 "is_dashboard_created": vendor_request.is_dashboard_created,
                 "vendor_id": ObjectId(vendor_result.inserted_id),
+                "gender": vendor_request.gender,
             }
 
             if vendor_request.business_type.lower() == "individual":
@@ -1085,8 +1090,10 @@ class VendorManager:
                 vendor["phone"] = vendor["phone"] or ""
             if vendor["email"]:
                 vendor["email"] = vendor["email"] or ""
-            if vendor["gender"]:
-                vendor["gender"] = vendor["gender"] or ""
+            if vendor["gender"] is not None:
+                vendor["gender"] = vendor.get("gender", "")
+            else:
+                vendor["gender"] = ""
 
             vendor["created_by"] = vendor.get("created_by", "Unknown")
             vendor["user_image"] = vendor.get("user_image", "")
@@ -1109,6 +1116,7 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
