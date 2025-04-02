@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Booking Confirmation</title>
+    <title>Booking Confirmed for $service_name with $vendor_name</title>
   </head>
   <body style="margin: 0; padding: 0; background-color: #f4f6f8; color: #333; font-family: Arial, sans-serif;">
     <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; margin: 10px auto;">
@@ -30,8 +30,8 @@
             <tr>
               <td align="center" style="padding: 10px 0;">
                 <p style="font-size: 19px; font-weight: 600; color: black; margin: 0; text-align: center;">
-                  Dear Customer $user_name,<br />
-                  Your booking has been confirmed successfully! Below are the details of your reservation:
+                  Hi $user_name,<br />
+                  Your appointment for $service_name has been successfully booked!
                 </p>
               </td>
             </tr>
@@ -40,19 +40,12 @@
                 <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background: #f9f9f9; padding: 10px 20px; border-radius: 6px;">
                   <tr>
                     <td align="left" style="width: 50%; padding: 5px 0;">
-                      <p style="margin: 0;"><strong>Booking ID:</strong> $booking_id</p>
-                      <p style="margin: 5px 0 0 0;"><strong>Date:</strong> $booking_date</p>
+                      <p style="margin: 0;"><strong>Date:</strong> $booking_date</p>
+                      <p style="margin: 5px 0 0 0;"><strong>Location:</strong>$location </p>
                     </td>
                     <td align="left" style="width: 50%; padding: 5px 0;">
                       <p style="margin: 0;"><strong>Time:</strong> $time_slot</p>
-                      <!-- <p style="margin: 5px 0 0 0;"><strong>Location:</strong> [Venue / Hotel Name]</p> -->
                     </td>
-                  </tr>
-                  <tr>
-                    <td align="left" style="width: 50%; padding: 5px 0;">
-                      <!-- <p style="margin: 0;"><strong>Guests:</strong> [Number of Guests]</p> -->
-                    </td>
-                    <td align="left" style="width: 50%; padding: 5px 0;"></td>
                   </tr>
                 </table>
               </td>
@@ -60,14 +53,16 @@
             <tr>
               <td align="center" style="padding: 10px 0;">
                 <p style="font-size: 16px; font-weight: 400; color: grey; margin: 0;">
-                  If you have any questions, feel free to contact us. We look forward to serving you!
+                  You’ll receive a reminder 1 hour before the appointment.<br />
+                  Thanks for choosing Fast2book.<br />
+                  Team Fast2book
                 </p>
               </td>
             </tr>
             <tr>
               <td align="center" style="padding: 10px 0;">
                 <a
-                  href="#"
+                  href="https://fast2book.com"
                   style="padding: 10px 40px; border-radius: 30px; background-color: #ffc727; text-decoration: none; display: inline-block; font-size: 16px; font-weight: 500; color: #333;"
                 >
                   View Booking Details

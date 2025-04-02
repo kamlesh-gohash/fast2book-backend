@@ -484,7 +484,7 @@ class BookingManager:
 
                 booking_datetime = tz.localize(
                     datetime.strptime(
-                        booking["booking_date"] + " " + booking["time_slot"].split(" - ")[0], "%Y-%m-%d %H:%M"
+                        booking["booking_date"] + " " + booking["time_slot"].split(" - ")[0], "%Y-%m-%d %I:%M %p"
                     )
                 )
 
@@ -514,6 +514,7 @@ class BookingManager:
         except HTTPException:
             raise
         except Exception as ex:
+            print(ex)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def cancel_booking(self, current_user: User, id: str, cancel_request: CancelBookingRequest):
@@ -541,6 +542,53 @@ class BookingManager:
             #     raise HTTPException(
             #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to cancel booking"
             #     )
+            service = await services_collection.find_one({"_id": ObjectId(booking["service_id"])})
+            if not service:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+            vendor_user = await user_collection.find_one({"_id": ObjectId(booking["vendor_user_id"])})
+            if not vendor_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+            vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            vendor_user_obj = await user_collection.find_one({"vendor_id": ObjectId(booking["vendor_id"])})
+            if not vendor_user_obj:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+
+            source = "Booking Cancelled"
+            context = {
+                "user_id": user_id,
+                "user_name": user.get("first_name") + " " + user.get("last_name"),
+                "booking_status": "cancelled",
+                "reason": cancel_request.reason,
+                "service_name": service.get("service_name"),
+                "vendor_name": vendor_user.get("first_name") + " " + vendor_user.get("last_name"),
+                "booking_date": booking.get("booking_date"),
+            }
+
+            await send_email(
+                to_email=vendor_user.get("email"),
+                source=source,
+                context=context,
+            )
+            source = "Booking Cancelled Vendor"
+            context = {
+                "user_id": user_id,
+                "user_name": user.get("first_name") + " " + user.get("last_name"),
+                "booking_status": "cancelled",
+                "reason": cancel_request.reason,
+                "service_name": service.get("service_name"),
+                "vendor_name": vendor_user.get("first_name") + " " + vendor_user.get("last_name"),
+                "booking_date": booking.get("booking_date"),
+                "time_slot": booking.get("time_slot"),
+            }
+
+            await send_email(
+                to_email=vendor_user.get("email"),
+                source=source,
+                context=context,
+                cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
+            )
 
             return {"reason": cancel_request.reason}
 
@@ -706,6 +754,9 @@ class BookingManager:
             vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            vendor_user_obj = await user_collection.find_one({"vendor_id": ObjectId(vendor_id)})
+            if not vendor_user_obj:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor User not found")
             vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
             if not vendor_user:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor User not found")
@@ -845,7 +896,7 @@ class BookingManager:
                     source = "Booking Confirmation"
                     context = {
                         "booking_id": str(booking_id),
-                        "vendor_name": vendor.get("name"),
+                        "vendor_name": vendor_user.get("first_name") + " " + vendor_user.get("last_name"),
                         "service_name": service.get("name"),
                         "category_name": category.get("name"),
                         "amount": amount,
@@ -854,12 +905,33 @@ class BookingManager:
                         "booking_date": booking_date,
                         "time_slot": slot,
                         "user_name": current_user.first_name + " " + current_user.last_name,
+                        "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                     }
 
                     await send_email(
                         to_email=current_user.email,
                         source=source,
                         context=context,
+                    )
+                    source = "Booking Notification"
+                    context = {
+                        "booking_id": str(booking_id),
+                        "vendor_name": vendor_user.get("first_name") + " " + vendor_user.get("last_name"),
+                        "service_name": service.get("name"),
+                        "category_name": category.get("name"),
+                        "currency": "INR",
+                        "booking_date": booking_date,
+                        "time_slot": slot,
+                        "user_name": current_user.first_name + " " + current_user.last_name,
+                        "contact": current_user.phone,
+                        "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
+                    }
+                    print(context, "context")
+                    await send_email(
+                        to_email=vendor_user.get("email"),
+                        source=source,
+                        context=context,
+                        cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
                     )
 
                 return {
@@ -872,24 +944,51 @@ class BookingManager:
                 }
             else:
                 # If payment is not required, send email directly
-                source = "Booking Confirmation"
+                user_data = await user_collection.find_one({"_id": ObjectId(current_user.id)})
+                if not user_data:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+                notification_settings = user_data.get("notification_settings", {})
+                payment_confirmation_enabled = notification_settings.get("payment_confirmation", True)
+
+                if payment_confirmation_enabled:
+                    source = "Booking Confirmation"
+                    context = {
+                        "booking_id": str(booking_id),
+                        "vendor_name": vendor_user.get("first_name") + " " + vendor_user.get("last_name"),
+                        "service_name": service.get("name"),
+                        "category_name": category.get("name"),
+                        "currency": "INR",
+                        "booking_date": booking_date,
+                        "time_slot": slot,
+                        "user_name": current_user.first_name + " " + current_user.last_name,
+                        "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
+                    }
+
+                    await send_email(
+                        to_email=current_user.email,
+                        source=source,
+                        context=context,
+                    )
+                source = "Booking Notification"
                 context = {
                     "booking_id": str(booking_id),
-                    "vendor_name": vendor.get("name"),
+                    "vendor_name": vendor_user.get("first_name") + " " + vendor_user.get("last_name"),
                     "service_name": service.get("name"),
                     "category_name": category.get("name"),
-                    "amount": vendor_user.get("fees", 0),
                     "currency": "INR",
-                    "payment_method": "None",
                     "booking_date": booking_date,
                     "time_slot": slot,
                     "user_name": current_user.first_name + " " + current_user.last_name,
+                    "contact": current_user.phone,
+                    "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                 }
-
+                print(context, "context")
                 await send_email(
-                    to_email=current_user.email,
+                    to_email=vendor_user.get("email"),
                     source=source,
                     context=context,
+                    cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
                 )
 
                 return {
