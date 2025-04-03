@@ -48,7 +48,6 @@ def validate_image_urls(html_content: str) -> list:
 
 
 async def send_email(to_email: str, source: str, context: dict = None, cc_email: Optional[str] = None):
-    print(to_email, source, context, cc_email, "email")
     """Send email based on the source and context provided with different sender emails."""
     # Define email categories and their corresponding sender addresses
     auth_emails = {

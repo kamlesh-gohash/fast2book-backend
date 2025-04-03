@@ -472,7 +472,7 @@ class BookingManager:
                 vendor_user = await user_collection.find_one({"_id": ObjectId(booking["vendor_user_id"])})
                 if vendor:
                     booking["vendor__first_name"] = vendor_user.get("first_name")
-                    booking["venodr_last_name"] = vendor_user.get("last_name")
+                    booking["vendor_last_name"] = vendor_user.get("last_name")  # Fixed typo
                     booking["vendor_email"] = vendor_user.get("email")
                     booking["vendor_phone"] = vendor_user.get("phone")
                     booking["user_image"] = vendor_user.get("user_image")
@@ -482,24 +482,29 @@ class BookingManager:
                     booking["specialization"] = vendor_user.get("specialization")
                     booking["business_name"] = vendor.get("business_name")
 
-                booking_datetime = tz.localize(
-                    datetime.strptime(
-                        booking["booking_date"] + " " + booking["time_slot"].split(" - ")[0], "%Y-%m-%d %I:%M %p"
+                # Safely parse time_slot
+                time_slot = booking.get("time_slot", "")
+                try:
+                    # Split on "-" and take the start time
+                    start_time = time_slot.split("-")[0].strip()
+                    # Ensure start_time is in valid format before parsing
+                    if not start_time or not any(c.isdigit() for c in start_time):
+                        continue  # Skip this booking if time_slot is invalid
+                    booking_datetime = tz.localize(
+                        datetime.strptime(booking["booking_date"] + " " + start_time, "%Y-%m-%d %I:%M %p")
                     )
-                )
+                except (ValueError, IndexError) as e:
+                    continue  # Skip this booking if parsing fails
 
                 booking_status = booking.get("booking_status", "").lower()
 
                 if booking_datetime >= current_datetime and booking_status not in ["cancelled", "completed"]:
                     upcoming_bookings.append(booking)
                 else:
-                    # Handle past bookings (past dates or cancelled/completed)
                     if status_filter:
-                        # If filter is applied, only include bookings matching the filter
                         if booking_status == status_filter.lower() and booking_status in ["completed", "cancelled"]:
                             past_bookings.append(booking)
                     else:
-                        # Without filter, include all completed and cancelled bookings in past
                         if booking_status in ["completed", "cancelled"]:
                             past_bookings.append(booking)
 
@@ -514,7 +519,6 @@ class BookingManager:
         except HTTPException:
             raise
         except Exception as ex:
-            print(ex)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
     async def cancel_booking(self, current_user: User, id: str, cancel_request: CancelBookingRequest):
@@ -771,11 +775,13 @@ class BookingManager:
             if not day_slots:
                 raise HTTPException(status_code=400, detail=f"No availability defined for {day_of_week}")
 
-            # Parse requested slot
+            # Parse requested slot and standardize format
             try:
                 slot_start_str, slot_end_str = slot.split("-")
                 slot_start = datetime.strptime(slot_start_str.strip(), "%I:%M %p")
                 slot_end = datetime.strptime(slot_end_str.strip(), "%I:%M %p")
+                # Standardize the slot format without spaces around hyphen
+                standardized_slot = f"{slot_start.strftime('%I:%M %p')}-{slot_end.strftime('%I:%M %p')}"
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -795,28 +801,31 @@ class BookingManager:
                     break
 
             if not slot_available:
-                raise HTTPException(status_code=400, detail=f"Slot {slot} is not available on {day_of_week}")
+                raise HTTPException(
+                    status_code=400, detail=f"Slot {standardized_slot} is not available on {day_of_week}"
+                )
 
             # Check current bookings against max_seat
             booking_count = await booking_collection.count_documents(
                 {
                     "vendor_user_id": vendor_user_id,
                     "booking_date": booking_date,
-                    "time_slot": slot,
+                    "time_slot": standardized_slot,
                     "booking_status": {"$ne": "cancelled"},
                 }
             )
 
             if booking_count >= selected_time_slot["max_seat"]:
                 raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT, detail=f"Slot {slot} on {booking_date} is fully booked"
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Slot {standardized_slot} on {booking_date} is fully booked",
                 )
             user_bookings = await booking_collection.find(
                 {
                     "user_id": current_user.id,
                     "booking_status": {"$ne": "cancelled"},
                     "booking_date": booking_date,
-                    "time_slot": slot,
+                    "time_slot": standardized_slot,
                     "vendor_user_id": vendor_user_id,
                 }
             ).to_list(length=None)
@@ -824,20 +833,20 @@ class BookingManager:
             if user_bookings:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"You already have a booking on {booking_date} at {slot}",
+                    detail=f"You already have a booking on {booking_date} at {standardized_slot}",
                 )
 
             is_payment_required = vendor.get("is_payment_required", True)
             booking_data = {
-                "user_id": current_user.id,  # Access the user ID using dot notation
+                "user_id": current_user.id,
                 "vendor_id": ObjectId(vendor_id),
                 "service_id": ObjectId(service_id),
                 "category_id": ObjectId(category_id),
-                "time_slot": slot,
+                "time_slot": standardized_slot,  # Use standardized format here
                 "booking_date": booking_date,
                 "amount": vendor_user.get("fees", 0),
                 "booking_status": "panding",
-                "payment_status": "paid" if not is_payment_required else "panding",  # Set payment status
+                "payment_status": "paid" if not is_payment_required else "panding",
                 "vendor_user_id": vendor_user_id if vendor_user_id else None,
                 "created_at": datetime.utcnow(),
             }
@@ -903,7 +912,7 @@ class BookingManager:
                         "currency": "INR",
                         "payment_method": payment_method,
                         "booking_date": booking_date,
-                        "time_slot": slot,
+                        "time_slot": standardized_slot,
                         "user_name": current_user.first_name + " " + current_user.last_name,
                         "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                     }
@@ -921,12 +930,11 @@ class BookingManager:
                         "category_name": category.get("name"),
                         "currency": "INR",
                         "booking_date": booking_date,
-                        "time_slot": slot,
+                        "time_slot": standardized_slot,
                         "user_name": current_user.first_name + " " + current_user.last_name,
                         "contact": current_user.phone,
                         "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                     }
-                    print(context, "context")
                     await send_email(
                         to_email=vendor_user.get("email"),
                         source=source,
@@ -960,7 +968,7 @@ class BookingManager:
                         "category_name": category.get("name"),
                         "currency": "INR",
                         "booking_date": booking_date,
-                        "time_slot": slot,
+                        "time_slot": standardized_slot,
                         "user_name": current_user.first_name + " " + current_user.last_name,
                         "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                     }
@@ -978,12 +986,11 @@ class BookingManager:
                     "category_name": category.get("name"),
                     "currency": "INR",
                     "booking_date": booking_date,
-                    "time_slot": slot,
+                    "time_slot": standardized_slot,
                     "user_name": current_user.first_name + " " + current_user.last_name,
                     "contact": current_user.phone,
                     "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                 }
-                print(context, "context")
                 await send_email(
                     to_email=vendor_user.get("email"),
                     source=source,
@@ -1212,6 +1219,15 @@ class BookingManager:
 
             return {"slots": filtered_slots}
 
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def user_payment_history(self, current_user: User):
+        try:
+            payment_history = await payment_collection.find({"user_id": str(current_user.id)}).to_list(length=None)
+            return payment_history
         except HTTPException:
             raise
         except Exception as ex:
