@@ -34,6 +34,7 @@ from app.v1.models import (
     vendor_ratings_collection,
     vendor_services_collection,
 )
+from app.v1.models.booking import *
 from app.v1.models.slots import *
 from app.v1.models.vendor import Vendor
 from app.v1.models.vendor_query import VendorQuery
@@ -1116,7 +1117,6 @@ class VendorManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
@@ -1546,7 +1546,6 @@ class VendorManager:
                         # Convert time objects to strings if necessary
                         if isinstance(time_slot["start_time"], time):
                             time_slot["start_time"] = time_slot["start_time"].strftime("%H:%M")
-                            print(time_slot["start_time"], "time_slot['start_time']")
                         if isinstance(time_slot["end_time"], time):
                             time_slot["end_time"] = time_slot["end_time"].strftime("%H:%M")
                     new_availability_slots.append(day_slot_data)
@@ -3160,6 +3159,46 @@ class VendorManager:
                 {"name": "Dec", "booking": month_data[12]},
             ]
             return result
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def create_booking_for_vendor(
+        self,
+        request: Request,
+        current_user: User,
+        user_id: str,
+        slot: str,
+        booking_date: str,
+        service_id: str,
+        category_id: str,
+        vendor_user_id: Optional[str] = None,
+    ):
+        try:
+            if not user_id or not slot or not booking_date or not service_id or not category_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid booking data")
+
+            # Save ticket to the database
+            booking_data = {
+                "vendor_id": ObjectId(current_user.vendor_id),
+                "service_id": ObjectId(service_id),
+                "category_id": ObjectId(category_id),
+                "user_id": ObjectId(user_id),
+                "vendor_user_id": ObjectId(vendor_user_id) if vendor_user_id else None,
+                "booking_date": booking_date,
+                "slot": slot,
+                "payment_status": "pending",
+                "booking_status": "panding",
+                "created_at": datetime.now(),
+            }
+            booking = await booking_collection.insert_one(booking_data)
+            if booking:
+                booking_data["id"] = str(booking.inserted_id)
+            return booking_data
 
         except HTTPException:
             raise

@@ -33,7 +33,7 @@ class CreateCategoryRequest(BaseModel):
 create_booking_validator = zon.record(
     {
         "user_id": zon.string().optional(),
-        "vendor_id": zon.string(),
+        "vendor_id": zon.string().optional(),
         "category_id": zon.string(),
         "service_id": zon.string(),
         "booking_date": zon.string(),
@@ -45,7 +45,7 @@ create_booking_validator = zon.record(
 
 class CreateBookingRequest(BaseModel):
     user_id: Optional[str] = None
-    vendor_id: str
+    vendor_id: Optional[str] = None
     category_id: str
     service_id: str
     booking_date: str
