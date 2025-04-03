@@ -115,7 +115,7 @@ class UserManager:
             # Send OTP to email if provided
             if user.email:
                 source = "Activation_code"
-                context = {"otp": otp, "to_email": user.email}
+                context = {"otp": otp, "to_email": user.email, "name": user.first_name + " " + user.last_name}
                 to_email = user.email
                 await send_email(to_email, source, context)
 
@@ -335,7 +335,6 @@ class UserManager:
         except HTTPException as e:
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
