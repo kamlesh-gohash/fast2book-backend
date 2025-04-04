@@ -11,7 +11,7 @@ from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
-from fastapi import Body, HTTPException, Path, Request, status
+from fastapi import BackgroundTasks, Body, HTTPException, Path, Request, status
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import user_collection
@@ -23,7 +23,9 @@ from app.v1.utils.token import create_access_token, create_refresh_token, get_oa
 
 class CostumerManager:
 
-    async def create_customer(self, current_user: User, create_costumer_request: User):
+    async def create_customer(
+        self, current_user: User, create_costumer_request: User, background_tasks: BackgroundTasks
+    ):
         try:
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
@@ -47,15 +49,6 @@ class CostumerManager:
             create_costumer_request.email = email
             otp = generate_otp()
 
-            # if create_costumer_request.email:
-            #     to_email = create_costumer_request.email
-            #     await send_email(to_email, otp)
-            # if create_costumer_request.phone:
-            #     to_phone = create_costumer_request.phone
-            # await send_sms(to_phone, otp)  # Uncomment this line when implementing SMS functionality
-            otp_expiration_time = datetime.utcnow() + timedelta(minutes=10)
-            # create_costumer_request.otp = otp
-            # # create_costumer_request.otp_expiration_time = otp_expiration_time
             plain_password = create_costumer_request.password
 
             # Hash the password before saving
@@ -85,7 +78,8 @@ class CostumerManager:
 
             context = {"password": plain_password, "sign_in_link": sign_in_link}
             to_email = create_costumer_request.email
-            await send_email(to_email, source, context)
+            background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
+
             return create_costumer_request_dict
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
@@ -134,58 +128,68 @@ class CostumerManager:
                 status_regex = {"$regex": statuss, "$options": "i"}
                 query["status"] = status_regex
 
-            # Fields to include in the result
-            projection = {
-                "id": 1,
-                "first_name": 1,
-                "last_name": 1,
-                "email": 1,
-                "phone": 1,
-                "roles": 1,
-                "gender": 1,
-                "user_image": 1,
-                "user_image_url": 1,
-                "status": 1,
-                "created_at": 1,
-                "costumer_address": 1,
-                "costumer_details": 1,
-                "created_at": 1,
-            }
+            pipeline = [
+                {"$match": query},
+                {
+                    "$project": {
+                        "id": {"$toString": "$_id"},
+                        "_id": 0,
+                        "first_name": {
+                            "$concat": [
+                                {"$toUpper": {"$substrCP": [{"$ifNull": ["$first_name", ""]}, 0, 1]}},
+                                {
+                                    "$substrCP": [
+                                        {"$ifNull": ["$first_name", ""]},
+                                        1,
+                                        {"$subtract": [{"$strLenCP": {"$ifNull": ["$first_name", ""]}}, 1]},
+                                    ]
+                                },
+                            ]
+                        },
+                        "last_name": {
+                            "$concat": [
+                                {"$toUpper": {"$substrCP": [{"$ifNull": ["$last_name", ""]}, 0, 1]}},
+                                {
+                                    "$substrCP": [
+                                        {"$ifNull": ["$last_name", ""]},
+                                        1,
+                                        {"$subtract": [{"$strLenCP": {"$ifNull": ["$last_name", ""]}}, 1]},
+                                    ]
+                                },
+                            ]
+                        },
+                        "email": {"$ifNull": ["$email", ""]},
+                        "phone": {"$ifNull": ["$phone", ""]},
+                        "roles": 1,
+                        "gender": 1,
+                        "user_image": 1,
+                        "user_image_url": 1,
+                        "status": 1,
+                        "costumer_address": 1,
+                        "costumer_details": 1,
+                        "created_at": {
+                            "$dateToString": {
+                                "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                                "date": "$created_at",
+                                "timezone": "Asia/Kolkata",
+                            }
+                        },
+                    }
+                },
+                {"$skip": skip},
+                {"$limit": limit},
+            ]
 
-            # Fetch paginated results
-            result = await user_collection.find(query, projection).skip(skip).limit(limit).to_list(length=limit)
-            # Format costumer data
-            costumer_data = []
-            ist_timezone = pytz.timezone("Asia/Kolkata")  # IST timezone
+            costumer_data = await user_collection.aggregate(pipeline).to_list(length=limit)
 
-            for costumer in result:
-                costumer["id"] = str(costumer.pop("_id"))
-                costumer["first_name"] = costumer.get("first_name", "").capitalize()
-                costumer["last_name"] = costumer.get("last_name", "").capitalize()
-                costumer["email"] = costumer.get("email", "")
-                costumer["phone"] = costumer.get("phone", "")
-                created_at = costumer.get("created_at")
-                # if isinstance(created_at, datetime):
-                #     costumer["created_at"] = created_at.isoformat()
-                # else:
-                #     costumer["created_at"] = str(created_at)
-                if isinstance(created_at, datetime):
-                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
-                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
-                    costumer["created_at"] = created_at_ist.isoformat()
-                else:
-                    costumer["created_at"] = str(created_at)
-                costumer_data.append(costumer)
-
-            # Fetch total count for the query
             total_costumers = await user_collection.count_documents(query)
 
-            # Calculate total pages
             total_pages = (total_costumers + limit - 1) // limit
             has_prev_page = page > 1
             has_next_page = page < total_pages
             prev_page = page - 1 if has_prev_page else None
             next_page = page + 1 if has_next_page else None
+
             return {
                 "data": costumer_data,
                 "paginator": {
@@ -241,10 +245,10 @@ class CostumerManager:
             result["id"] = str(result.pop("_id"))
             result["first_name"] = result["first_name"].capitalize()
             result["last_name"] = result["last_name"].capitalize()
-            result["email"] = result["email"]
-            result["phone"] = result["phone"]
-            result["gender"] = result["gender"]
-            result["status"] = result["status"]
+            result["email"] = result.get("email")
+            result["phone"] = result.get("phone")
+            result["gender"] = result.get("gender")
+            result["status"] = result.get("status")
 
             # Format created_at field
             created_at = result.get("created_at")

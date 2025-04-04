@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, Request, status
 
 from app.v1.dependencies import get_costumer_manager
 from app.v1.middleware.auth import check_permission, get_current_user, get_token_from_header
@@ -28,6 +28,7 @@ router = APIRouter()
 @router.post("/create-costumer", status_code=status.HTTP_201_CREATED)
 async def register_customer(
     costumer_create_request: CostumerCreateRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     _permission: None = has_permission("costumer-management", "addCostumer"),
     costumer_manager: CostumerManager = Depends(get_costumer_manager),
@@ -38,7 +39,9 @@ async def register_customer(
     try:
         # User registration logic
         result = await costumer_manager.create_customer(
-            current_user=current_user, create_costumer_request=costumer_create_request
+            current_user=current_user,
+            create_costumer_request=costumer_create_request,
+            background_tasks=background_tasks,
         )
         return success({"message": "customer created successfully", "data": result})
     except HTTPException as http_ex:

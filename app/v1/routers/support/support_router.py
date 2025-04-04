@@ -1,5 +1,5 @@
 # routes.py
-from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Path, Query, Request, UploadFile, status
 
 from app.v1.dependencies import get_support_manager
 from app.v1.middleware.auth import check_permission, get_current_user, get_token_from_header
@@ -74,6 +74,7 @@ async def support_detail(
 @router.put("/reply-support/{support_id}", status_code=status.HTTP_200_OK)
 async def reply_support(
     reply_data: dict,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     support_id: str = Path(..., title="The ID of the support ticket to reply to"),
     support_manager: SupportManager = Depends(get_support_manager),

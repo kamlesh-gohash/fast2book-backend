@@ -62,7 +62,7 @@ async def send_email(to_email: str, source: str, context: dict = None, cc_email:
         "Account created",
         "Login With Otp",
         "APP Link",
-        "Vednor Create",
+        "Vendor Create",
     }
     payment_emails = {
         "Order Placed",
@@ -122,7 +122,7 @@ async def send_email(to_email: str, source: str, context: dict = None, cc_email:
         "validate_otp": project_root / "templates/email/accountapproval.html",
         "Account created": project_root / "templates/email/account_create.html",
         "Login With Otp": project_root / "templates/email/login_with_otp.html",
-        "Vednor Create": project_root / "templates/email/vendor_create_email.html",
+        "Vendor Create": project_root / "templates/email/vendor_create_email.html",
         "APP Link": project_root / "templates/email/app_link.html",
         "Booking Confirmation": project_root / "templates/email/booking_confirm.html",
         "Ticket Created": project_root / "templates/email/ticket.html",
@@ -184,7 +184,7 @@ async def send_email(to_email: str, source: str, context: dict = None, cc_email:
         "Resend OTP": "Resend OTP",
         "Account created": "Account created",
         "Login With Otp": "Login With Otp",
-        "Vednor Create": "Vednor Create",
+        "Vendor Create": "Vendor Create",
         "APP Link": "Download Our App",
         "Payment Success": "Payment Success",
         "Booking Confirmation": "Booking Confirm",

@@ -16,7 +16,7 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from dateutil.relativedelta import relativedelta
 
 # from app.v1.utils.token import generate_jwt_token
-from fastapi import Body, HTTPException, Query, Request, status
+from fastapi import BackgroundTasks, Body, HTTPException, Query, Request, status
 from pymongo import ASCENDING, DESCENDING
 
 from app.v1.middleware.auth import get_current_user
@@ -109,7 +109,9 @@ razorpay_client = razorpay.Client(auth=(RAZOR_PAY_KEY_ID, RAZOR_PAY_KEY_SECRET))
 
 class VendorManager:
 
-    async def create_vendor(self, current_user: User, create_vendor_request: SignUpVendorRequest):
+    async def create_vendor(
+        self, current_user: User, create_vendor_request: SignUpVendorRequest, background_tasks: BackgroundTasks
+    ):
         try:
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
@@ -301,14 +303,14 @@ class VendorManager:
 
             # Send email to the vendor
             login_link = "https://fast2book.com/vendor-admin/sign-in"
-            source = "Vednor Create"
+            source = "Vendor Create"
             context = {
                 "password": plain_text_password,
                 "login_link": login_link,
                 "vendor_name": create_vendor_request.first_name,
             }
             to_email = create_vendor_request.email
-            await send_email(to_email, source, context)
+            background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
 
             return {"data": response_data}
 
@@ -3069,6 +3071,7 @@ class VendorManager:
         self,
         request: Request,
         vendor_query: VendorQuery,
+        background_tasks: BackgroundTasks,
     ):
         try:
             if not vendor_query:
@@ -3084,11 +3087,7 @@ class VendorManager:
                     "description": vendor_query.description,
                     "date": datetime.now().strftime("%Y-%m-%d"),
                 }
-                await send_email(
-                    to_email,
-                    source,
-                    context,
-                )
+                background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
                 source = "New Vendor Query"
                 to_email = "support@fast2book.com"
                 context = {
@@ -3097,11 +3096,7 @@ class VendorManager:
                     "description": vendor_query.description,
                     "date": datetime.now().strftime("%Y-%m-%d"),
                 }
-                await send_email(
-                    to_email,
-                    source,
-                    context,
-                )
+                background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
 
             vendor_data = vendor_query.dict()
             vendor_data["id"] = str(query.inserted_id)
@@ -3199,6 +3194,37 @@ class VendorManager:
             if booking:
                 booking_data["id"] = str(booking.inserted_id)
             return booking_data
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def get_user_list_for_vendor(self, current_user: User):
+        try:
+            query = {"roles": {"$regex": "^user$", "$options": "i"}, "user_role": {"$ne": 2}}
+
+            pipeline = [
+                {"$match": query},
+                {
+                    "$project": {
+                        "id": {"$toString": "$_id"},
+                        "_id": 0,
+                        "first_name": 1,
+                        "last_name": 1,
+                        "email": 1,
+                        "user_role": 1,
+                        "roles": 1,
+                    }
+                },
+            ]
+
+            cursor = user_collection.aggregate(pipeline)
+            user_list = await cursor.to_list(length=None)
+
+            return user_list
 
         except HTTPException:
             raise

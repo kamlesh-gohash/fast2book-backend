@@ -1,4 +1,6 @@
+import asyncio
 import random
+import uuid
 
 from datetime import datetime, timedelta
 from typing import Optional
@@ -11,7 +13,7 @@ from bcrypt import gensalt, hashpw
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
-from fastapi import Body, HTTPException, Query, Request, status
+from fastapi import BackgroundTasks, Body, HTTPException, Query, Request, status
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import (
@@ -31,6 +33,16 @@ from app.v1.utils.token import create_access_token, create_refresh_token, get_oa
 
 
 razorpay_client = razorpay.Client(auth=(os.getenv("RAZOR_PAY_KEY_ID"), os.getenv("RAZOR_PAY_KEY_SECRET")))
+
+
+def convert_objectids_to_strings(data):
+    if isinstance(data, dict):
+        return {key: convert_objectids_to_strings(value) for key, value in data.items()}
+    elif isinstance(data, list):
+        return [convert_objectids_to_strings(item) for item in data]
+    elif isinstance(data, ObjectId):
+        return str(data)
+    return data
 
 
 class BookingManager:
@@ -318,6 +330,8 @@ class BookingManager:
                 if user:
                     booking["user_name"] = user["first_name"]
                     booking["user_email"] = user["email"]
+                    booking["user_image"] = user.get("user_image")
+                    booking["user_image_url"] = user.get("user_image_url")
 
                 # Fetch vendor details
                 vendor_id = booking["vendor_id"]
@@ -521,7 +535,9 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def cancel_booking(self, current_user: User, id: str, cancel_request: CancelBookingRequest):
+    async def cancel_booking(
+        self, current_user: User, id: str, cancel_request: CancelBookingRequest, background_tasks: BackgroundTasks
+    ):
         try:
             if "user" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
@@ -570,11 +586,7 @@ class BookingManager:
                 "booking_date": booking.get("booking_date"),
             }
 
-            await send_email(
-                to_email=vendor_user.get("email"),
-                source=source,
-                context=context,
-            )
+            background_tasks.add_task(send_email, to_email=vendor_user.get("email"), source=source, context=context)
             source = "Booking Cancelled Vendor"
             context = {
                 "user_id": user_id,
@@ -587,7 +599,8 @@ class BookingManager:
                 "time_slot": booking.get("time_slot"),
             }
 
-            await send_email(
+            background_tasks.add_task(
+                send_email,
                 to_email=vendor_user.get("email"),
                 source=source,
                 context=context,
@@ -670,6 +683,8 @@ class BookingManager:
                 if user:
                     booking["user_name"] = user["first_name"]
                     booking["user_email"] = user["email"]
+                    booking["user_image"] = user.get("user_image")
+                    booking["user_image_url"] = user.get("user_image_url")
                 vendor_id = booking["vendor_id"]
                 vendor = await vendor_collection.find_one({"_id": vendor_id})
                 vendor_id = booking.get("vendor_id")
@@ -745,56 +760,70 @@ class BookingManager:
         service_id: str,
         category_id: str,
         vendor_user_id: Optional[str] = None,
+        background_tasks: BackgroundTasks = None,
     ):
         try:
-            service = await services_collection.find_one({"_id": ObjectId(service_id)})
+            # Fetch all required data concurrently
+            async def fetch_service():
+                return await services_collection.find_one({"_id": ObjectId(service_id)})
+
+            async def fetch_category():
+                return await category_collection.find_one({"_id": ObjectId(category_id)})
+
+            async def fetch_vendor():
+                return await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+
+            async def fetch_vendor_user_obj():
+                return await user_collection.find_one({"vendor_id": ObjectId(vendor_id)})
+
+            async def fetch_vendor_user():
+                return await user_collection.find_one({"_id": ObjectId(vendor_user_id)}) if vendor_user_id else None
+
+            service, category, vendor, vendor_user_obj, vendor_user = await asyncio.gather(
+                fetch_service(), fetch_category(), fetch_vendor(), fetch_vendor_user_obj(), fetch_vendor_user()
+            )
+
+            # Validate fetched data
             if not service:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-
-            category = await category_collection.find_one({"_id": ObjectId(category_id)})
+                raise HTTPException(status_code=404, detail="Service not found")
             if not category:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
-
-            vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+                raise HTTPException(status_code=404, detail="Category not found")
             if not vendor:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-            vendor_user_obj = await user_collection.find_one({"vendor_id": ObjectId(vendor_id)})
+                raise HTTPException(status_code=404, detail="Vendor not found")
             if not vendor_user_obj:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor User not found")
-            vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_user_id)})
-            if not vendor_user:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor User not found")
+                raise HTTPException(status_code=404, detail="Vendor User not found")
+            if vendor_user_id and not vendor_user:
+                raise HTTPException(status_code=404, detail="Vendor User not found")
 
+            # Validate booking slot
             booking_datetime = datetime.strptime(booking_date, "%Y-%m-%d")
             day_of_week = booking_datetime.strftime("%A")
 
-            # Check slot availability
-            availability_slots = vendor_user.get("availability_slots", [])
+            availability_slots = (
+                vendor_user.get("availability_slots", [])
+                if vendor_user
+                else vendor_user_obj.get("availability_slots", [])
+            )
             day_slots = next((d for d in availability_slots if d["day"] == day_of_week), None)
-
             if not day_slots:
                 raise HTTPException(status_code=400, detail=f"No availability defined for {day_of_week}")
 
-            # Parse requested slot and standardize format
             try:
                 slot_start_str, slot_end_str = slot.split("-")
                 slot_start = datetime.strptime(slot_start_str.strip(), "%I:%M %p")
                 slot_end = datetime.strptime(slot_end_str.strip(), "%I:%M %p")
-                # Standardize the slot format without spaces around hyphen
                 standardized_slot = f"{slot_start.strftime('%I:%M %p')}-{slot_end.strftime('%I:%M %p')}"
             except ValueError:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=400,
                     detail="Invalid slot format. Use 'HH:MM AM-HH:MM PM' (e.g., '9:00 AM-10:00 AM')",
                 )
 
-            # Check if slot matches any available time slot exactly
             slot_available = False
             selected_time_slot = None
             for time_slot in day_slots["time_slots"]:
                 ts_start = datetime.strptime(time_slot["start_time"], "%I:%M %p")
                 ts_end = datetime.strptime(time_slot["end_time"], "%I:%M %p")
-
                 if slot_start == ts_start and slot_end == ts_end:
                     slot_available = True
                     selected_time_slot = time_slot
@@ -805,220 +834,213 @@ class BookingManager:
                     status_code=400, detail=f"Slot {standardized_slot} is not available on {day_of_week}"
                 )
 
-            # Check current bookings against max_seat
-            booking_count = await booking_collection.count_documents(
-                {
-                    "vendor_user_id": vendor_user_id,
-                    "booking_date": booking_date,
-                    "time_slot": standardized_slot,
-                    "booking_status": {"$ne": "cancelled"},
-                }
-            )
+            # Check existing bookings
+            async def check_booking_count():
+                return await booking_collection.count_documents(
+                    {
+                        "vendor_user_id": vendor_user_id,
+                        "booking_date": booking_date,
+                        "time_slot": standardized_slot,
+                        "booking_status": {"$ne": "cancelled"},
+                    }
+                )
+
+            async def check_user_bookings():
+                return await booking_collection.find(
+                    {
+                        "user_id": current_user.id,
+                        "booking_status": {"$ne": "cancelled"},
+                        "service_id": ObjectId(service_id),
+                        "booking_date": booking_date,
+                        "time_slot": standardized_slot,
+                        "vendor_user_id": vendor_user_id,
+                    }
+                ).to_list(length=None)
+
+            booking_count, user_bookings = await asyncio.gather(check_booking_count(), check_user_bookings())
 
             if booking_count >= selected_time_slot["max_seat"]:
                 raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Slot {standardized_slot} on {booking_date} is fully booked",
+                    status_code=409, detail=f"Slot {standardized_slot} on {booking_date} is fully booked"
                 )
-            user_bookings = await booking_collection.find(
-                {
-                    "user_id": current_user.id,
-                    "booking_status": {"$ne": "cancelled"},
-                    "booking_date": booking_date,
-                    "time_slot": standardized_slot,
-                    "vendor_user_id": vendor_user_id,
-                }
-            ).to_list(length=None)
-
             if user_bookings:
                 raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
+                    status_code=409,
                     detail=f"You already have a booking on {booking_date} at {standardized_slot}",
                 )
 
             is_payment_required = vendor.get("is_payment_required", True)
+            fees = vendor_user.get("fees", 0) if vendor_user else vendor_user_obj.get("fees", 0)
+
+            temp_order_id = str(uuid.uuid4())[:8]
             booking_data = {
-                "user_id": current_user.id,
-                "vendor_id": ObjectId(vendor_id),
-                "service_id": ObjectId(service_id),
-                "category_id": ObjectId(category_id),
-                "time_slot": standardized_slot,  # Use standardized format here
+                "user_id": str(current_user.id),
+                "vendor_id": str(ObjectId(vendor_id)),
+                "service_id": str(ObjectId(service_id)),
+                "category_id": str(ObjectId(category_id)),
+                "time_slot": standardized_slot,
                 "booking_date": booking_date,
-                "amount": vendor_user.get("fees", 0),
-                "booking_status": "panding",
-                "payment_status": "paid" if not is_payment_required else "panding",
-                "vendor_user_id": vendor_user_id if vendor_user_id else None,
-                "created_at": datetime.utcnow(),
+                "amount": fees,
+                "booking_status": "pending",
+                "payment_status": "pending",
+                "vendor_user_id": str(ObjectId(vendor_user_id)) if vendor_user_id else None,
+                "created_at": datetime.utcnow().isoformat(),
+                "temp_order_id": temp_order_id,
             }
 
-            # Insert the booking into the database
-            booking_result = await booking_collection.insert_one(booking_data)
-            booking_id = booking_result.inserted_id
-
-            # Step 7: Handle payment logic
             if is_payment_required:
-                # Process payment via Razorpay
-                amount = float(vendor_user.get("fees", 0))
-                payment_method = "Razorpay"
-                payment_config = await payment_collection.find_one({"name": payment_method})
+                payment_config = await payment_collection.find_one({"name": "Razorpay"})
                 if not payment_config:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+                    raise HTTPException(status_code=404, detail="Payment configuration not found")
 
                 admin_charge_type = payment_config.get("charge_type")
                 admin_charge_value = payment_config.get("charge_value")
-
-                if admin_charge_type == "percentage":
-                    admin_charge = (admin_charge_value / 100) * amount
-                elif admin_charge_type == "fixed":
-                    admin_charge = admin_charge_value
-                else:
-                    admin_charge = 0
-
+                amount = float(fees)
+                admin_charge = (
+                    (admin_charge_value / 100) * amount
+                    if admin_charge_type == "percentage"
+                    else admin_charge_value if admin_charge_type == "fixed" else 0
+                )
                 total_charges = amount + admin_charge
                 total_amount = int(total_charges * 100)
-
-                order_currency = "INR"
+                booking_data["amount"] = total_charges
                 razorpay_order = razorpay_client.order.create(
                     {
                         "amount": total_amount,
-                        "currency": order_currency,
-                        "receipt": f"booking_{booking_id}",
+                        "currency": "INR",
+                        "receipt": f"temp_booking_{temp_order_id}",
                         "payment_capture": 1,
                     }
                 )
 
-                # Update the booking with the Razorpay order ID and total amount
-                await booking_collection.update_one(
-                    {"_id": booking_id},
-                    {"$set": {"booking_order_id": razorpay_order["id"], "amount": total_charges}},
-                )
-
                 user_data = await user_collection.find_one({"_id": ObjectId(current_user.id)})
                 if not user_data:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+                    raise HTTPException(status_code=404, detail="User not found")
 
                 notification_settings = user_data.get("notification_settings", {})
                 payment_confirmation_enabled = notification_settings.get("payment_confirmation", True)
-
-                # Send email only if payment confirmation is enabled
-                if payment_confirmation_enabled:
-                    source = "Booking Confirmation"
-                    context = {
-                        "booking_id": str(booking_id),
-                        "vendor_name": vendor_user.get("first_name") + " " + vendor_user.get("last_name"),
-                        "service_name": service.get("name"),
-                        "category_name": category.get("name"),
-                        "amount": amount,
-                        "currency": "INR",
-                        "payment_method": payment_method,
-                        "booking_date": booking_date,
-                        "time_slot": standardized_slot,
-                        "user_name": current_user.first_name + " " + current_user.last_name,
-                        "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
-                    }
-
-                    await send_email(
-                        to_email=current_user.email,
-                        source=source,
-                        context=context,
-                    )
-                    source = "Booking Notification"
-                    context = {
-                        "booking_id": str(booking_id),
-                        "vendor_name": vendor_user.get("first_name") + " " + vendor_user.get("last_name"),
-                        "service_name": service.get("name"),
-                        "category_name": category.get("name"),
-                        "currency": "INR",
-                        "booking_date": booking_date,
-                        "time_slot": standardized_slot,
-                        "user_name": current_user.first_name + " " + current_user.last_name,
-                        "contact": current_user.phone,
-                        "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
-                    }
-                    await send_email(
-                        to_email=vendor_user.get("email"),
-                        source=source,
-                        context=context,
-                        cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
-                    )
-
-                return {
-                    "data": {
-                        "order_id": str(booking_id),
-                        "razorpay_order_id": razorpay_order["id"],
-                        "amount": amount,
-                        "currency": order_currency,
-                    }
-                }
-            else:
-                # If payment is not required, send email directly
-                user_data = await user_collection.find_one({"_id": ObjectId(current_user.id)})
-                if not user_data:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-                notification_settings = user_data.get("notification_settings", {})
-                payment_confirmation_enabled = notification_settings.get("payment_confirmation", True)
-
-                if payment_confirmation_enabled:
-                    source = "Booking Confirmation"
-                    context = {
-                        "booking_id": str(booking_id),
-                        "vendor_name": vendor_user.get("first_name") + " " + vendor_user.get("last_name"),
-                        "service_name": service.get("name"),
-                        "category_name": category.get("name"),
-                        "currency": "INR",
-                        "booking_date": booking_date,
-                        "time_slot": standardized_slot,
-                        "user_name": current_user.first_name + " " + current_user.last_name,
-                        "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
-                    }
-
-                    await send_email(
-                        to_email=current_user.email,
-                        source=source,
-                        context=context,
-                    )
-                source = "Booking Notification"
-                context = {
-                    "booking_id": str(booking_id),
-                    "vendor_name": vendor_user.get("first_name") + " " + vendor_user.get("last_name"),
+                user_context = {
+                    "vendor_name": f"{vendor_user.get('first_name', '')} {vendor_user.get('last_name', '')}",
                     "service_name": service.get("name"),
                     "category_name": category.get("name"),
                     "currency": "INR",
                     "booking_date": booking_date,
                     "time_slot": standardized_slot,
-                    "user_name": current_user.first_name + " " + current_user.last_name,
+                    "user_name": f"{current_user.first_name} {current_user.last_name}",
+                    "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
+                }
+                vendor_context = {
+                    "vendor_name": f"{vendor_user.get('first_name', '')} {vendor_user.get('last_name', '')}",
+                    "service_name": service.get("name"),
+                    "category_name": category.get("name"),
+                    "currency": "INR",
+                    "booking_date": booking_date,
+                    "time_slot": standardized_slot,
+                    "user_name": f"{current_user.first_name} {current_user.last_name}",
                     "contact": current_user.phone,
                     "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                 }
-                await send_email(
-                    to_email=vendor_user.get("email"),
-                    source=source,
-                    context=context,
+
+                if payment_confirmation_enabled:
+                    background_tasks.add_task(
+                        send_email, to_email=current_user.email, source="Booking Confirmation", context=user_context
+                    )
+                background_tasks.add_task(
+                    send_email,
+                    to_email=vendor_user.get("email") if vendor_user else vendor_user_obj.get("email"),
+                    source="Booking Notification",
+                    context=vendor_context,
+                    cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
+                )
+
+                return {
+                    "data": {
+                        "order_id": temp_order_id,
+                        "razorpay_order_id": razorpay_order["id"],
+                        "amount": total_amount / 100,
+                        "currency": "INR",
+                        "booking_data": booking_data,
+                    }
+                }
+            else:
+                db_booking_data = {
+                    "user_id": ObjectId(current_user.id),
+                    "vendor_id": ObjectId(vendor_id),
+                    "service_id": ObjectId(service_id),
+                    "category_id": ObjectId(category_id),
+                    "time_slot": standardized_slot,
+                    "booking_date": booking_date,
+                    "amount": fees,
+                    "booking_status": "pending",
+                    "payment_status": "paid",
+                    "vendor_user_id": ObjectId(vendor_user_id) if vendor_user_id else None,
+                    "created_at": datetime.utcnow(),
+                }
+                booking_result = await booking_collection.insert_one(db_booking_data)
+                booking_id = booking_result.inserted_id
+
+                user_data = await user_collection.find_one({"_id": ObjectId(current_user.id)})
+                if not user_data:
+                    raise HTTPException(status_code=404, detail="User not found")
+
+                notification_settings = user_data.get("notification_settings", {})
+                payment_confirmation_enabled = notification_settings.get("payment_confirmation", True)
+
+                user_context = {
+                    "booking_id": str(booking_id),
+                    "vendor_name": f"{vendor_user.get('first_name', '')} {vendor_user.get('last_name', '')}",
+                    "service_name": service.get("name"),
+                    "category_name": category.get("name"),
+                    "currency": "INR",
+                    "booking_date": booking_date,
+                    "time_slot": standardized_slot,
+                    "user_name": f"{current_user.first_name} {current_user.last_name}",
+                    "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
+                }
+                vendor_context = {
+                    "booking_id": str(booking_id),
+                    "vendor_name": f"{vendor_user.get('first_name', '')} {vendor_user.get('last_name', '')}",
+                    "service_name": service.get("name"),
+                    "category_name": category.get("name"),
+                    "currency": "INR",
+                    "booking_date": booking_date,
+                    "time_slot": standardized_slot,
+                    "user_name": f"{current_user.first_name} {current_user.last_name}",
+                    "contact": current_user.phone,
+                    "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
+                }
+
+                if payment_confirmation_enabled:
+                    background_tasks.add_task(
+                        send_email, to_email=current_user.email, source="Booking Confirmation", context=user_context
+                    )
+                background_tasks.add_task(
+                    send_email,
+                    to_email=vendor_user.get("email") if vendor_user else vendor_user_obj.get("email"),
+                    source="Booking Notification",
+                    context=vendor_context,
                     cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
                 )
 
                 return {
                     "data": {
                         "order_id": str(booking_id),
-                        "amount": vendor_user.get("fees", 0),
+                        "amount": fees,
                         "currency": "INR",
                         "payment_status": "paid",
                     }
                 }
 
         except razorpay.errors.BadRequestError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e))
         except HTTPException as e:
             raise e
         except Exception as ex:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
-            )
+            raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(ex)}")
 
     async def user_booking_view(self, current_user: User, id: str):
         try:
-            booking = await booking_collection.find_one({"_id": ObjectId(id)})
+            booking = await booking_collection.find_one({"temp_order_id": str(id)})
             if not booking:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
@@ -1052,7 +1074,6 @@ class BookingManager:
 
             # Fetch vendor details
             vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
-
             if vendor:
                 booking["vendor_details"] = {
                     "business_name": vendor.get("business_name", "Unknown"),
@@ -1060,6 +1081,9 @@ class BookingManager:
                 }
             else:
                 booking["vendor_details"] = "Unknown"
+
+            # Convert all ObjectIds to strings recursively
+            booking = convert_objectids_to_strings(booking)
 
             return booking
 
