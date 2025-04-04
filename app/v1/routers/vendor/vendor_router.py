@@ -4,7 +4,7 @@ import json
 
 from typing import Callable, Type
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Path, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -57,6 +57,7 @@ def validate_request_data(schema: Type[BaseModel]) -> Callable:
 
 @router.post("/create-vendor", status_code=status.HTTP_201_CREATED)
 async def create_vendor(
+    background_tasks: BackgroundTasks,
     create_vendor_request: dict = Depends(validate_request_data(SignUpVendorRequest)),
     current_user: User = Depends(get_current_user),
     _permission: None = has_permission("vendor-management", "addVendor"),
@@ -879,10 +880,15 @@ async def upgrade_vendor_subscription(
 
 @router.post("/create-vendor-query", status_code=status.HTTP_200_OK)
 async def create_vendor_query(
-    request: Request, vendor_query: VendorQuery, vendor_manager: VendorManager = Depends(get_vendor_manager)
+    request: Request,
+    vendor_query: VendorQuery,
+    background_tasks: BackgroundTasks,
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
-        result = await vendor_manager.create_vendor_query(request=request, vendor_query=vendor_query)
+        result = await vendor_manager.create_vendor_query(
+            request=request, background_tasks=background_tasks, vendor_query=vendor_query
+        )
         return success({"message": "Vendor query created successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -940,6 +946,23 @@ async def create_booking_for_vendor(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-user-list-for-vendor", status_code=status.HTTP_200_OK)
+async def get_user_list_for_vendor(
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.get_user_list_for_vendor(current_user=current_user)
+        return success({"message": "User list found successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
