@@ -2,7 +2,19 @@ import razorpay
 import razorpay.errors
 
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
-from fastapi import APIRouter, Body, Depends, Form, HTTPException, Path, Query, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    Form,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 
 from app.v1.dependencies import *
 from app.v1.middleware.auth import get_current_user, get_token_from_header
@@ -201,12 +213,15 @@ async def user_booking_list(
 @router.post("/cancel-booking/{id}", status_code=status.HTTP_200_OK)
 async def cancel_booking(
     cancel_request: CancelBookingRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     id: str = Path(..., min_length=1, max_length=100),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.cancel_booking(current_user=current_user, id=id, cancel_request=cancel_request)
+        result = await booking_manager.cancel_booking(
+            current_user=current_user, id=id, cancel_request=cancel_request, background_tasks=background_tasks
+        )
 
         return success({"message": "User Booking cancelled successfully", "data": result})
 
@@ -274,6 +289,7 @@ async def booking_payment(
     current_user: User = Depends(get_current_user),
     booking_data: CreateBookingRequest = Body(...),
     booking_manager: BookingManager = Depends(get_booking_manager),
+    background_tasks: BackgroundTasks = None,
 ):
     try:
         result = await booking_manager.booking_payment(
@@ -284,6 +300,7 @@ async def booking_payment(
             service_id=booking_data.service_id,
             category_id=booking_data.category_id,
             vendor_user_id=booking_data.vendor_user_id,
+            background_tasks=background_tasks,
         )
 
         return success({"message": "Payment initiated successfully", "data": result})
@@ -299,13 +316,14 @@ async def booking_payment(
 
 
 @router.post("/verify-payment", status_code=status.HTTP_200_OK)
-async def verify_payment(request: Request, payload: dict):
-
+async def verify_payment(request: Request, payload: dict, background_tasks: BackgroundTasks):
     try:
         razorpay_order_id = payload["razorpay_order_id"]
         razorpay_payment_id = payload["razorpay_payment_id"]
         razorpay_signature = payload["razorpay_signature"]
-        order_id = payload["order_id"]
+        booking_data = payload.get("booking_data")
+        temp_order_id = payload.get("order_id")  # Get the temporary order_id
+
         params = {"razorpay_order_id": razorpay_order_id, "razorpay_payment_id": razorpay_payment_id}
         razorpay_client.utility.verify_payment_signature({**params, "razorpay_signature": razorpay_signature})
         payment_details = razorpay_client.payment.fetch(razorpay_payment_id)
@@ -313,68 +331,97 @@ async def verify_payment(request: Request, payload: dict):
         payment_method = payment_details.get("method")
 
         if payment_status != "captured":
-            await booking_collection.update_one(
-                {"_id": ObjectId(order_id)},
-                {
-                    "$set": {
-                        "payment_status": "failed",
-                        "booking_status": "pending",
-                        "payment_method": payment_method,
-                        "failure_reason": payment_details.get("error_description", "Payment failed"),
-                    }
-                },
-            )
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment failed")
+            raise HTTPException(status_code=400, detail="Payment failed")
 
-        await booking_collection.update_one(
-            {"_id": ObjectId(order_id)},
-            {
-                "$set": {
-                    "payment_status": "paid",
-                    "booking_status": "panding",
-                    "booking_confirm": True,
-                    "payment_method": payment_method,
-                    "payment_id": razorpay_payment_id,
-                }
-            },
-        )
-        updated_booking = await booking_collection.find_one({"_id": ObjectId(order_id)})
+        # Insert booking only after successful payment verification
+        if booking_data:
+            # Convert stringified ObjectIds back to ObjectId instances
+            db_booking_data = {
+                "user_id": ObjectId(booking_data["user_id"]),
+                "vendor_id": ObjectId(booking_data["vendor_id"]),
+                "service_id": ObjectId(booking_data["service_id"]),
+                "category_id": ObjectId(booking_data["category_id"]),
+                "time_slot": booking_data["time_slot"],
+                "booking_date": booking_data["booking_date"],
+                "amount": booking_data["amount"],
+                "booking_status": "pending",
+                "payment_status": "paid",
+                "vendor_user_id": ObjectId(booking_data["vendor_user_id"]) if booking_data["vendor_user_id"] else None,
+                "created_at": datetime.fromisoformat(booking_data["created_at"]),
+                "payment_method": payment_method,
+                "payment_id": razorpay_payment_id,
+                "booking_order_id": razorpay_order_id,
+                "temp_order_id": temp_order_id,  # Store the temporary order_id for reference
+            }
+            booking_result = await booking_collection.insert_one(db_booking_data)
+            booking_id = booking_result.inserted_id
+            print(f"New booking created with ID: {booking_id}")
+        else:
+            # Update existing booking if it was created (for backward compatibility)
+            if not temp_order_id:
+                raise HTTPException(status_code=400, detail="Missing order_id")
+
+            # Check if this is an old booking with a real ObjectId
+            try:
+                booking_id = ObjectId(temp_order_id)
+                await booking_collection.update_one(
+                    {"_id": booking_id},
+                    {
+                        "$set": {
+                            "payment_status": "paid",
+                            "booking_status": "pending",
+                            "booking_confirm": True,
+                            "payment_method": payment_method,
+                            "payment_id": razorpay_payment_id,
+                        }
+                    },
+                )
+            except ValueError:
+                # If temp_order_id is not a valid ObjectId, it’s a UUID from the new flow
+                raise HTTPException(status_code=400, detail="No booking data provided for new flow")
+
+        updated_booking = await booking_collection.find_one({"_id": booking_id})
         if not updated_booking:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+            raise HTTPException(status_code=404, detail="Booking not found")
 
         user_id = updated_booking.get("user_id")
         if not user_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User ID not found in booking")
+            raise HTTPException(status_code=404, detail="User ID not found in booking")
 
-        # Fetch user data to check notification settings
         user_data = await user_collection.find_one({"_id": ObjectId(user_id)})
         if not user_data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            raise HTTPException(status_code=404, detail="User not found")
 
-        # Check if booking confirmation notifications are enabled
         notification_settings = user_data.get("notification_settings", {})
-        if notification_settings.get("booking_confirmation", True):  # Default to True if not set
-            # Prepare email context
+        if notification_settings.get("booking_confirmation", True):
             source = "Payment Success"
             context = {
                 "name": payment_details.get("name"),
                 "email": payment_details.get("email"),
-                "order_id": order_id,
+                "order_id": str(booking_id),
                 "payment_id": razorpay_payment_id,
                 "payment_method": payment_method,
                 "amount": payment_details.get("amount") / 100,
             }
+            background_tasks.add_task(
+                send_email,
+                to_email=payment_details.get("email", user_data.get("email")),
+                source=source,
+                context=context,
+            )
 
-            # Send email
-            await send_email(to_email=payment_details.get("email"), source=source, context=context)
-
-        return success({"message": "Payment verification successful"})
-    except razorpay.errors.SignatureVerificationError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment signature")
-    except Exception as ex:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+        return success(
+            {
+                "message": "Payment verification successful",
+                "booking_id": str(booking_id),
+                "temp_order_id": temp_order_id,  # Return both for reference
+            }
         )
+
+    except razorpay.errors.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(ex)}")
 
 
 @router.get("/user-booking-view/{id}", status_code=status.HTTP_200_OK)

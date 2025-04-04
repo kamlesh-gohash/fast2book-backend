@@ -14,7 +14,7 @@ from beanie import Link
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
-from fastapi import Body, HTTPException, Request, status
+from fastapi import BackgroundTasks, Body, HTTPException, Request, status
 from motor.motor_asyncio import AsyncIOMotorCollection  # Ensure this import for Motor
 
 from app.v1.middleware.auth import get_current_user, get_current_user_by_google
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 class UserManager:
 
-    async def create_user(self, user: User) -> dict:
+    async def create_user(self, user: User, background_tasks: BackgroundTasks) -> dict:
         """Create a new user in the database."""
         try:
             # Check if a user with the same email or phone already exists
@@ -75,14 +75,12 @@ class UserManager:
                 expiry_time = datetime.utcnow() + timedelta(minutes=10)
                 expiry_minutes = 10
 
-                # Send OTP to email if provided
                 if user.email:
                     source = "Activation_code"
-                    context = {"otp": otp, "to_email": user.email}
+                    context = {"otp": otp, "to_email": user.email, "user_name": user.first_name}
                     to_email = user.email
-                    await send_email(to_email, source, context)
+                    background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
 
-                # Send OTP to phone if provided
                 if user.phone:
                     to_phone = user.phone
                     await send_sms_on_phone(to_phone, otp, expiry_minutes)
@@ -117,8 +115,7 @@ class UserManager:
                 source = "Activation_code"
                 context = {"otp": otp, "to_email": user.email, "name": user.first_name + " " + user.last_name}
                 to_email = user.email
-                await send_email(to_email, source, context)
-
+                background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
             # Send OTP to phone if provided
             if user.phone:
                 to_phone = user.phone
@@ -132,9 +129,7 @@ class UserManager:
             if not user.roles:
                 user_dict["roles"] = [Role.user]
             user_dict["notification_settings"] = DEFAULT_NOTIFICATION_PREFERENCES
-            user_dict["is_active"] = False  # New users are not active until OTP verification
-
-            # Insert the new user into the database
+            user_dict["is_active"] = False
             result = await user_collection.insert_one(user_dict)
             user_dict["_id"] = str(result.inserted_id)
             return user_dict
@@ -154,11 +149,9 @@ class UserManager:
             if not user:
                 raise ValueError(f"User with ID '{current_user.id}' does not exist")
 
-            # Convert MongoDB's ObjectId to string
             user["_id"] = str(user["_id"])
             user["id"] = str(user["_id"])
 
-            # Optionally remove sensitive fields
             user.pop("password", None)  # Remove hashed password from response
             user.pop("otp", None)  # Remove OTP from response
             user.pop("otp_expires", None)
@@ -175,32 +168,6 @@ class UserManager:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
-
-    async def list_users(self) -> list:
-        """List all users."""
-        users = []
-        async for user in user_collection.find():
-            user["_id"] = str(user["_id"])
-            users.append(user)
-        return users
-
-    async def update_user(self, email: str, update_data: dict) -> dict:
-        """Update user details."""
-        result = await user_collection.find_one_and_update(
-            {"email": email}, {"$set": update_data}, return_document=True
-        )
-        if not result:
-            raise ValueError(f"User with email '{email}' does not exist")
-        result["_id"] = str(result["_id"])
-        return result
-
-    async def delete_user(self, email: str) -> dict:
-        """Delete a user by email."""
-        result = await user_collection.find_one_and_delete({"email": email})
-        if not result:
-            raise ValueError(f"User with email '{email}' does not exist")
-        result["id"] = str(result["_id"])
-        return result
 
     async def sign_in(
         self, email: str = None, phone: int = None, password: str = None, is_login_with_otp: bool = False
@@ -235,13 +202,11 @@ class UserManager:
                     await send_email(email, source, context)
                     return {"message": "OTP sent to your email address"}
 
-                # Password-based login
                 stored_password_hash = result.get("password")
                 if not stored_password_hash:
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
                     )
-                # Check if the entered password matches the stored hashed password
                 if not bcrypt.checkpw(
                     password.encode("utf-8"),
                     (
@@ -295,13 +260,11 @@ class UserManager:
                     await send_sms_on_phone(phone, otp, expiry_minutes=10)
                     return {"message": "OTP sent to your phone"}
 
-                # Password-based login
                 stored_password_hash = result.get("password")
                 if not stored_password_hash:
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stored password hash not found."
                     )
-                # Check if the entered password matches the stored hashed password
                 if not bcrypt.checkpw(
                     password.encode("utf-8"),
                     (
@@ -344,7 +307,6 @@ class UserManager:
     ) -> str:
         """Send OTP to the user's email or phone based on the specified otp_type."""
         try:
-            # Validate otp_type
             if otp_type not in ["login", "forgot_password", "sign_up"]:
                 raise HTTPException(status_code=400, detail="Invalid OTP type. Must be 'login' or 'forgot_password'")
 
@@ -358,28 +320,23 @@ class UserManager:
                 if user is None:
                     raise HTTPException(status_code=404, detail="User not found")
 
-                # Send OTP via email
                 source = "Resend OTP"
                 context = {"otp": otp, "user_name": user.get("first_name")}
                 to_email = email
                 await send_email(to_email, source, context)
 
-                # Store OTP dynamically based on otp_type
                 await user_collection.update_one(
                     {"email": email}, {"$set": {otp_field: otp, otp_expires_field: otp_expiration_time}}
                 )
                 return otp
 
             if phone:
-                # Find user using user_collection
                 user = await user_collection.find_one({"phone": phone})
                 if not user:
                     raise HTTPException(status_code=404, detail="User not found")
 
-                # Send OTP via SMS
                 await send_sms_on_phone(phone, otp, expiry_minutes=10)
 
-                # Store OTP dynamically based on otp_type
                 await user_collection.update_one(
                     {"phone": phone}, {"$set": {otp_field: otp, otp_expires_field: otp_expiration_time}}
                 )
@@ -414,12 +371,10 @@ class UserManager:
                         status_code=status.HTTP_400_BAD_REQUEST, detail="Your account is inactive, please contact admin"
                     )
 
-                # Send OTP via email
                 source = "Forgot Password"
                 context = {"otp": otp}
                 await send_email(email, source, context)
 
-                # Store OTP in user_collection
                 await user_collection.update_one(
                     {"email": email},
                     {
@@ -755,7 +710,6 @@ class UserManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
             category_id = str(category["_id"])
 
-            # Get all active services
             active_services = await services_collection.find(
                 {"category_id": category["_id"], "status": "active"}
             ).to_list(length=None)
@@ -764,7 +718,6 @@ class UserManager:
                 for service in active_services
             ]
 
-            # Get top services pipeline
             top_services_pipeline = [
                 {
                     "$match": {
@@ -800,21 +753,16 @@ class UserManager:
                 for service in top_services
             ]
 
-            # If less than 3 top services, fill with other active services
             if len(top_services_data) < 3:
-                # Get IDs of top services
                 top_service_ids = {service["id"] for service in top_services_data}
-                # Get additional services that aren't in top services
                 additional_services = [service for service in service_data if service["id"] not in top_service_ids]
-                # Calculate how many more services we need
                 needed = 3 - len(top_services_data)
-                # Add additional services up to the needed amount
                 for service in additional_services[:needed]:
                     top_services_data.append(
                         {
                             "id": service["id"],
                             "name": service["name"],
-                            "search_count": 0,  # Set search_count to 0 for non-top services
+                            "search_count": 0,
                         }
                     )
 
@@ -862,48 +810,63 @@ class UserManager:
             day_names = [d.strftime("%A") for d in date_range]
 
             current_user_id = str(current_user.id) if current_user else None
-
             user_location = None
             if current_user:
                 user = await user_collection.find_one({"_id": current_user.id})
                 if user and "user_location" in user and user["user_location"]["type"] == "Point":
                     user_location = user["user_location"]
-                else:
-                    pass
+
             if service_id or address:
                 search_query = {
-                    "user_id": ObjectId(current_user_id),
+                    "user_id": ObjectId(current_user_id) if current_user_id else None,
                     "category_id": ObjectId(category_id),
-                    "service_id": ObjectId(service_id if service_id else None),
+                    "service_id": ObjectId(service_id) if service_id else None,
                     "location": address if address else None,
                 }
                 await search_query_collection.insert_one(search_query)
-            pipeline = [{"$match": vendor_filter}]
 
-            if user_location:
-                radius_km = 10
-                radius_radians = radius_km / 6378.1
-                pipeline.insert(
-                    1,
-                    {
-                        "$addFields": {
-                            "geo_point": {
-                                "type": "Point",
-                                "coordinates": ["$location.geometry.location.lng", "$location.geometry.location.lat"],
-                            }
-                        }
-                    },
-                )
-                pipeline.insert(
-                    2,
+            # Build the aggregation pipeline
+            pipeline = []
+
+            if address and address.strip():
+                address = address.strip()
+                pipeline.append(
                     {
                         "$match": {
-                            "geo_point": {
-                                "$geoWithin": {"$centerSphere": [user_location["coordinates"], radius_radians]}
-                            }
+                            "$and": [
+                                vendor_filter,
+                                {"location.formatted_address": {"$regex": f"^{re.escape(address)}$", "$options": "i"}},
+                            ]
                         }
-                    },
+                    }
                 )
+            else:
+                pipeline.append({"$match": vendor_filter})
+                if user_location:
+                    radius_km = 10
+                    radius_radians = radius_km / 6378.1
+                    pipeline.extend(
+                        [
+                            {
+                                "$addFields": {
+                                    "geo_point": {
+                                        "type": "Point",
+                                        "coordinates": [
+                                            "$location.geometry.location.lng",
+                                            "$location.geometry.location.lat",
+                                        ],
+                                    }
+                                }
+                            },
+                            {
+                                "$match": {
+                                    "geo_point": {
+                                        "$geoWithin": {"$centerSphere": [user_location["coordinates"], radius_radians]}
+                                    }
+                                }
+                            },
+                        ]
+                    )
 
             pipeline.extend(
                 [
@@ -1368,7 +1331,7 @@ class UserManager:
                                     },
                                 }
                             }
-                        }
+                        },
                     },
                     {
                         "$match": {
@@ -1402,267 +1365,37 @@ class UserManager:
                 ]
             )
 
-            if address:
-                address = address.strip()
-                if address:
-                    escaped_address = re.escape(address)
-                    pipeline.append(
-                        {
-                            "$match": {
-                                "location.formatted_address": {"$regex": f".*{escaped_address}.*", "$options": "i"}
-                            }
-                        }
-                    )
-
             active_vendors = await vendor_collection.aggregate(pipeline).to_list(length=None)
             if not active_vendors:
                 raise HTTPException(
                     status_code=404,
-                    detail="No active vendors found for the given category" + (f" and service" if service_id else ""),
+                    detail="No active vendors found for the given "
+                    + ("location" if address else "category")
+                    + (f" and service" if service_id else ""),
                 )
 
-            total_vendors = await vendor_collection.count_documents(vendor_filter)
+            total_vendors = await vendor_collection.count_documents(
+                {"location.formatted_address": {"$regex": f"^{re.escape(address)}$", "$options": "i"}, **vendor_filter}
+                if address and address.strip()
+                else vendor_filter
+            )
             total_pages = (total_vendors + limit - 1) // limit
 
             return {"items": active_vendors, "total_pages": total_pages, "total_items": total_vendors}
+
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    async def get_booking_count_for_slot(self, vendor_id: str, day: str, time_slot: str) -> int:
+    async def create_support_request(self, support_request: Support, background_tasks: BackgroundTasks):
         try:
-            current_date = datetime.now().date()
-
-            days = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
-            current_weekday = current_date.weekday()
-            target_weekday = days[day]
-            days_ahead = (target_weekday - current_weekday) % 7
-            target_date = current_date + timedelta(days=days_ahead)
-            vendor_obj = await vendor_collection.find_one({"user_id": vendor_id})
-            if not vendor_obj:
-                return 0
-            vendor_id_str = str(vendor_obj["_id"])
-
-            formatted_date = target_date.strftime("%Y-%m-%d")
-
-            all_bookings = await booking_collection.find({"vendor_id": vendor_id_str}).to_list(length=None)
-            date_bookings = await booking_collection.find(
-                {"vendor_id": vendor_id_str, "booking_date": formatted_date}
-            ).to_list(length=None)
-            booking_count = await booking_collection.count_documents(
-                {
-                    "vendor_id": vendor_id_str,
-                    "booking_date": formatted_date,
-                    "time_slot": {"$regex": f"^{time_slot}"},
-                    "payment_status": "paid",
-                }
-            )
-            return booking_count
-        except Exception as e:
-            return 0
-
-    async def get_daily_booking_count(self, vendor_id: str, target_date: str) -> int:
-        try:
-            current_date = datetime.now().date()
-
-            # days = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
-            # current_weekday = current_date.weekday()
-            # target_weekday = days[day]
-            # days_ahead = (target_weekday - current_weekday) % 7
-            # target_date = current_date + timedelta(days=days_ahead)
-            vendor_obj = await vendor_collection.find_one({"user_id": vendor_id})
-            if not vendor_obj:
-                return 0
-            vendor_id_str = str(vendor_obj["_id"])
-            # Get bookings for the entire day
-            daily_booking_count = await booking_collection.count_documents(
-                {"vendor_id": vendor_id_str, "payment_status": "paid", "booking_date": target_date}
-            )
-
-            return daily_booking_count
-        except Exception as e:
-            return 0
-
-    async def get_max_seat_count(self, vendor_id: str, day: str) -> int:
-        try:
-            user = await user_collection.find_one({"_id": ObjectId(vendor_id)})  # Fetch from user collection
-            if not user:
-                return 0
-            availability_slots = user.get("availability_slots", [])  # Fetch from user table
-            max_seat_count = 0
-
-            for slot in availability_slots:
-                if slot["day"] == day:
-                    for time_slot in slot.get("time_slots", []):
-                        max_seat_count += time_slot.get("max_seat", 0)
-            return max_seat_count
-        except Exception as e:
-            return 0
-
-    async def get_availability_slots(self, vendor: dict) -> List[dict]:
-        """
-        Helper function to get availability slots for a vendor (now from user table).
-        """
-        availability_slots = []
-
-        user = await user_collection.find_one({"_id": ObjectId(vendor["_id"])})  # Fetch from user collection
-        if not user:
-            return availability_slots  # Return empty if user not found
-
-        for slot in user.get("availability_slots", []):  # Fetch slots from user table
-            slot_day = slot["day"]
-            current_date = datetime.now().date()
-            days = {
-                "Monday": 0,
-                "Tuesday": 1,
-                "Wednesday": 2,
-                "Thursday": 3,
-                "Friday": 4,
-                "Saturday": 5,
-                "Sunday": 6,
-            }
-            current_weekday = current_date.weekday()
-            target_weekday = days[slot_day]
-            days_ahead = (target_weekday - current_weekday) % 7
-            target_date = current_date + timedelta(days=days_ahead)
-
-            day_slot = {"day": slot_day, "date": target_date.strftime("%Y-%m-%d"), "time_slots": []}
-            daily_booking_count = await self.get_daily_booking_count(str(user["_id"]), target_date)
-            day_slot["daily_booking_count"] = daily_booking_count
-            total_seat_count = await self.get_max_seat_count(str(user["_id"]), slot_day)
-            day_slot["max_seat_count"] = total_seat_count
-
-            for time_slot in slot.get("time_slots", []):
-                booking_count = await self.get_booking_count_for_slot(
-                    str(user["_id"]), slot_day, time_slot["start_time"]
-                )
-
-                day_slot["time_slots"].append(
-                    {
-                        "start_time": time_slot["start_time"],
-                        "end_time": time_slot["end_time"],
-                        "max_seat": time_slot["max_seat"],
-                        "booking_count": booking_count,
-                    }
-                )
-
-            availability_slots.append(day_slot)
-
-        return availability_slots
-
-    def _addresses_match(self, vendor_address: str, search_address: str) -> bool:
-        """
-        Helper method to determine if two addresses match.
-        You can customize this method based on your matching requirements.
-        """
-        if not vendor_address or not search_address:
-            return False
-
-        # Convert both addresses to lowercase for case-insensitive comparison
-        vendor_address = vendor_address.lower()
-        search_address = search_address.lower()
-
-        # Split addresses into components
-        vendor_components = set(vendor_address.split(","))
-        search_components = set(search_address.split(","))
-
-        # Check if there's any overlap in the address components
-        # You can adjust the matching threshold based on your needs
-        common_components = vendor_components.intersection(search_components)
-        return len(common_components) >= 2
-
-    async def get_vendor_list_for_services(self, service_id: str) -> List[dict]:
-        try:
-            if not ObjectId.is_valid(service_id):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid service ID")
-
-            service = await services_collection.find_one({"_id": ObjectId(service_id)})
-            if not service:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-
-            active_vendors = await vendor_collection.find(
-                {
-                    "services.id": service_id,
-                    "status": "active",
-                }
-            ).to_list(length=None)
-
-            if not active_vendors:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="No active vendors found for the given service",
-                )
-
-            vendor_data = []
-
-            for vendor in active_vendors:
-                try:
-                    user = await user_collection.find_one({"_id": ObjectId(vendor["user_id"])})
-                    if not user:
-                        continue
-
-                    if vendor["business_type"] == "business":
-                        created_users = await user_collection.find({"created_by": str(vendor["user_id"])}).to_list(
-                            length=None
-                        )
-                        user_details = [
-                            {
-                                "first_name": u.get("first_name"),
-                                "last_name": u.get("last_name"),
-                                "email": u.get("email"),
-                                "phone": u.get("phone"),
-                                "status": u.get("status"),
-                                "roles": u.get("roles"),
-                                "availability_slots": u.get("availability_slots", []),
-                            }
-                            for u in created_users
-                        ]
-                    else:
-                        user_details = {
-                            "first_name": user.get("first_name"),
-                            "last_name": user.get("last_name"),
-                            "email": user.get("email"),
-                            "phone": user.get("phone"),
-                            "status": user.get("status"),
-                            "roles": user.get("roles"),
-                            "availability_slots": vendor.get("availability_slots", []),
-                        }
-
-                    # Prepare vendor data
-                    vendor_info = {
-                        "id": str(vendor["_id"]),
-                        "status": vendor["status"],
-                        "business_name": vendor.get("business_name"),
-                        "business_type": vendor.get("business_type"),
-                        "business_address": vendor.get("business_address"),
-                        "business_details": vendor.get("business_details"),
-                        "services": vendor.get("services", []),
-                        "is_payment_verified": vendor.get("is_payment_verified"),
-                        "created_at": vendor.get("created_at"),
-                        "user_details": user_details,
-                    }
-                    vendor_data.append(vendor_info)
-
-                except Exception as e:
-                    continue
-
-            return vendor_data
-
-        except HTTPException:
-            raise
-        except Exception as ex:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An unexpected error occurred",
-            )
-
-    async def create_support_request(self, support_request: Support):
-        try:
-
+            # Insert into MongoDB
             result = await support_collection.insert_one(support_request.dict())
-            if not result:
+            if not result.inserted_id:  # Check inserted_id instead of result directly
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support request not found")
+
+            # Prepare response data
             result_data = {
                 "id": str(result.inserted_id),
                 "name": support_request.name,
@@ -1677,9 +1410,8 @@ class UserManager:
                 "created_at": support_request.created_at,
             }
 
-            source = "Support Request"
-            to_email = support_request.email
-            context = {
+            # Offload email sending to background tasks
+            customer_email_context = {
                 "name": support_request.name,
                 "subject": support_request.subject,
                 "message": support_request.message,
@@ -1692,15 +1424,7 @@ class UserManager:
                 "created_at": support_request.created_at,
                 "website": "https://fast2book.com",
             }
-            await send_email(
-                to_email,
-                source,
-                context,
-            )
-
-            source = "New Support Request"
-            to_email = "support@fast2book.com"
-            context = {
+            support_email_context = {
                 "name": support_request.name,
                 "subject": support_request.subject,
                 "message": support_request.message,
@@ -1712,11 +1436,12 @@ class UserManager:
                 "zipcode": support_request.zipcode,
                 "created_at": support_request.created_at,
             }
-            await send_email(
-                to_email,
-                source,
-                context,
-            )
+
+            # Add email sending tasks to background
+            background_tasks.add_task(send_email, support_request.email, "Support Request", customer_email_context)
+            background_tasks.add_task(send_email, "support@fast2book.com", "New Support Request", support_email_context)
+
+            # Return response immediately
             return result_data
 
         except HTTPException:
@@ -2106,17 +1831,17 @@ class UserManager:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    async def get_vendor_list(self, request: Request):
+    async def get_vendor_list(self, request: Request, current_user: Optional[User] = None):
         try:
-            user = request.state.user if hasattr(request.state, "user") else None
+            user = current_user
             lat = request.query_params.get("lat")
             lng = request.query_params.get("lng")
 
             # Prepare geo filter if location is available
             geo_filter = []
-            if user and user.get("user_location"):
+            if user and user.user_location:
                 # Use authenticated user's location
-                user_location = user["user_location"]
+                user_location = user.user_location
                 radius_km = 10
                 radius_radians = radius_km / 6378.1
                 geo_filter = [
@@ -2164,6 +1889,7 @@ class UserManager:
                         },
                     ]
                 except ValueError:
+                    print("lllllllllllll")
                     pass
 
             pipeline = [
@@ -2367,6 +2093,7 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as ex:
+            print(ex, "sssssssssssssss")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
@@ -2526,24 +2253,22 @@ class UserManager:
         request: Request,
         ticket_data: Ticket,
         current_user: Optional[User] = None,
+        background_tasks: BackgroundTasks = None,
     ):
         try:
             if not ticket_data:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid ticket data")
 
-            # Auto-generate ticket number
             if current_user:
                 ticket_data.user = str(current_user.id)
             ticket_data.ticket_number = Ticket.generate_ticket_number()
             issue_image_url = None
-            # Handle image upload
             if ticket_data.issue_image:
                 issue_image = ticket_data.issue_image
                 bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
                 issue_image_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{issue_image}"
                 ticket_data.issue_image_url = issue_image_url
 
-            # Save ticket to the database
             ticket = await ticket_collection.insert_one(ticket_data.dict())
             if ticket:
                 source = "Ticket Created"
@@ -2555,11 +2280,7 @@ class UserManager:
                     "email": ticket_data.email,
                     "date": datetime.now().strftime("%Y-%m-%d"),
                 }
-                await send_email(
-                    to_email,
-                    source,
-                    context,
-                )
+                background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
                 source = "New Ticket Created"
                 to_email = "support@fast2book.com"
                 context = {
@@ -2569,17 +2290,11 @@ class UserManager:
                     "date": datetime.now().strftime("%Y-%m-%d"),
                     "email": ticket_data.email,
                 }
-                await send_email(
-                    to_email,
-                    source,
-                    context,
-                )
+                background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
 
-            # Convert ObjectId to string
             ticket_data = ticket_data.dict()
             ticket_data["id"] = str(ticket.inserted_id)
 
-            # Convert the datetime object to a string
             return ticket_data
 
         except HTTPException:

@@ -258,21 +258,28 @@ class SubscriptionManager:
             created_plan = None
 
             for amount_item in plan_request.amountsArray:
-                period = amount_item.type.lower()
+                period_input = amount_item.type
                 amount = amount_item.value
 
-                if period == "weekly":
+                if period_input == "daily":
+                    period = "daily"
                     interval = 1
-                elif period == "monthly":
+                elif period_input == "weekly":
+                    period = "weekly"
                     interval = 1
-                elif period == "quarterly":
+                elif period_input == "monthly":
+                    period = "monthly"
                     interval = 1
-                elif period == "yearly":
+                elif period_input == "quarterly":
+                    period = "monthly"
+                    interval = 3
+                elif period_input == "yearly":
+                    period = "yearly"
                     interval = 1
                 else:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Invalid period: {period}. Allowed values are 'weekly', 'monthly', or 'yearly'.",
+                        detail=f"Invalid period: {period_input}. Allowed values are 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'.",
                     )
 
                 razorpay_plan_data = {
@@ -281,7 +288,7 @@ class SubscriptionManager:
                     "item": {
                         "name": plan_request.name,
                         "description": plan_request.description,
-                        "amount": int(amount * 100),  # Convert to cents/pence
+                        "amount": int(amount * 100),
                         "currency": plan_request.currency,
                     },
                 }
@@ -311,18 +318,17 @@ class SubscriptionManager:
                     "description": plan_request.description,
                     "amount": amount,
                     "currency": plan_request.currency,
-                    "period": period,
+                    "period": period_input,  # Store original period (e.g., "quarterly")
                     "interval": interval,
                     "razorpay_plan_id": razorpay_plan["id"],
                     "features": [feature.dict() for feature in plan_request.features],
                     "created_at": datetime.utcnow(),
-                    "status": "active",  # Default status
+                    "status": "active",
                 }
 
                 await plan_collection.insert_one(insert_data)
                 created_plan = await plan_collection.find_one({"razorpay_plan_id": razorpay_plan["id"]})
 
-            # Return a single dictionary with the plan details
             return {
                 "id": str(created_plan["_id"]),
                 "name": created_plan["name"],
@@ -336,9 +342,9 @@ class SubscriptionManager:
                 "created_at": created_plan["created_at"],
                 "status": created_plan["status"],
             }
+
         except HTTPException as e:
             raise e
-
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"

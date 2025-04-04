@@ -74,6 +74,13 @@ class AmountItem(BaseModel):
     type: str  # e.g., "Weekly", "Monthly", "Yearly"
     value: float  # e.g., 100
 
+    @validator("type")
+    def validate_type(cls, v):
+        valid_types = ["daily", "weekly", "monthly", "quarterly", "yearly"]
+        if v.lower() not in valid_types:
+            raise ValueError(f"Invalid type: {v}. Allowed values are: {valid_types}")
+        return v.lower()
+
 
 class FeatureItem(BaseModel):
     item: str

@@ -91,8 +91,11 @@ class CategoryManager:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
-            # Fetch all active categories
+
+            # Pagination setup
             skip = (page - 1) * limit
+
+            # Build the query
             query = {}
             if search:
                 search_regex = {"$regex": search, "$options": "i"}
@@ -103,37 +106,44 @@ class CategoryManager:
                 ]
             if statuss:
                 query["status"] = statuss
-            active_categories = await category_collection.find({**query}).skip(skip).limit(limit).to_list(length=100)
-            category_data = []
-            ist_timezone = pytz.timezone("Asia/Kolkata")  # IST timezone
-            for category in active_categories:
-                # Convert created_at to IST
-                created_at = category.get("created_at")
-                if isinstance(created_at, datetime):
-                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
-                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
-                    category["created_at"] = created_at_ist.isoformat()
-                else:
-                    category["created_at"] = str(created_at)
 
-                category_data.append(
-                    {
-                        "id": str(category["_id"]),
-                        "name": category["name"],
-                        "slug": category.get("slug"),  # Use .get() to avoid KeyError
-                        "status": category["status"],
-                        "icon": category["icon"] if "icon" in category else None,
-                        "created_at": category["created_at"],
+            # Aggregation pipeline
+            pipeline = [
+                {"$match": query},  # Apply the query filters
+                {
+                    "$project": {  # Transform the document structure
+                        "id": {"$toString": "$_id"},  # Convert _id to string and rename as "id"
+                        "_id": 0,  # Exclude the original _id field
+                        "name": 1,
+                        "slug": {"$ifNull": ["$slug", None]},  # Handle missing slug
+                        "status": 1,
+                        "icon": {"$ifNull": ["$icon", None]},  # Handle missing icon
+                        "created_at": {
+                            "$dateToString": {  # Convert created_at to IST string
+                                "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                                "date": "$created_at",
+                                "timezone": "Asia/Kolkata",  # Directly use IST timezone
+                            }
+                        },
                     }
-                )
+                },
+                {"$skip": skip},  # Apply pagination: skip
+                {"$limit": limit},  # Apply pagination: limit
+            ]
+
+            # Execute the aggregation pipeline
+            active_categories = await category_collection.aggregate(pipeline).to_list(length=100)
+
+            # Get total count for pagination
             total_categories = await category_collection.count_documents(query)
             total_pages = (total_categories + limit - 1) // limit
             has_prev_page = page > 1
             has_next_page = page < total_pages
             prev_page = page - 1 if has_prev_page else None
             next_page = page + 1 if has_next_page else None
+
             return {
-                "data": category_data,
+                "data": active_categories,
                 "paginator": {
                     "itemCount": total_categories,
                     "perPage": limit,

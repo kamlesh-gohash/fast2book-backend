@@ -2,7 +2,7 @@
 import pytz
 
 from bson import ObjectId
-from fastapi import HTTPException, Request, status
+from fastapi import BackgroundTasks, HTTPException, Request, status
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import support_collection
@@ -98,7 +98,7 @@ class SupportManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def reply_support(self, current_user: User, support_id: str, reply: str):
+    async def reply_support(self, current_user: User, support_id: str, reply: str, background_tasks: BackgroundTasks):
         try:
             # Check if the user is an admin
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
@@ -131,7 +131,7 @@ class SupportManager:
                 "message": support["message"],
                 "reply": reply,
             }
-            await send_email(to_email, source, context)
+            background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
             return updated_support
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))

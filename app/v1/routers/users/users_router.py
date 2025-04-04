@@ -2,7 +2,7 @@ import logging
 
 import httpx
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, Request, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport import requests
@@ -32,13 +32,17 @@ class GoogleLoginRequest(BaseModel):
 
 # Register a new user (POST request)
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register_user(sign_up_request: SignUpRequest, user_manager: UserManager = Depends(get_user_manager)):
+async def register_user(
+    sign_up_request: SignUpRequest,
+    background_task: BackgroundTasks,
+    user_manager: UserManager = Depends(get_user_manager),
+):
     validation_result = sign_up_request.validate()
     if validation_result:
         return validation_result
     try:
         # User registration logic
-        result = await user_manager.create_user(sign_up_request)
+        result = await user_manager.create_user(sign_up_request, background_task)
         return success({"message": "OTP sent successfully", "data": None})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
@@ -333,25 +337,14 @@ async def get_vendor_list_for_category(
         )
 
 
-@router.get("/vendor-list-for-services/{services_id}", status_code=status.HTTP_200_OK)
-async def get_vendor_list_for_services(services_id: str, user_manager: UserManager = Depends(get_user_manager)):
-    try:
-        result = await user_manager.get_vendor_list_for_services(services_id)
-        return success({"message": "Vendor list fetched successfully", "data": result})
-    except HTTPException as http_ex:
-        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
-    except ValueError as ex:
-        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
-    except Exception as ex:
-        return internal_server_error(
-            {"message": "An unexpected error occurred", "error": str(ex)},
-        )
-
-
 @router.post("/support", status_code=status.HTTP_200_OK)
-async def support_request(support_request: Support, user_manager: UserManager = Depends(get_user_manager)):
+async def support_request(
+    support_request: Support, background_tasks: BackgroundTasks, user_manager: UserManager = Depends(get_user_manager)
+):
     try:
-        result = await user_manager.create_support_request(support_request=support_request)
+        result = await user_manager.create_support_request(
+            support_request=support_request, background_tasks=background_tasks
+        )
         return success({"message": "Support request submitted successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -523,7 +516,7 @@ async def get_blog(
 
 
 @router.get("/get-app-link", status_code=status.HTTP_200_OK)
-async def send_link(email: str = Query(None), phone: str = Query(None)):
+async def send_link(background_tasks: BackgroundTasks, email: str = Query(None), phone: str = Query(None)):
     try:
         if not email and not phone:
             raise HTTPException(
@@ -537,7 +530,7 @@ async def send_link(email: str = Query(None), phone: str = Query(None)):
             to_email = email
             link = "https://fast2book.com/"
             context = {"to_email": email, "link": link}
-            await send_email(to_email, source, context)
+            background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
 
         # Send link via SMS
         if phone:
@@ -600,15 +593,20 @@ async def update_notification(
 
 
 @router.get("/get-vednor-list", status_code=status.HTTP_200_OK)
-async def get_vendor_list(request: Request, user_manager: UserManager = Depends(get_user_manager)):
+async def get_vendor_list(
+    request: Request,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    user_manager: UserManager = Depends(get_user_manager),
+):
     try:
-        result = await user_manager.get_vendor_list(request=request)
+        result = await user_manager.get_vendor_list(request=request, current_user=current_user)
         return success({"message": "Vendors list found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex, "nnnnnnnnnnnnnnnn")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -661,11 +659,14 @@ async def get_category_service(
 async def create_ticket(
     request: Request,
     ticket_data: Ticket,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user_optional),
     user_manager: UserManager = Depends(get_user_manager),
 ):
     try:
-        result = await user_manager.create_ticket(request=request, ticket_data=ticket_data, current_user=current_user)
+        result = await user_manager.create_ticket(
+            request=request, ticket_data=ticket_data, current_user=current_user, background_tasks=background_tasks
+        )
         return success({"message": "Ticket created successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
