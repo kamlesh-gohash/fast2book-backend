@@ -3,7 +3,7 @@ import random
 import uuid
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 import bcrypt
 import pytz
@@ -42,6 +42,17 @@ def convert_objectids_to_strings(data):
         return [convert_objectids_to_strings(item) for item in data]
     elif isinstance(data, ObjectId):
         return str(data)
+    return data
+
+
+def convert_object_ids(data: Any) -> Any:
+    """Recursively convert ObjectId to string in nested data structures"""
+    if isinstance(data, ObjectId):
+        return str(data)
+    elif isinstance(data, dict):
+        return {key: convert_object_ids(value) for key, value in data.items()}
+    elif isinstance(data, list):
+        return [convert_object_ids(item) for item in data]
     return data
 
 
@@ -444,7 +455,7 @@ class BookingManager:
         try:
             if "user" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
             user_id = str(current_user.id)
@@ -468,47 +479,64 @@ class BookingManager:
 
                 booking["id"] = str(booking["_id"])
                 booking.pop("_id", None)
-                booking["user_id"] = str(booking["user_id"])
-                booking["vendor_id"] = str(booking["vendor_id"])
-                booking["category_id"] = str(booking["category_id"])
-                booking["service_id"] = str(booking["service_id"])
-                booking["vendor_user_id"] = str(booking["vendor_user_id"])
+                booking["user_id"] = str(booking.get("user_id"))
+                booking["vendor_id"] = str(booking.get("vendor_id"))
+                booking["category_id"] = str(booking.get("category_id"))
+                booking["service_id"] = str(booking.get("service_id"))
+                booking["vendor_user_id"] = str(booking.get("vendor_user_id"))
 
-                category = await category_collection.find_one({"_id": ObjectId(booking["category_id"])})
+                # Handle category lookup
+                category = await category_collection.find_one({"_id": ObjectId(booking.get("category_id"))})
                 booking["category_name"] = category.get("name") if category else None
 
-                service = await services_collection.find_one({"_id": ObjectId(booking["service_id"])})
-                booking["service_name"] = service.get("name") if service else None
-                booking["service_image"] = service.get("service_image")
-                booking["service_image_url"] = service.get("service_image_url")
+                # Handle service lookup
+                service = await services_collection.find_one({"_id": ObjectId(booking.get("service_id"))})
+                if service:
+                    booking["service_name"] = service.get("name")
+                    booking["service_image"] = service.get("service_image", "")
+                    booking["service_image_url"] = service.get("service_image_url", "")
+                else:
+                    booking["service_name"] = None
+                    booking["service_image"] = ""
+                    booking["service_image_url"] = ""
 
-                vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
-                vendor_user = await user_collection.find_one({"_id": ObjectId(booking["vendor_user_id"])})
-                if vendor:
-                    booking["vendor__first_name"] = vendor_user.get("first_name")
-                    booking["vendor_last_name"] = vendor_user.get("last_name")  # Fixed typo
+                # Handle vendor and vendor_user lookup
+                vendor = await vendor_collection.find_one({"_id": ObjectId(booking.get("vendor_id"))})
+                vendor_user = await user_collection.find_one({"_id": ObjectId(booking.get("vendor_user_id"))})
+
+                if vendor and vendor_user:  # Check both exist before accessing
+                    booking["vendor_first_name"] = vendor_user.get("first_name")  # Fixed typo from vendor__first_name
+                    booking["vendor_last_name"] = vendor_user.get("last_name")
                     booking["vendor_email"] = vendor_user.get("email")
                     booking["vendor_phone"] = vendor_user.get("phone")
                     booking["user_image"] = vendor_user.get("user_image")
                     booking["user_image_url"] = vendor_user.get("user_image_url")
-
                     booking["vendor_location"] = vendor.get("location")
                     booking["specialization"] = vendor_user.get("specialization")
                     booking["business_name"] = vendor.get("business_name")
+                else:
+                    # Set default values when vendor or vendor_user is None
+                    booking["vendor_first_name"] = None
+                    booking["vendor_last_name"] = None
+                    booking["vendor_email"] = None
+                    booking["vendor_phone"] = None
+                    booking["user_image"] = None
+                    booking["user_image_url"] = None
+                    booking["vendor_location"] = None
+                    booking["specialization"] = None
+                    booking["business_name"] = None
 
                 # Safely parse time_slot
                 time_slot = booking.get("time_slot", "")
                 try:
-                    # Split on "-" and take the start time
                     start_time = time_slot.split("-")[0].strip()
-                    # Ensure start_time is in valid format before parsing
                     if not start_time or not any(c.isdigit() for c in start_time):
-                        continue  # Skip this booking if time_slot is invalid
+                        continue
                     booking_datetime = tz.localize(
                         datetime.strptime(booking["booking_date"] + " " + start_time, "%Y-%m-%d %I:%M %p")
                     )
                 except (ValueError, IndexError) as e:
-                    continue  # Skip this booking if parsing fails
+                    continue
 
                 booking_status = booking.get("booking_status", "").lower()
 
@@ -621,11 +649,12 @@ class BookingManager:
         role: str = "vendor",
         start_date: str = None,
         end_date: str = None,
-    ):
+    ) -> Dict[str, Any]:
         try:
+            # Check admin permissions
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
             valid_roles = ["admin", "user", "vendor"]
@@ -635,32 +664,30 @@ class BookingManager:
                     detail=f"Invalid role: '{role}'. Valid roles are: {valid_roles}.",
                 )
 
+            # Build query
             query = {}
 
-            # Add date filter if provided
+            # Date filter
             if start_date or end_date:
                 date_filter = {}
-
                 if start_date:
                     try:
-                        # Validate the date format
                         datetime.strptime(start_date, "%Y-%m-%d")
                         date_filter["$gte"] = start_date
                     except ValueError:
                         raise HTTPException(
                             status_code=400, detail="Invalid start date format. Please use 'YYYY-MM-DD'"
                         )
-
                 if end_date:
                     try:
-                        # Validate the date format
                         datetime.strptime(end_date, "%Y-%m-%d")
                         date_filter["$lte"] = end_date
                     except ValueError:
                         raise HTTPException(status_code=400, detail="Invalid end date format. Please use 'YYYY-MM-DD'")
-
                 if date_filter:
                     query["booking_date"] = date_filter
+
+            # Search filter
             if search:
                 search = search.strip()
                 if not search:
@@ -670,47 +697,61 @@ class BookingManager:
                     {"user_name": search_regex},
                     {"service_name": search_regex},
                     {"business_name": search_regex},
-                    # Add more fields for searching if needed
                 ]
 
-            bookings = await booking_collection.find(query).to_list(None)
+            # Fetch bookings and convert immediately
+            raw_bookings = await booking_collection.find(query).to_list(None)
+            bookings = [convert_object_ids(booking) for booking in raw_bookings]
 
+            # Process each booking
             for booking in bookings:
-                booking["id"] = str(booking["_id"])
-                booking.pop("_id", None)
-                user_id = booking["user_id"]
-                user = await user_collection.find_one({"_id": ObjectId(user_id)})
-                if user:
-                    booking["user_name"] = user["first_name"]
-                    booking["user_email"] = user["email"]
-                    booking["user_image"] = user.get("user_image")
-                    booking["user_image_url"] = user.get("user_image_url")
-                vendor_id = booking["vendor_id"]
-                vendor = await vendor_collection.find_one({"_id": vendor_id})
+                # Remove _id and set id
+                if "_id" in booking:
+                    booking["id"] = booking["_id"]
+                    del booking["_id"]
+
+                # User information
+                user_id = booking.get("user_id")
+                if user_id:
+                    user = await user_collection.find_one({"_id": ObjectId(user_id)})
+                    if user:
+                        user_data = convert_object_ids(user)
+                        booking["user_name"] = user_data.get("first_name", "")
+                        booking["user_email"] = user_data.get("email", "")
+                        booking["user_image"] = user_data.get("user_image")
+                        booking["user_image_url"] = user_data.get("user_image_url")
+
+                # Vendor information
                 vendor_id = booking.get("vendor_id")
                 if vendor_id:
                     vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
                     if vendor:
-                        booking["business_name"] = vendor.get("business_name")  # Fetch business name
-                        booking["business_type"] = vendor.get("business_type")
+                        vendor_data = convert_object_ids(vendor)
+                        booking["business_name"] = vendor_data.get("business_name")
+                        booking["business_type"] = vendor_data.get("business_type")
 
-                        vendor_user_id = vendor.get("_id")  # Use .get() to avoid KeyError
-                        if vendor_user_id:  # Only query if vendor_user_id exists
-                            vendor_user = await user_collection.find_one({"vendor_id": ObjectId(vendor_user_id)})
-                            if vendor_user:
-                                booking["vendor_email"] = vendor_user.get("email")
-                                booking["vendor_name"] = vendor_user.get("first_name")
-                booking["user_id"] = str(booking["user_id"])
-                booking["vendor_id"] = str(booking["vendor_id"])
-                category_id = booking["category_id"]
-                service_id = booking["service_id"]
-                category = await category_collection.find_one({"_id": category_id})
-                booking["category_id"] = str(booking["category_id"])
-                booking["category_name"] = category.get("name") if category else None
+                        # Vendor user information
+                        vendor_user = await user_collection.find_one({"vendor_id": ObjectId(vendor_id)})
+                        if vendor_user:
+                            vendor_user_data = convert_object_ids(vendor_user)
+                            booking["vendor_email"] = vendor_user_data.get("email")
+                            booking["vendor_name"] = vendor_user_data.get("first_name")
 
-                service = await services_collection.find_one({"_id": service_id})
-                booking["service_id"] = str(booking["service_id"])
-                booking["service_name"] = service.get("name") if service else None
+                # Category information
+                category_id = booking.get("category_id")
+                if category_id:
+                    category = await category_collection.find_one({"_id": ObjectId(category_id)})
+                    if category:
+                        category_data = convert_object_ids(category)
+                        booking["category_name"] = category_data.get("name")
+
+                # Service information
+                service_id = booking.get("service_id")
+                if service_id:
+                    service = await services_collection.find_one({"_id": ObjectId(service_id)})
+                    if service:
+                        service_data = convert_object_ids(service)
+                        booking["service_name"] = service_data.get("name")
 
             total_bookings = await booking_collection.count_documents(query)
 
@@ -941,17 +982,17 @@ class BookingManager:
                     "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                 }
 
-                if payment_confirmation_enabled:
-                    background_tasks.add_task(
-                        send_email, to_email=current_user.email, source="Booking Confirmation", context=user_context
-                    )
-                background_tasks.add_task(
-                    send_email,
-                    to_email=vendor_user.get("email") if vendor_user else vendor_user_obj.get("email"),
-                    source="Booking Notification",
-                    context=vendor_context,
-                    cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
-                )
+                # if payment_confirmation_enabled:
+                #     background_tasks.add_task(
+                #         send_email, to_email=current_user.email, source="Booking Confirmation", context=user_context
+                #     )
+                # background_tasks.add_task(
+                #     send_email,
+                #     to_email=vendor_user.get("email") if vendor_user else vendor_user_obj.get("email"),
+                #     source="Booking Notification",
+                #     context=vendor_context,
+                #     cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
+                # )
 
                 return {
                     "data": {
@@ -1010,17 +1051,17 @@ class BookingManager:
                     "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                 }
 
-                if payment_confirmation_enabled:
-                    background_tasks.add_task(
-                        send_email, to_email=current_user.email, source="Booking Confirmation", context=user_context
-                    )
-                background_tasks.add_task(
-                    send_email,
-                    to_email=vendor_user.get("email") if vendor_user else vendor_user_obj.get("email"),
-                    source="Booking Notification",
-                    context=vendor_context,
-                    cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
-                )
+                # if payment_confirmation_enabled:
+                #     background_tasks.add_task(
+                #         send_email, to_email=current_user.email, source="Booking Confirmation", context=user_context
+                #     )
+                # background_tasks.add_task(
+                #     send_email,
+                #     to_email=vendor_user.get("email") if vendor_user else vendor_user_obj.get("email"),
+                #     source="Booking Notification",
+                #     context=vendor_context,
+                #     cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
+                # )
 
                 return {
                     "data": {
