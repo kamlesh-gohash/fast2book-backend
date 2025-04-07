@@ -621,3 +621,25 @@ async def all_email_list(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.get("/customer-list", status_code=status.HTTP_200_OK)
+async def customer_list(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        result = await user_manager.get_all_customer(
+            current_user=current_user,
+        )
+        return success({"message": "Customer list", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

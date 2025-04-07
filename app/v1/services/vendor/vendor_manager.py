@@ -919,7 +919,7 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def vendor_sign_up(self, vendor_request: SignUpVendorRequest):
+    async def vendor_sign_up(self, vendor_request: SignUpVendorRequest, background_tasks: BackgroundTasks):
         try:
             existing_vendor = None
 
@@ -947,7 +947,7 @@ class VendorManager:
                     source = "Activation_code"
                     context = {"otp": otp, "to_email": vendor_request.email, "name": vendor_request.first_name}
                     to_email = vendor_request.email
-                    await send_email(to_email, source, context)
+                    background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
 
                 # Send OTP to phone if provided
                 if vendor_request.phone:
@@ -1053,7 +1053,7 @@ class VendorManager:
                 source = "Activation_code"
                 context = {"otp": otp}
                 to_email = vendor_request.email
-                await send_email(to_email, source, context)
+                background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
             elif vendor_request.phone:
                 to_phone = vendor_request.phone
                 await send_sms_on_phone(to_phone, otp, expiry_minutes)

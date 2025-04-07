@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 import bcrypt
+import httpx
 
 from bcrypt import gensalt, hashpw
 from beanie import Link
@@ -1831,66 +1832,338 @@ class UserManager:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+    # async def get_vendor_list(self, request: Request, current_user: Optional[User] = None):
+    #     try:
+    #         user = current_user
+    #         lat = request.query_params.get("lat")
+    #         lng = request.query_params.get("lng")
+
+    #         # Prepare geo filter if location is available
+    #         geo_filter = []
+    #         if user and user.user_location:
+    #             # Use authenticated user's location
+    #             user_location = user.user_location
+    #             radius_km = 10
+    #             radius_radians = radius_km / 6378.1
+    #             geo_filter = [
+    #                 {
+    #                     "$addFields": {
+    #                         "geo_point": {
+    #                             "type": "Point",
+    #                             "coordinates": [
+    #                                 {"$toDouble": "$location.geometry.location.lng"},
+    #                                 {"$toDouble": "$location.geometry.location.lat"},
+    #                             ],
+    #                         }
+    #                     }
+    #                 },
+    #                 {
+    #                     "$match": {
+    #                         "geo_point": {
+    #                             "$geoWithin": {"$centerSphere": [user_location["coordinates"], radius_radians]}
+    #                         }
+    #                     }
+    #                 },
+    #             ]
+    #         elif lat and lng:
+    #             try:
+    #                 lat_float = float(lat)
+    #                 lng_float = float(lng)
+    #                 radius_km = 10
+    #                 radius_radians = radius_km / 6378.1
+    #                 geo_filter = [
+    #                     {
+    #                         "$addFields": {
+    #                             "geo_point": {
+    #                                 "type": "Point",
+    #                                 "coordinates": [
+    #                                     {"$toDouble": "$location.geometry.location.lng"},
+    #                                     {"$toDouble": "$location.geometry.location.lat"},
+    #                                 ],
+    #                             }
+    #                         }
+    #                     },
+    #                     {
+    #                         "$match": {
+    #                             "geo_point": {"$geoWithin": {"$centerSphere": [[lng_float, lat_float], radius_radians]}}
+    #                         }
+    #                     },
+    #                 ]
+    #             except ValueError:
+    #                 pass
+
+    #         pipeline = [
+    #             {"$match": {"status": "active"}},
+    #             {
+    #                 "$lookup": {
+    #                     "from": "services",
+    #                     "localField": "_id",
+    #                     "foreignField": "category_id",
+    #                     "pipeline": [
+    #                         {"$match": {"status": "active"}},
+    #                         {
+    #                             "$project": {
+    #                                 "_id": {"$toString": "$_id"},
+    #                                 "name": 1,
+    #                                 "service_image": 1,
+    #                                 "service_image_url": 1,
+    #                                 "category_name": 1,
+    #                                 "category_slug": 1,
+    #                             }
+    #                         },
+    #                     ],
+    #                     "as": "services",
+    #                 }
+    #             },
+    #             {
+    #                 "$lookup": {
+    #                     "from": "vendors",
+    #                     "let": {"category_id_str": {"$toString": "$_id"}},
+    #                     "pipeline": [
+    #                         {
+    #                             "$match": {
+    #                                 "$expr": {"$eq": ["$category_id", "$$category_id_str"]},
+    #                                 "status": "active",
+    #                                 "is_subscription": True,
+    #                             }
+    #                         },
+    #                         *geo_filter,
+    #                         {
+    #                             "$lookup": {
+    #                                 "from": "users",
+    #                                 "let": {"vendor_id": {"$toString": "$_id"}},
+    #                                 "pipeline": [
+    #                                     {"$match": {"$expr": {"$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]}}},
+    #                                     {"$match": {"roles": "vendor_user"}},
+    #                                     {
+    #                                         "$project": {
+    #                                             "_id": {"$toString": "$_id"},
+    #                                             "first_name": 1,
+    #                                             "last_name": 1,
+    #                                             "user_image": 1,
+    #                                             "user_image_url": 1,
+    #                                         }
+    #                                     },
+    #                                 ],
+    #                                 "as": "creator_user",
+    #                             }
+    #                         },
+    #                         {
+    #                             "$lookup": {
+    #                                 "from": "users",
+    #                                 "let": {"vendor_id": {"$toString": "$_id"}},
+    #                                 "pipeline": [
+    #                                     {"$match": {"$expr": {"$eq": [{"$toString": "$vendor_id"}, "$$vendor_id"]}}},
+    #                                     {
+    #                                         "$project": {
+    #                                             "_id": {"$toString": "$_id"},
+    #                                             "first_name": 1,
+    #                                             "last_name": 1,
+    #                                             "user_image": 1,
+    #                                             "user_image_url": 1,
+    #                                         }
+    #                                     },
+    #                                 ],
+    #                                 "as": "vendor_user",
+    #                             }
+    #                         },
+    #                         {
+    #                             "$facet": {
+    #                                 "business_vendors": [
+    #                                     {"$match": {"business_type": "business"}},
+    #                                     {"$unwind": "$creator_user"},
+    #                                     {"$addFields": {"user_details": "$creator_user"}},
+    #                                 ],
+    #                                 "non_business_vendors": [
+    #                                     {"$match": {"business_type": {"$ne": "business"}}},
+    #                                     {"$unwind": "$vendor_user"},  # Expand vendor_user array
+    #                                     {"$addFields": {"user_details": "$vendor_user"}},
+    #                                 ],
+    #                             }
+    #                         },
+    #                         {
+    #                             "$project": {
+    #                                 "vendors": {"$concatArrays": ["$business_vendors", "$non_business_vendors"]}
+    #                             }
+    #                         },
+    #                         {"$unwind": "$vendors"},  # Flatten the merged array
+    #                         {"$replaceRoot": {"newRoot": "$vendors"}},  # Promote vendor docs to root
+    #                         # Lookup vendor ratings
+    #                         {
+    #                             "$lookup": {
+    #                                 "from": "vendor_ratings",
+    #                                 "let": {"vendor_user_id": "$user_details._id"},
+    #                                 "pipeline": [
+    #                                     {"$match": {"$expr": {"$eq": ["$vendor_id", "$$vendor_user_id"]}}},
+    #                                     {
+    #                                         "$project": {
+    #                                             "_id": {"$toString": "$_id"},
+    #                                             "rating": 1,
+    #                                             "user_id": {"$toString": "$user_id"},
+    #                                         }
+    #                                     },
+    #                                 ],
+    #                                 "as": "ratings",
+    #                             }
+    #                         },
+    #                         {
+    #                             "$addFields": {
+    #                                 "average_rating": {
+    #                                     "$cond": {
+    #                                         "if": {"$gt": [{"$size": "$ratings"}, 0]},
+    #                                         "then": {"$divide": [{"$sum": "$ratings.rating"}, {"$size": "$ratings"}]},
+    #                                         "else": 0,
+    #                                     }
+    #                                 },
+    #                                 "vendor_id": "$user_details._id",
+    #                                 "vendor_first_name": "$user_details.first_name",
+    #                                 "vendor_last_name": "$user_details.last_name",
+    #                                 "vendor_image": "$user_details.user_image",
+    #                                 "vendor_image_url": "$user_details.user_image_url",
+    #                             }
+    #                         },
+    #                         {
+    #                             "$project": {
+    #                                 "_id": {"$toString": "$_id"},
+    #                                 "vendor_id": 1,
+    #                                 "business_name": 1,
+    #                                 "business_type": 1,
+    #                                 "vendor_first_name": 1,
+    #                                 "vendor_last_name": 1,
+    #                                 "vendor_image": 1,
+    #                                 "vendor_image_url": 1,
+    #                                 "average_rating": 1,
+    #                             }
+    #                         },
+    #                         {"$sort": {"average_rating": -1}},
+    #                     ],
+    #                     "as": "vendors",
+    #                 }
+    #             },
+    #             {"$addFields": {"vendors": {"$slice": ["$vendors", 0, 4]}}},
+    #             {
+    #                 "$project": {
+    #                     "_id": 0,
+    #                     "category": "$name",
+    #                     "category_slug": "$slug",
+    #                     "services": {
+    #                         "$map": {
+    #                             "input": "$services",
+    #                             "as": "service",
+    #                             "in": {
+    #                                 "service_id": "$$service._id",
+    #                                 "name": "$$service.name",
+    #                                 "service_image": "$$service.service_image",
+    #                                 "service_image_url": "$$service.service_image_url",
+    #                                 "category_name": "$$service.category_name",
+    #                                 "category_slug": "$$service.category_slug",
+    #                             },
+    #                         }
+    #                     },
+    #                     "vendors": {
+    #                         "$map": {
+    #                             "input": "$vendors",
+    #                             "as": "vendor",
+    #                             "in": {
+    #                                 "vendor_id": "$$vendor.vendor_id",
+    #                                 "business_name": "$$vendor.business_name",
+    #                                 "business_type": "$$vendor.business_type",
+    #                                 "vendor_first_name": "$$vendor.vendor_first_name",
+    #                                 "vendor_last_name": "$$vendor.vendor_last_name",
+    #                                 "vendor_image": "$$vendor.vendor_image",
+    #                                 "vendor_image_url": "$$vendor.vendor_image_url",
+    #                                 "average_rating": "$$vendor.average_rating",
+    #                             },
+    #                         }
+    #                     },
+    #                 }
+    #             },
+    #         ]
+
+    #         cursor = category_collection.aggregate(pipeline)
+    #         result = await cursor.to_list(length=100)
+    #         data = {}
+    #         for item in result:
+    #             category = item["category"]
+    #             services = item["services"]
+    #             vendors = item["vendors"]
+    #             data[category] = {"services": services, "vendors": vendors}
+
+    #         return data
+    #     except HTTPException:
+    #         raise
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+    #         )
+
     async def get_vendor_list(self, request: Request, current_user: Optional[User] = None):
         try:
-            user = current_user
-            lat = request.query_params.get("lat")
-            lng = request.query_params.get("lng")
+            client_ip = request.query_params.get("ipAddress")
 
-            # Prepare geo filter if location is available
-            geo_filter = []
-            if user and user.user_location:
-                # Use authenticated user's location
-                user_location = user.user_location
-                radius_km = 10
-                radius_radians = radius_km / 6378.1
-                geo_filter = [
-                    {
-                        "$addFields": {
-                            "geo_point": {
-                                "type": "Point",
-                                "coordinates": [
-                                    {"$toDouble": "$location.geometry.location.lng"},
-                                    {"$toDouble": "$location.geometry.location.lat"},
-                                ],
-                            }
-                        }
-                    },
-                    {
-                        "$match": {
-                            "geo_point": {
-                                "$geoWithin": {"$centerSphere": [user_location["coordinates"], radius_radians]}
-                            }
-                        }
-                    },
-                ]
-            elif lat and lng:
+            lat_float = None
+            lng_float = None
+
+            # Check if user exists and has location data
+            if current_user is not None:
+                # Assuming user_location is an attribute of User model
+                if hasattr(current_user, "user_location") and current_user.user_location:
+                    # Check if coordinates is an attribute or needs to be awaited
+                    if hasattr(current_user.user_location, "coordinates") and current_user.user_location.coordinates:
+                        coordinates = current_user.user_location.coordinates
+                        lng, lat = coordinates[0], coordinates[1]  # GeoJSON format: [lng, lat]
+                        try:
+                            lat_float = float(lat)
+                            lng_float = float(lng)
+                            print(f"Using user location coordinates: lat={lat_float}, lng={lng_float}")
+                        except ValueError:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Invalid latitude or longitude format in user data",
+                            )
+
+            # If no user location or no user, fall back to IP geolocation
+            if lat_float is None and lng_float is None and client_ip:
                 try:
-                    lat_float = float(lat)
-                    lng_float = float(lng)
-                    radius_km = 10
-                    radius_radians = radius_km / 6378.1
-                    geo_filter = [
-                        {
-                            "$addFields": {
-                                "geo_point": {
-                                    "type": "Point",
-                                    "coordinates": [
-                                        {"$toDouble": "$location.geometry.location.lng"},
-                                        {"$toDouble": "$location.geometry.location.lat"},
-                                    ],
-                                }
-                            }
-                        },
-                        {
-                            "$match": {
-                                "geo_point": {"$geoWithin": {"$centerSphere": [[lng_float, lat_float], radius_radians]}}
-                            }
-                        },
-                    ]
-                except ValueError:
-                    print("lllllllllllll")
-                    pass
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        response = await client.get(f"https://ipapi.co/json/")
+
+                        if response.status_code != 200:
+                            print(f"IP geolocation error: {response.status_code}")
+                        else:
+                            location_data = response.json()
+                            if "error" in location_data:
+                                print(f"IP geolocation service error: {location_data.get('error')}")
+                            else:
+                                lat_float = location_data.get("latitude")
+                                lng_float = location_data.get("longitude")
+
+                                if not lat_float or not lng_float:
+                                    print("Could not determine location from IP")
+                except Exception as e:
+                    print(f"Error during IP geolocation: {str(e)}")
+
+            # If still no coordinates, you might want to add a fallback here
+            if lat_float is None or lng_float is None:
+                print("No location data available, using fallback")
+                # lat_float, lng_float = await self.get_fallback_location()
+
+            radius_km = 10
+            radius_radians = radius_km / 6378.1
+            geo_filter = [
+                {
+                    "$addFields": {
+                        "geo_point": {
+                            "type": "Point",
+                            "coordinates": [
+                                {"$toDouble": "$location.geometry.location.lng"},
+                                {"$toDouble": "$location.geometry.location.lat"},
+                            ],
+                        }
+                    }
+                },
+                {"$match": {"geo_point": {"$geoWithin": {"$centerSphere": [[lng_float, lat_float], radius_radians]}}}},
+            ]
 
             pipeline = [
                 {"$match": {"status": "active"}},
@@ -1976,7 +2249,7 @@ class UserManager:
                                     ],
                                     "non_business_vendors": [
                                         {"$match": {"business_type": {"$ne": "business"}}},
-                                        {"$unwind": "$vendor_user"},  # Expand vendor_user array
+                                        {"$unwind": "$vendor_user"},
                                         {"$addFields": {"user_details": "$vendor_user"}},
                                     ],
                                 }
@@ -1986,9 +2259,8 @@ class UserManager:
                                     "vendors": {"$concatArrays": ["$business_vendors", "$non_business_vendors"]}
                                 }
                             },
-                            {"$unwind": "$vendors"},  # Flatten the merged array
-                            {"$replaceRoot": {"newRoot": "$vendors"}},  # Promote vendor docs to root
-                            # Lookup vendor ratings
+                            {"$unwind": "$vendors"},
+                            {"$replaceRoot": {"newRoot": "$vendors"}},
                             {
                                 "$lookup": {
                                     "from": "vendor_ratings",
@@ -2093,7 +2365,6 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as ex:
-            print(ex, "sssssssssssssss")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

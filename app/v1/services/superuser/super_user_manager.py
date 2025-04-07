@@ -1193,6 +1193,7 @@ class SuperUserManager:
         search: str = None,
         statuss: str = None,
     ):
+
         try:
             if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
                 raise HTTPException(
@@ -1207,10 +1208,9 @@ class SuperUserManager:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Search term cannot be empty")
                 search_regex = {"$regex": search, "$options": "i"}
                 query["$or"] = [
-                    {"first_name": search_regex},
-                    {"last_name": search_regex},
-                    {"email": search_regex},
-                    {"phone": search_regex},
+                    {"to_email": search_regex},
+                    {"subject": search_regex},
+                    {"context.user_name": search_regex},
                 ]
 
             if statuss:
@@ -1218,11 +1218,28 @@ class SuperUserManager:
                 if not statuss:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status cannot be empty")
                 query["status"] = statuss
-            email_list = await email_monitor_collection.find(query).skip(skip).limit(limit).to_list(length=limit)
 
-            for email in email_list:
-                email["id"] = str(email["_id"])
-                email.pop("_id", None)
+            pipeline = [
+                {"$match": query},
+                {"$sort": {"sent_at": -1}},  # Changed from created_at to sent_at
+                {"$skip": skip},
+                {"$limit": limit},
+                {
+                    "$project": {
+                        "id": {"$toString": "$_id"},
+                        "to_email": 1,
+                        "subject": 1,
+                        "source": 1,
+                        "status": 1,
+                        "message": 1,
+                        "context": 1,
+                        "sent_at": 1,
+                        "_id": 0,
+                    }
+                },
+            ]
+
+            email_list = await email_monitor_collection.aggregate(pipeline).to_list(length=limit)
 
             total_email_query = await email_monitor_collection.count_documents(query)
             total_pages = (total_email_query + limit - 1) // limit
@@ -1244,6 +1261,36 @@ class SuperUserManager:
                     "next": next_page,
                 },
             }
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def get_all_customer(self, current_user: User):
+        try:
+            pipeline = [
+                {
+                    "$match": {
+                        "roles": {"$regex": "^user$", "$options": "i"},
+                        "user_role": {"$ne": 2},  # Exclude user_role = 2
+                    }
+                },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "id": {"$toString": "$_id"},
+                        "first_name": 1,
+                        "last_name": 1,
+                        "email": 1,
+                        "phone": 1,
+                        "roles": 1,
+                    }
+                },
+            ]
+
+            customer_data = await user_collection.aggregate(pipeline).to_list(length=100)
+            return customer_data
 
         except HTTPException as e:
             raise e
