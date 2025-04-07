@@ -599,7 +599,6 @@ async def get_vendor_list(
     current_user: Optional[User] = Depends(get_current_user_optional),
     user_manager: UserManager = Depends(get_user_manager),
 ):
-    logger.debug(f"API endpoint hit with request: {request.query_params}")
     try:
         result = await user_manager.get_vendor_list(
             request=request,
