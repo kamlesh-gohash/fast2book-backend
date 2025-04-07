@@ -325,6 +325,7 @@ async def get_vendor_list_for_category(
             date=start_date,
             page=page,
             limit=limit,
+            request=request,
         )
         return success({"message": "Vendor list fetched successfully", "data": result})
     except HTTPException as http_ex:
@@ -598,15 +599,18 @@ async def get_vendor_list(
     current_user: Optional[User] = Depends(get_current_user_optional),
     user_manager: UserManager = Depends(get_user_manager),
 ):
+    logger.debug(f"API endpoint hit with request: {request.query_params}")
     try:
-        result = await user_manager.get_vendor_list(request=request, current_user=current_user)
+        result = await user_manager.get_vendor_list(
+            request=request,
+            current_user=current_user,
+        )
         return success({"message": "Vendors list found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex, "nnnnnnnnnnnnnnnn")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

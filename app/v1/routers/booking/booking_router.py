@@ -18,7 +18,14 @@ from fastapi import (
 
 from app.v1.dependencies import *
 from app.v1.middleware.auth import get_current_user, get_token_from_header
-from app.v1.models import booking_collection, services, user_collection
+from app.v1.models import (
+    booking_collection,
+    category_collection,
+    services,
+    services_collection,
+    user_collection,
+    vendor_collection,
+)
 from app.v1.models.booking import *
 from app.v1.schemas.booking.booking import *
 from app.v1.schemas.subscription.subscription_auth import CreateSubscriptionRequest, UpdateSubscriptionRequest
@@ -355,7 +362,6 @@ async def verify_payment(request: Request, payload: dict, background_tasks: Back
             }
             booking_result = await booking_collection.insert_one(db_booking_data)
             booking_id = booking_result.inserted_id
-            print(f"New booking created with ID: {booking_id}")
         else:
             # Update existing booking if it was created (for backward compatibility)
             if not temp_order_id:
@@ -409,7 +415,47 @@ async def verify_payment(request: Request, payload: dict, background_tasks: Back
                 source=source,
                 context=context,
             )
+        payment_confirmation_enabled = notification_settings.get("payment_confirmation", True)
+        if payment_confirmation_enabled:
+            vendor = await user_collection.find_one({"vendor_id": ObjectId(updated_booking.get("vendor_id"))})
+            vendor_obj = await vendor_collection.find_one({"_id": ObjectId(updated_booking.get("vendor_id"))})
+            vendor_user = await user_collection.find_one({"_id": ObjectId(updated_booking.get("vendor_user_id"))})
+            service = await services_collection.find_one({"_id": ObjectId(updated_booking.get("service_id"))})
+            category = await category_collection.find_one({"_id": ObjectId(updated_booking.get("category_id"))})
+            booking_date = updated_booking.get("booking_date")
+            time_slot = updated_booking.get("time_slot")
 
+            user_context = {
+                "vendor_name": f"{vendor_user.get('first_name', '')} {vendor_user.get('last_name', '')}",
+                "service_name": service.get("name"),
+                "category_name": category.get("name"),
+                "currency": "INR",
+                "booking_date": booking_date,
+                "time_slot": time_slot,
+                "user_name": f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}",
+                "location": vendor_obj.get("location", {}).get("formatted_address", "Not specified"),
+            }
+            vendor_context = {
+                "vendor_name": f"{vendor_user.get('first_name', '')} {vendor_user.get('last_name', '')}",
+                "service_name": service.get("name"),
+                "category_name": category.get("name"),
+                "currency": "INR",
+                "booking_date": booking_date,
+                "time_slot": time_slot,
+                "user_name": f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}",
+                "contact": user_data.get("phone"),
+                "location": vendor_obj.get("location", {}).get("formatted_address", "Not specified"),
+            }
+            background_tasks.add_task(
+                send_email, to_email=user_data.get("email"), source="Booking Confirmation", context=user_context
+            )
+            background_tasks.add_task(
+                send_email,
+                to_email=vendor_user.get("email") if vendor_user else vendor.get("email"),
+                source="Booking Notification",
+                context=vendor_context,
+                cc_email=vendor.get("email") if vendor.get("business_type") == "business" else None,
+            )
         return success(
             {
                 "message": "Payment verification successful",

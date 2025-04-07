@@ -66,7 +66,7 @@ async def create_vendor(
     try:
         # User registration logic
         result = await vendor_manager.create_vendor(
-            current_user=current_user, create_vendor_request=create_vendor_request
+            current_user=current_user, create_vendor_request=create_vendor_request, background_tasks=background_tasks
         )
         return success({"message": "Vendor created successfully", "data": result})
     except HTTPException as http_ex:
@@ -253,6 +253,7 @@ async def vendor_sign_in(
 
 @router.post("/sign-up", status_code=status.HTTP_201_CREATED)
 async def vendor_sign_up(
+    background_tasks: BackgroundTasks,
     vendor_request: SignUpVendorRequest,
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
@@ -260,7 +261,7 @@ async def vendor_sign_up(
     if validation_result:
         return validation_result
     try:
-        result = await vendor_manager.vendor_sign_up(vendor_request)
+        result = await vendor_manager.vendor_sign_up(vendor_request, background_tasks)
         return success({"message": "Vendor sign up successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
