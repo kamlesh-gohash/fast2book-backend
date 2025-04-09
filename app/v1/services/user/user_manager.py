@@ -7,7 +7,6 @@ import re
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 
-import aiohttp
 import bcrypt
 import httpx
 
@@ -778,7 +777,6 @@ class UserManager:
 
     async def get_vendor_list_for_category(
         self,
-        request: Request,
         category_slug: str,
         current_user: Optional[User] = None,
         service_id: Optional[str] = None,
@@ -814,86 +812,10 @@ class UserManager:
 
             current_user_id = str(current_user.id) if current_user else None
             user_location = None
-
             if current_user:
                 user = await user_collection.find_one({"_id": current_user.id})
                 if user and "user_location" in user and user["user_location"]["type"] == "Point":
                     user_location = user["user_location"]
-            if address and address.strip():
-                address_terms = [term.strip() for term in address.split(",") if term.strip()]
-                address_query = {
-                    "$and": [
-                        {"location.formatted_address": {"$regex": re.escape(term), "$options": "i"}}
-                        for term in address_terms
-                    ]
-                }
-                pipeline = [{"$match": {"$and": [vendor_filter, address_query]}}]
-            elif user_location:
-                radius_km = 10
-                radius_radians = radius_km / 6378.1
-                pipeline = [
-                    {"$match": vendor_filter},
-                    {
-                        "$addFields": {
-                            "geo_point": {
-                                "type": "Point",
-                                "coordinates": [
-                                    "$location.geometry.location.lng",
-                                    "$location.geometry.location.lat",
-                                ],
-                            }
-                        }
-                    },
-                    {
-                        "$match": {
-                            "geo_point": {
-                                "$geoWithin": {"$centerSphere": [user_location["coordinates"], radius_radians]}
-                            }
-                        }
-                    },
-                ]
-            else:
-                async with aiohttp.ClientSession() as session:
-                    client_ip = request.headers.get("X-Forwarded-For", request.client.host)
-                    api_key = "d9823851-8c05-4472-8bce-3e92b2fb8b19"
-                    url = f"https://api.ipgeolocation.io/ipgeo?apiKey={api_key}&ip={client_ip}"
-                    async with session.get(url) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            if data.get("latitude") and data.get("longitude"):
-                                ip_location = {
-                                    "type": "Point",
-                                    "coordinates": [float(data["longitude"]), float(data["latitude"])],
-                                }
-                                radius_km = 10
-                                radius_radians = radius_km / 6378.1
-                                pipeline = [
-                                    {"$match": vendor_filter},
-                                    {
-                                        "$addFields": {
-                                            "geo_point": {
-                                                "type": "Point",
-                                                "coordinates": [
-                                                    "$location.geometry.location.lng",
-                                                    "$location.geometry.location.lat",
-                                                ],
-                                            }
-                                        }
-                                    },
-                                    {
-                                        "$match": {
-                                            "geo_point": {
-                                                "$geoWithin": {
-                                                    "$centerSphere": [ip_location["coordinates"], radius_radians]
-                                                }
-                                            }
-                                        }
-                                    },
-                                ]
-                            else:
-                                raise HTTPException(status_code=500, detail="Failed to geolocate IP address")
-                        else:
-                            raise HTTPException(status_code=500, detail="No providers found in this location")
 
             if service_id or address:
                 search_query = {
@@ -903,6 +825,49 @@ class UserManager:
                     "location": address if address else None,
                 }
                 await search_query_collection.insert_one(search_query)
+
+            # Build the aggregation pipeline
+            pipeline = []
+
+            if address and address.strip():
+                address = address.strip()
+                pipeline.append(
+                    {
+                        "$match": {
+                            "$and": [
+                                vendor_filter,
+                                {"location.formatted_address": {"$regex": f"^{re.escape(address)}$", "$options": "i"}},
+                            ]
+                        }
+                    }
+                )
+            else:
+                pipeline.append({"$match": vendor_filter})
+                if user_location:
+                    radius_km = 10
+                    radius_radians = radius_km / 6378.1
+                    pipeline.extend(
+                        [
+                            {
+                                "$addFields": {
+                                    "geo_point": {
+                                        "type": "Point",
+                                        "coordinates": [
+                                            "$location.geometry.location.lng",
+                                            "$location.geometry.location.lat",
+                                        ],
+                                    }
+                                }
+                            },
+                            {
+                                "$match": {
+                                    "geo_point": {
+                                        "$geoWithin": {"$centerSphere": [user_location["coordinates"], radius_radians]}
+                                    }
+                                }
+                            },
+                        ]
+                    )
 
             pipeline.extend(
                 [
@@ -1367,7 +1332,7 @@ class UserManager:
                                     },
                                 }
                             }
-                        }
+                        },
                     },
                     {
                         "$match": {
@@ -1411,10 +1376,7 @@ class UserManager:
                 )
 
             total_vendors = await vendor_collection.count_documents(
-                {
-                    "location.formatted_address": {"$regex": f"^{re.escape(address.strip())}$", "$options": "i"},
-                    **vendor_filter,
-                }
+                {"location.formatted_address": {"$regex": f"^{re.escape(address)}$", "$options": "i"}, **vendor_filter}
                 if address and address.strip()
                 else vendor_filter
             )
