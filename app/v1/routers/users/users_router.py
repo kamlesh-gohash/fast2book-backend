@@ -325,7 +325,6 @@ async def get_vendor_list_for_category(
             date=start_date,
             page=page,
             limit=limit,
-            request=request,
         )
         return success({"message": "Vendor list fetched successfully", "data": result})
     except HTTPException as http_ex:
@@ -333,6 +332,7 @@ async def get_vendor_list_for_category(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
+        print(ex, "exxxx")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
         )
