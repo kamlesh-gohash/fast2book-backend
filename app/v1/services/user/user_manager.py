@@ -1387,6 +1387,7 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as e:
+            print(e, "kkkkkkkkkk")
             raise HTTPException(status_code=500, detail=str(e))
 
     async def create_support_request(self, support_request: Support, background_tasks: BackgroundTasks):
