@@ -2087,7 +2087,7 @@ class VendorManager:
 
                 # Update the vendor_services_collection with the updated services
                 vendor_service_update_result = await vendor_services_collection.update_one(
-                    {"vendor_id": ObjectId(id)},
+                    {"vendor_user_id": ObjectId(id)},
                     {"$set": {"services": updated_services}},
                 )
 
