@@ -305,6 +305,7 @@ async def get_service_list_for_category(category_slug: str, user_manager: UserMa
 
 @router.get("/vendor-list-for-category/{category_slug}", status_code=status.HTTP_200_OK)
 async def get_vendor_list_for_category(
+    request: Request,
     category_slug: str,
     service_id: str = None,  # Optional query parameter
     address: str = None,  # New optional query parameter
@@ -318,6 +319,7 @@ async def get_vendor_list_for_category(
         start_date = datetime.strptime(date, "%Y-%m-%d").date() if date else None
         # Pass service_id to the user manager
         result = await user_manager.get_vendor_list_for_category(
+            request=request,
             current_user=current_user,
             category_slug=category_slug,
             service_id=service_id,
@@ -332,7 +334,6 @@ async def get_vendor_list_for_category(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
-        print(ex, "exxxx")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
         )
