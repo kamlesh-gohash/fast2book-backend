@@ -1291,8 +1291,38 @@ class BookingManager:
 
     async def user_payment_history(self, current_user: User):
         try:
-            payment_history = await payment_collection.find({"user_id": str(current_user.id)}).to_list(length=None)
-            return payment_history
+            # Fetch all bookings for the current user
+            payment_history = await booking_collection.find({"user_id": ObjectId(current_user.id)}).to_list(length=None)
+
+            if not payment_history:
+                return {"message": "No payment history found", "data": []}
+
+            formatted_history = []
+            for booking in payment_history:
+                created_at_value = booking.get("created_at")
+                if isinstance(created_at_value, dict):
+                    date_str = created_at_value.get("$date", "1970-01-01T00:00:00Z")
+                    created_at = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                else:
+                    created_at = created_at_value if created_at_value else datetime.utcnow()
+
+                date_str_formatted = created_at.strftime("%d-%m-%Y")
+                time_str = created_at.strftime("%I:%M %p")
+
+                payment_id = booking.get("payment_id", "N/A")
+                order_id = booking.get("booking_order_id", "N/A")
+                if payment_id != "N/A" and order_id != "N/A":
+                    history_entry = {
+                        "order_id": order_id,
+                        "status": "Completed" if booking.get("payment_status") == "paid" else "Pending",
+                        "date": date_str_formatted,
+                        "time": time_str,
+                        "transaction_id": payment_id,
+                    }
+                    formatted_history.append(history_entry)
+
+            return formatted_history
+
         except HTTPException:
             raise
         except Exception as ex:
