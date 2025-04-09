@@ -504,8 +504,8 @@ class BookingManager:
                 vendor = await vendor_collection.find_one({"_id": ObjectId(booking.get("vendor_id"))})
                 vendor_user = await user_collection.find_one({"_id": ObjectId(booking.get("vendor_user_id"))})
 
-                if vendor and vendor_user:  # Check both exist before accessing
-                    booking["vendor_first_name"] = vendor_user.get("first_name")  # Fixed typo from vendor__first_name
+                if vendor and vendor_user:
+                    booking["vendor_first_name"] = vendor_user.get("first_name")
                     booking["vendor_last_name"] = vendor_user.get("last_name")
                     booking["vendor_email"] = vendor_user.get("email")
                     booking["vendor_phone"] = vendor_user.get("phone")
@@ -515,7 +515,6 @@ class BookingManager:
                     booking["specialization"] = vendor_user.get("specialization")
                     booking["business_name"] = vendor.get("business_name")
                 else:
-                    # Set default values when vendor or vendor_user is None
                     booking["vendor_first_name"] = None
                     booking["vendor_last_name"] = None
                     booking["vendor_email"] = None
@@ -526,32 +525,40 @@ class BookingManager:
                     booking["specialization"] = None
                     booking["business_name"] = None
 
-                # Safely parse time_slot
+                # Safely parse time_slot with fallback
                 time_slot = booking.get("time_slot", "")
+                booking_datetime = None
                 try:
-                    start_time = time_slot.split("-")[0].strip()
-                    if not start_time or not any(c.isdigit() for c in start_time):
-                        continue
-                    booking_datetime = tz.localize(
-                        datetime.strptime(booking["booking_date"] + " " + start_time, "%Y-%m-%d %I:%M %p")
-                    )
+                    start_time = time_slot.split("-")[0].strip() if "-" in time_slot else time_slot.strip()
+                    if start_time and any(c.isdigit() for c in start_time):
+                        booking_datetime = tz.localize(
+                            datetime.strptime(booking["booking_date"] + " " + start_time, "%Y-%m-%d %I:%M %p")
+                        )
+                    else:
+                        booking_datetime = tz.localize(datetime.strptime(booking["booking_date"], "%Y-%m-%d"))
                 except (ValueError, IndexError) as e:
-                    continue
+                    booking_datetime = tz.localize(datetime.strptime(booking["booking_date"], "%Y-%m-%d"))
 
                 booking_status = booking.get("booking_status", "").lower()
 
+                # Split into upcoming and past based on datetime
                 if booking_datetime >= current_datetime and booking_status not in ["cancelled", "completed"]:
                     upcoming_bookings.append(booking)
                 else:
+                    # Include past bookings with any status, but filter by status_filter if provided
                     if status_filter:
-                        if booking_status == status_filter.lower() and booking_status in ["completed", "cancelled"]:
+                        if booking_status == status_filter.lower() and booking_status in [
+                            "completed",
+                            "cancelled",
+                            "pending",
+                        ]:
                             past_bookings.append(booking)
                     else:
-                        if booking_status in ["completed", "cancelled"]:
-                            past_bookings.append(booking)
+                        # Include all past bookings regardless of status
+                        past_bookings.append(booking)
 
             def sort_by_date(bookings_list):
-                return sorted(bookings_list, key=lambda x: x["booking_date"])
+                return sorted(bookings_list, key=lambda x: x.get("booking_date", "") or "", reverse=True)
 
             upcoming_bookings = sort_by_date(upcoming_bookings)
             past_bookings = sort_by_date(past_bookings)
