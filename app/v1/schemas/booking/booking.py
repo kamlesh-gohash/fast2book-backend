@@ -51,7 +51,7 @@ class CreateBookingRequest(BaseModel):
     booking_date: str
     time_slot: Optional[str] = None
     status: StatusEnum = StatusEnum.Active
-    booking_status: BookingStatusEnum = BookingStatusEnum.pending
+    booking_status: BookingStatusEnum = BookingStatusEnum.Pending
     payment_status: PaymentStatusEnum = PaymentStatusEnum.unpaid
     created_at: datetime = Field(default_factory=datetime.utcnow)
     booking_order_id: Optional[str] = None

@@ -968,3 +968,21 @@ async def get_user_list_for_vendor(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.post("/complate-booking/{booking_id}", status_code=status.HTTP_200_OK)
+async def complate_booking(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.complate_booking(current_user=current_user, booking_id=booking_id)
+        return success({"message": "Booking completed successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

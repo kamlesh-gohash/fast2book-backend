@@ -734,7 +734,7 @@ class SuperUserManager:
 
             # Fetch latest 10 bookings sorted by 'created_at'
             bookings_cursor = (
-                booking_collection.find({"booking_status": "panding", "payment_status": "paid"})
+                booking_collection.find({"booking_status": "pending", "payment_status": "paid"})
                 .sort("created_at", DESCENDING)
                 .limit(10)
             )
@@ -1291,6 +1291,57 @@ class SuperUserManager:
 
             customer_data = await user_collection.aggregate(pipeline).to_list(length=100)
             return customer_data
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def create_booking_for_customer(
+        self,
+        current_user: User,
+        user_id: str,
+        vendor_id: str,
+        slot: str,
+        booking_date: str,
+        service_id: str,
+        category_id: str,
+        vendor_user_id: str,
+    ):
+        try:
+            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+
+            booking_data = {
+                "vendor_id": ObjectId(vendor_id),
+                "service_id": ObjectId(service_id),
+                "category_id": ObjectId(category_id),
+                "user_id": ObjectId(user_id),
+                "vendor_user_id": ObjectId(vendor_user_id) if vendor_user_id else None,
+                "booking_date": booking_date,
+                "time_slot": slot,
+                "payment_status": "paid",
+                "booking_status": "pending",
+                "created_at": datetime.now(),
+            }
+            booking = await booking_collection.insert_one(booking_data)
+            if booking:
+                booking_data["id"] = str(booking.inserted_id)
+                booking_data.pop("_id")
+                booking_data["service_id"] = str(booking_data["service_id"])
+                booking_data.pop("service_id")
+                booking_data["category_id"] = str(booking_data["category_id"])
+                booking_data.pop("category_id")
+                booking_data["vendor_id"] = str(booking_data["vendor_id"])
+                booking_data.pop("vendor_id")
+                booking_data["user_id"] = str(booking_data["user_id"])
+                booking_data.pop("user_id")
+                booking_data["vendor_user_id"] = str(booking_data["vendor_user_id"]) if vendor_user_id else None
+                booking_data.pop("vendor_user_id")
+
+            return booking_data
 
         except HTTPException as e:
             raise e

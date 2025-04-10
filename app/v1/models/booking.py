@@ -16,11 +16,11 @@ from app.v1.models.vendor import Vendor
 
 
 class BookingStatusEnum(str, Enum):
-    pending = "pending"
-    completed = "completed"
-    failed = "failed"
-    cancelled = "cancelled"
-    rescheduled = "rescheduled"
+    Pending = "pending"
+    Completed = "completed"
+    Failed = "failed"
+    Cancelled = "cancelled"
+    Rescheduled = "rescheduled"
 
 
 class PaymentStatusEnum(str, Enum):
@@ -39,7 +39,7 @@ class Bookings(BaseModel):
     service: Link[Service]
     booking_date: datetime
     status: StatusEnum = StatusEnum.Active
-    booking_status: BookingStatusEnum = BookingStatusEnum.pending
+    booking_status: BookingStatusEnum = BookingStatusEnum.Pending
     booking_confirm: bool = Field(default=False)
     payment_status: PaymentStatusEnum = PaymentStatusEnum.unpaid
     created_at: datetime = Field(default_factory=datetime.utcnow)
