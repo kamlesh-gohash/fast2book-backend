@@ -820,7 +820,6 @@ class UserManager:
                 user = await user_collection.find_one({"_id": current_user.id})
                 if user and "user_location" in user and user["user_location"]["type"] == "Point":
                     user_location = user["user_location"]
-                    print(user_location, "user_location")
             if address and address.strip():
                 address_terms = [term.strip() for term in address.split(",") if term.strip()]
                 matching_vendor_query = {
@@ -831,7 +830,6 @@ class UserManager:
                 }
 
                 matching_vendor = await vendor_collection.find_one(matching_vendor_query)
-                print(matching_vendor, "matching_vendor")
 
                 address_location = {
                     "type": "Point",
@@ -840,7 +838,7 @@ class UserManager:
                         matching_vendor["location"]["geometry"]["location"]["lat"],
                     ],
                 }
-                radius_km = 10
+                radius_km = 20
                 radius_radians = radius_km / 6378.1
 
                 pipeline = [
@@ -863,8 +861,7 @@ class UserManager:
                 ]
 
             elif user_location:
-                print(user_location, "user_location")
-                radius_km = 10
+                radius_km = 20
                 radius_radians = radius_km / 6378.1
                 pipeline = [
                     {"$match": vendor_filter},
