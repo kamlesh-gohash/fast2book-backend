@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
 
 from app.v1.dependencies import get_super_user_manager
 from app.v1.middleware.auth import check_permission, get_current_user, get_token_from_header
 from app.v1.models import User
 from app.v1.models.slots import *
+from app.v1.schemas.booking.booking import *
 from app.v1.schemas.superuser.superuser_auth import *
 from app.v1.services import SuperUserManager
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
@@ -634,6 +635,36 @@ async def customer_list(
             current_user=current_user,
         )
         return success({"message": "Customer list", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/create-booking-for-customer", status_code=status.HTTP_200_OK)
+async def create_booking_for_customer(
+    request: Request,
+    booking_data: CreateBookingRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    user_manager: SuperUserManager = Depends(get_super_user_manager),
+):
+    try:
+        result = await user_manager.create_booking_for_customer(
+            current_user=current_user,
+            user_id=booking_data.user_id,
+            vendor_id=booking_data.vendor_id,
+            slot=booking_data.time_slot,
+            booking_date=booking_data.booking_date,
+            service_id=booking_data.service_id,
+            category_id=booking_data.category_id,
+            vendor_user_id=booking_data.vendor_user_id,
+        )
+        return success({"message": "Booking created", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:

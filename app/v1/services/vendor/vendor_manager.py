@@ -1952,10 +1952,10 @@ class VendorManager:
 
     async def vendor_user_list_for_slot(self, current_user: User, vendor_id: str):
         try:
-            if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
-                )
+            # if "admin" not in [role.value for role in current_user.roles] and current_user.user_role != 2:
+            #     raise HTTPException(
+            #         status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
+            #     )
             if not ObjectId.is_valid(vendor_id):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid vendor ID")
             # vendor_details = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
@@ -2812,7 +2812,7 @@ class VendorManager:
             bookings_cursor = (
                 booking_collection.find(
                     {
-                        "booking_status": "panding",
+                        "booking_status": "pending",
                         "payment_status": "paid",
                         "vendor_id": ObjectId(current_user.vendor_id),
                     }
@@ -3185,14 +3185,25 @@ class VendorManager:
                 "user_id": ObjectId(user_id),
                 "vendor_user_id": ObjectId(vendor_user_id) if vendor_user_id else None,
                 "booking_date": booking_date,
-                "slot": slot,
-                "payment_status": "pending",
-                "booking_status": "panding",
+                "time_slot": slot,
+                "payment_status": "paid",
+                "booking_status": "pending",
                 "created_at": datetime.now(),
             }
             booking = await booking_collection.insert_one(booking_data)
             if booking:
                 booking_data["id"] = str(booking.inserted_id)
+                booking_data.pop("_id")
+                booking_data["service_id"] = str(booking_data["service_id"])
+                booking_data.pop("service_id")
+                booking_data["category_id"] = str(booking_data["category_id"])
+                booking_data.pop("category_id")
+                booking_data["vendor_id"] = str(booking_data["vendor_id"])
+                booking_data.pop("vendor_id")
+                booking_data["user_id"] = str(booking_data["user_id"])
+                booking_data.pop("user_id")
+                booking_data["vendor_user_id"] = str(booking_data["vendor_user_id"]) if vendor_user_id else None
+                booking_data.pop("vendor_user_id")
             return booking_data
 
         except HTTPException:
@@ -3225,6 +3236,46 @@ class VendorManager:
             user_list = await cursor.to_list(length=None)
 
             return user_list
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def complate_booking(self, current_user: User, booking_id: str):
+        try:
+            # Find the booking by ID
+            booking_obj = await booking_collection.find_one({"_id": ObjectId(booking_id)})
+            if not booking_obj:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found with given ID")
+
+            # Check current booking status
+            current_status = booking_obj.get("booking_status", "pending").lower()  # Default to "pending" if not set
+            if current_status in ["completed", "cancelled"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Booking cannot be completed because it is already {current_status}",
+                )
+
+            # Update booking status to "completed"
+            update_result = await booking_collection.update_one(
+                {"_id": ObjectId(booking_id)}, {"$set": {"booking_status": "completed", "updated_at": datetime.now()}}
+            )
+
+            if update_result.modified_count == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update booking status"
+                )
+
+            # Fetch the updated booking to return
+            updated_booking = await booking_collection.find_one({"_id": ObjectId(booking_id)})
+            return {
+                "booking_id": str(updated_booking["_id"]),
+                "status": updated_booking["booking_status"],
+                "updated_at": updated_booking.get("updated_at"),
+            }
 
         except HTTPException:
             raise

@@ -214,7 +214,7 @@ async def send_email(to_email: str, source: str, context: dict = None, cc_email:
         "subject": msg["Subject"],
         "source": source,
         "status": EmailStatus.FAILURE.value,
-        "message": "Pending send",
+        "message": "pending send",
         "context": context,
         "html_content": html_content,
         "sent_at": datetime.utcnow(),
