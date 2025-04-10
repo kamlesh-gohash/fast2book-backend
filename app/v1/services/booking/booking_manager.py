@@ -14,6 +14,7 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
 # from app.v1.utils.token import generate_jwt_token
 from fastapi import BackgroundTasks, Body, HTTPException, Query, Request, status
+from pytz import timezone
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import (
@@ -40,6 +41,17 @@ def convert_objectids_to_strings(data):
         return {key: convert_objectids_to_strings(value) for key, value in data.items()}
     elif isinstance(data, list):
         return [convert_objectids_to_strings(item) for item in data]
+    elif isinstance(data, ObjectId):
+        return str(data)
+    return data
+
+
+def convert_objectid_to_str(data):
+    """Recursively convert ObjectId to string in a dictionary or list."""
+    if isinstance(data, dict):
+        return {k: convert_objectid_to_str(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [convert_objectid_to_str(item) for item in data]
     elif isinstance(data, ObjectId):
         return str(data)
     return data
@@ -285,28 +297,23 @@ class BookingManager:
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            query = {}
+            query = {"vendor_id": ObjectId(vendor["_id"])}
             if start_date or end_date:
                 date_filter = {}
-
                 if start_date:
                     try:
-                        # Validate the date format
                         datetime.strptime(start_date, "%Y-%m-%d")
                         date_filter["$gte"] = start_date
                     except ValueError:
                         raise HTTPException(
                             status_code=400, detail="Invalid start date format. Please use 'YYYY-MM-DD'"
                         )
-
                 if end_date:
                     try:
-                        # Validate the date format
                         datetime.strptime(end_date, "%Y-%m-%d")
                         date_filter["$lte"] = end_date
                     except ValueError:
                         raise HTTPException(status_code=400, detail="Invalid end date format. Please use 'YYYY-MM-DD'")
-
                 if date_filter:
                     query["booking_date"] = date_filter
             if search:
@@ -320,62 +327,54 @@ class BookingManager:
                     {"business_name": search_regex},
                     {"category_name": search_regex},
                 ]
-            bookings = await booking_collection.find({"vendor_id": ObjectId(vendor["_id"]), **query}).to_list(None)
-            # Convert ObjectId to string in the response
+
+            bookings = await booking_collection.find(query).to_list(None)
+            if not bookings:
+                return []
+
+            # Process each booking
             for booking in bookings:
                 booking["id"] = str(booking["_id"])
                 booking.pop("_id", None)
-
-                # for booking in bookings:
-                #     booking["user_id"] = str(booking["user_id"])
-                #     booking["vendor_id"] = str(booking["vendor_id"])
-                #     booking["category_id"] = str(booking["category_id"])
-                #     booking["service_id"] = str(booking["service_id"])
-                # for booking in bookings:
-                #     booking["id"] = str(booking["_id"])
-                #     booking.pop("_id", None)
-
-                # Fetch user details
-                user_id = booking["user_id"]
-                user = await user_collection.find_one({"_id": ObjectId(user_id)})
-                if user:
-                    booking["user_name"] = user["first_name"]
-                    booking["user_email"] = user["email"]
-                    booking["user_image"] = user.get("user_image")
-                    booking["user_image_url"] = user.get("user_image_url")
-
-                # Fetch vendor details
-                vendor_id = booking["vendor_id"]
-                vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
-                if vendor:
-                    vendor_user_id = vendor["_id"]
-                    booking["business_name"] = vendor["business_name"]
-                    booking["business_type"] = vendor["business_type"]
-
-                # Fetch vendor user details
-
-                vendor_user = await user_collection.find_one({"vendor_id": ObjectId(vendor_id)})
-                if vendor.get("business_type") == "business":
-                    vendor_user = await user_collection.find_one({"created_by": str(vendor_user.get("_id"))})
-                booking["vendor_email"] = vendor_user["email"]
-                booking["vendor_name"] = vendor_user["first_name"]
-
-                # Fetch category details
-                category_id = booking["category_id"]
-                category = await category_collection.find_one({"_id": ObjectId(category_id)})
-                booking["category_name"] = category.get("name") if category else None
-
-                # Fetch service details
-                service_id = booking["service_id"]
-                service = await services_collection.find_one({"_id": ObjectId(service_id)})
-                booking["service_name"] = service.get("name") if service else None
-
-                # Convert ObjectId fields to string
                 booking["user_id"] = str(booking["user_id"])
                 booking["vendor_id"] = str(booking["vendor_id"])
                 booking["category_id"] = str(booking["category_id"])
                 booking["service_id"] = str(booking["service_id"])
 
+                # Fetch and enrich user details
+                user = await user_collection.find_one({"_id": ObjectId(booking["user_id"])})
+                if user:
+                    booking["user_name"] = user.get("first_name")
+                    booking["user_email"] = user.get("email")
+                    booking["user_image"] = user.get("user_image")
+                    booking["user_image_url"] = user.get("user_image_url")
+
+                # Fetch and enrich vendor details
+                vendor = await vendor_collection.find_one({"_id": ObjectId(booking["vendor_id"])})
+                if vendor:
+                    booking["business_name"] = vendor.get("business_name")
+                    booking["business_type"] = vendor.get("business_type")
+
+                    # Fetch vendor user details
+                    vendor_user = await user_collection.find_one({"vendor_id": ObjectId(booking["vendor_id"])})
+                    if vendor.get("business_type") == "business" and vendor_user:
+                        vendor_user = await user_collection.find_one({"created_by": str(vendor_user["_id"])})
+                    if vendor_user:
+                        booking["vendor_email"] = vendor_user.get("email")
+                        booking["vendor_name"] = vendor_user.get("first_name")
+
+                # Fetch and enrich category details
+                category = await category_collection.find_one({"_id": ObjectId(booking["category_id"])})
+                if category:
+                    booking["category_name"] = category.get("name")
+
+                # Fetch and enrich service details
+                service = await services_collection.find_one({"_id": ObjectId(booking["service_id"])})
+                if service:
+                    booking["service_name"] = service.get("name")
+
+            # Convert all ObjectId to strings recursively
+            bookings = convert_objectid_to_str(bookings)
             return bookings
 
         except HTTPException:
@@ -1159,8 +1158,8 @@ class BookingManager:
 
             try:
                 start_time, end_time = reason_for_reschulding.new_slot.split(" - ")
-                start_time_obj = datetime.strptime(start_time, "%H:%M").time()
-                end_time_obj = datetime.strptime(end_time, "%H:%M").time()
+                start_time_obj = datetime.strptime(start_time, "%I:%M %p").time()  # Handle AM/PM
+                end_time_obj = datetime.strptime(end_time, "%I:%M %p").time()
             except ValueError:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid time slot format")
 
@@ -1270,12 +1269,14 @@ class BookingManager:
             if not filtered_slots:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No slots found for {day_of_week}")
 
+            # Process slots to include max_seats and bookings_left
             for slot in filtered_slots:
                 if "start_time" in slot and isinstance(slot["start_time"], datetime):
                     slot["start_time"] = slot["start_time"].isoformat()
                 if "end_time" in slot and isinstance(slot["end_time"], datetime):
                     slot["end_time"] = slot["end_time"].isoformat()
 
+            updated_slots = []
             for slot in filtered_slots:
                 slot_start_time = slot["start_time"]
                 slot_end_time = slot["end_time"]
@@ -1287,9 +1288,20 @@ class BookingManager:
                         "time_slot": {"$gte": slot_start_time, "$lt": slot_end_time},
                     }
                 )
-                slot["total_bookings"] = total_bookings_for_slot
+                max_seats = slot.get("max_seat", 0)  # Assuming max_seat is stored in the slot, default to 0 if missing
+                bookings_left = max_seats - total_bookings_for_slot
 
-            return {"slots": filtered_slots}
+                updated_slots.append(
+                    {
+                        "start_time": slot_start_time,
+                        "end_time": slot_end_time,
+                        "max_seats": max_seats,
+                        "total_bookings": total_bookings_for_slot,
+                        "bookings_left": bookings_left,
+                    }
+                )
+
+            return {"slots": updated_slots}
 
         except HTTPException:
             raise
@@ -1298,13 +1310,14 @@ class BookingManager:
 
     async def user_payment_history(self, current_user: User):
         try:
-            # Fetch all bookings for the current user
             payment_history = await booking_collection.find({"user_id": ObjectId(current_user.id)}).to_list(length=None)
 
             if not payment_history:
                 return {"message": "No payment history found", "data": []}
 
             formatted_history = []
+            ist = timezone("Asia/Kolkata")
+
             for booking in payment_history:
                 created_at_value = booking.get("created_at")
                 if isinstance(created_at_value, dict):
@@ -1313,20 +1326,45 @@ class BookingManager:
                 else:
                     created_at = created_at_value if created_at_value else datetime.utcnow()
 
-                date_str_formatted = created_at.strftime("%d-%m-%Y")
-                time_str = created_at.strftime("%I:%M %p")
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone("UTC"))
+                created_at_ist = created_at.astimezone(ist)
+
+                date_str_formatted = created_at_ist.strftime("%d-%m-%Y")
+                time_str = created_at_ist.strftime("%I:%M %p")
 
                 payment_id = booking.get("payment_id", "N/A")
                 order_id = booking.get("booking_order_id", "N/A")
                 if payment_id != "N/A" and order_id != "N/A":
+                    booking_status = booking.get("booking_status", "N/A")
+                    if booking_status == "cancelled":
+                        booking_status_formatted = "Cancelled"
+                    elif booking_status == "completed":
+                        booking_status_formatted = "Completed"
+                    else:
+                        booking_status_formatted = "Pending"
+
+                    if booking_status_formatted == "Cancelled":
+                        payment_status = "Initiated"
+                    else:
+                        payment_status = "Paid" if booking.get("payment_status") == "paid" else "Pending"
+
                     history_entry = {
                         "order_id": order_id,
-                        "status": "Completed" if booking.get("payment_status") == "paid" else "Pending",
+                        "payment_status": payment_status,
+                        "booking_status": booking_status_formatted,
                         "date": date_str_formatted,
                         "time": time_str,
                         "transaction_id": payment_id,
+                        "payment_method": booking.get("payment_method", "N/A"),
+                        "created_at": created_at_ist,
                     }
                     formatted_history.append(history_entry)
+
+            formatted_history.sort(key=lambda x: x["created_at"], reverse=True)
+
+            for entry in formatted_history:
+                del entry["created_at"]
 
             return formatted_history
 

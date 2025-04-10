@@ -76,7 +76,7 @@ async def upload_file(
 @router.delete("/delete-file/{filename:path}", status_code=status.HTTP_200_OK)
 async def delete_file(filename: str):
     """
-    Deletes a file from S3 based on the provided filename (S3 object key).
+    Deletes a file from S3 based on the provided filename (S3 object key) and updates related database fields.
     """
     try:
         decoded_filename = urllib.parse.unquote(filename)
@@ -84,6 +84,7 @@ async def delete_file(filename: str):
         if not bucket_name:
             raise HTTPException(status_code=500, detail="Bucket name is not configured.")
         file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{decoded_filename}"
+
         # Initialize the S3 client
         s3_client = boto3.client(
             "s3",
@@ -128,22 +129,29 @@ async def delete_file(filename: str):
                 )
             ],
         }
+
         collections_to_update = collection_field_mapping.get(folder_name, [])
         for collection, fields in collections_to_update:
             for field_name, match_value in fields:
-                # Update documents where the field matches the specific value
-                result = await collection.update_many({field_name: match_value}, {"$set": {field_name: None}})
+                if "services" in field_name:  # Handle array fields in vendor_services_collection
+                    # Use arrayFilters to target specific elements in the services array
+                    await collection.update_many(
+                        {"services.service_image_url": match_value},  # Match documents with the URL in the array
+                        {"$set": {"services.$[elem].service_image_url": None}},
+                        array_filters=[{"elem.service_image_url": match_value}],
+                    )
+                    await collection.update_many(
+                        {"services.service_image": match_value},  # Match documents with the filename in the array
+                        {"$set": {"services.$[elem].service_image": None}},
+                        array_filters=[{"elem.service_image": match_value}],
+                    )
+                else:  # Handle non-array fields
+                    await collection.update_many({field_name: match_value}, {"$set": {field_name: None}})
 
         return success({"message": f"File deleted successfully and URL removed from database.", "data": None})
 
-    except HTTPException as e:
-        raise e
-    except (NoCredentialsError, PartialCredentialsError) as e:
-        return internal_server_error(
-            {"message": "S3 credentials are missing or invalid.", "error": str(e)},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
     except Exception as ex:
+        print(ex, "ex")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

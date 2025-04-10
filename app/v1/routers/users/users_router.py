@@ -305,6 +305,7 @@ async def get_service_list_for_category(category_slug: str, user_manager: UserMa
 
 @router.get("/vendor-list-for-category/{category_slug}", status_code=status.HTTP_200_OK)
 async def get_vendor_list_for_category(
+    request: Request,
     category_slug: str,
     service_id: str = None,  # Optional query parameter
     address: str = None,  # New optional query parameter
@@ -318,6 +319,7 @@ async def get_vendor_list_for_category(
         start_date = datetime.strptime(date, "%Y-%m-%d").date() if date else None
         # Pass service_id to the user manager
         result = await user_manager.get_vendor_list_for_category(
+            request=request,
             current_user=current_user,
             category_slug=category_slug,
             service_id=service_id,
@@ -710,6 +712,26 @@ async def get_user_ticket_list(
     try:
         result = await user_manager.get_user_ticket_list(request=request, current_user=current_user)
         return success({"message": "User ticket list found successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/notification-list", status_code=status.HTTP_200_OK)
+async def get_user_notification(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    try:
+        result = await user_manager.get_notification_list(request=request, current_user=current_user)
+        return success({"message": "User notification list found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
