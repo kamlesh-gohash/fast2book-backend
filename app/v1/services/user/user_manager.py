@@ -45,6 +45,8 @@ from app.v1.utils.email import generate_otp, send_email, send_sms_on_phone
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
+# from app.v1.utils.notification import send_push_notification
+
 logger = logging.getLogger(__name__)
 
 
@@ -200,6 +202,17 @@ class UserManager:
                         {"email": email},
                         {"$set": {"login_otp": otp, "login_otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
                     )
+                    # device_token = result.get("device_token")
+                    # if device_token:
+                    #     try:
+                    #         await send_push_notification(
+                    #             device_token=device_token,
+                    #             title="Your OTP Code",
+                    #             body=f"Your OTP is {otp}. It expires in 10 minutes.",
+                    #             data={"otp": otp, "type": "login"}
+                    #         )
+                    #     except Exception as e:
+                    #         print(f"Push notification failed: {str(e)}")
                     source = "Login With Otp"
                     context = {"otp": otp, "first_name": result.get("first_name")}
                     await send_email(email, source, context)
@@ -260,6 +273,17 @@ class UserManager:
                         {"phone": phone},
                         {"$set": {"login_otp": otp, "login_otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
                     )
+                    # device_token = result.get("device_token")
+                    # if device_token:
+                    #     try:
+                    #         await send_push_notification(
+                    #             device_token=device_token,
+                    #             title="Your OTP Code",
+                    #             body=f"Your OTP is {otp}. It expires in 10 minutes.",
+                    #             data={"otp": otp, "type": "login"}
+                    #         )
+                    #     except Exception as e:
+                    #         print(f"Push notification failed: {str(e)}")
                     await send_sms_on_phone(phone, otp, expiry_minutes=10)
                     return {"message": "OTP sent to your phone"}
 
@@ -428,7 +452,12 @@ class UserManager:
             )
 
     async def validate_otp(
-        self, email: Optional[str] = None, phone: Optional[int] = None, otp: str = None, otp_type: Optional[str] = None
+        self,
+        email: Optional[str] = None,
+        phone: Optional[int] = None,
+        otp: str = None,
+        otp_type: Optional[str] = None,
+        device_token: Optional[str] = None,
     ) -> dict:
         """
         Validates an OTP for the specified type ('login', 'forgot_password', 'resend_otp').
@@ -444,6 +473,9 @@ class UserManager:
             otp_field = f"{otp_type}_otp"
             otp_expires_field = f"{otp_type}_otp_expires"
 
+            device_token_update = {}
+            if device_token:
+                device_token_update["device_token"] = device_token
             if email:
                 user = await user_collection.find_one({"email": email})
                 if user is None:
@@ -456,13 +488,24 @@ class UserManager:
                     raise HTTPException(status_code=400, detail=f"Invalid OTP for {otp_type}")
                 if expires_at and datetime.utcnow() > expires_at:
                     raise HTTPException(status_code=400, detail=f"OTP for {otp_type} has expired")
-
+                if not user.get("device_token"):
+                    await user_collection.update_one(
+                        {"email": email},
+                        {
+                            "$set": {
+                                "device_token": device_token,
+                            }
+                        },
+                    )
                 # Clear the OTP fields after successful validation
                 await user_collection.update_one(
                     {"email": email},
                     {
                         "$unset": {otp_field: 1, otp_expires_field: 1},
-                        "$set": {"is_active": True if otp_type == "sign_up" else user.get("is_active")},
+                        "$set": {
+                            "is_active": True if otp_type == "sign_up" else user.get("is_active"),
+                            **device_token_update,
+                        },
                     },
                 )
 
@@ -514,8 +557,16 @@ class UserManager:
                     raise HTTPException(status_code=400, detail=f"Invalid OTP for {otp_type}")
                 if expires_at and datetime.utcnow() > expires_at:
                     raise HTTPException(status_code=400, detail=f"OTP for {otp_type} has expired")
+                if not user.get("device_token"):
+                    await user_collection.update_one(
+                        {"phone": phone},
+                        {
+                            "$set": {
+                                "device_token": device_token,
+                            }
+                        },
+                    )
 
-                # Clear the OTP fields after successful validation
                 await user_collection.update_one(
                     {"phone": phone},
                     {
@@ -523,6 +574,7 @@ class UserManager:
                             otp_field: None,
                             otp_expires_field: None,
                             "is_active": True if otp_type == "sign_up" else user.get("is_active"),
+                            **device_token_update,
                         }
                     },
                 )
@@ -703,33 +755,21 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def get_service_list_for_category(self, category_slug: str) -> List[Service]:
+    async def get_service_list_for_category(self, category_slug: str) -> dict:
         try:
             if not category_slug:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
 
+            # Fetch category
             category = await category_collection.find_one({"slug": category_slug})
             if not category:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
             category_id = str(category["_id"])
 
-            active_services = await services_collection.find(
-                {"category_id": category["_id"], "status": "active"}
-            ).to_list(length=None)
-            service_data = [
-                {"id": str(service["_id"]), "name": service["name"], "status": service["status"]}
-                for service in active_services
-            ]
-
-            top_services_pipeline = [
-                {
-                    "$match": {
-                        "category_id": PydanticObjectId(category_id),
-                    }
-                },
+            # Pipeline to get search counts for all services in the category
+            search_count_pipeline = [
+                {"$match": {"category_id": PydanticObjectId(category_id)}},
                 {"$group": {"_id": "$service_id", "search_count": {"$sum": 1}}},
-                {"$sort": {"search_count": -1}},
-                {"$limit": 3},
                 {
                     "$lookup": {
                         "from": "services",
@@ -741,40 +781,60 @@ class UserManager:
                                     "category_id": PydanticObjectId(category_id),
                                     "status": "active",
                                 }
-                            }
+                            },
+                            {
+                                "$project": {
+                                    "_id": {"$toString": "$_id"},
+                                    "name": 1,
+                                    "status": 1,
+                                }
+                            },
                         ],
                         "as": "service_info",
                     }
                 },
                 {"$unwind": "$service_info"},
-                {"$project": {"id": {"$toString": "$_id"}, "name": "$service_info.name", "search_count": 1}},
+                {
+                    "$project": {
+                        "id": {"$toString": "$_id"},
+                        "name": "$service_info.name",
+                        "status": "$service_info.status",
+                        "search_count": 1,
+                    }
+                },
             ]
 
-            top_services = await search_query_collection.aggregate(top_services_pipeline).to_list(length=None)
+            # Fetch all services with their search counts
+            search_results = await search_query_collection.aggregate(search_count_pipeline).to_list(length=None)
+            service_counts = {service["id"]: service["search_count"] for service in search_results}
+
+            # Fetch all active services for the category
+            active_services = await services_collection.find(
+                {"category_id": category["_id"], "status": "active"}
+            ).to_list(length=None)
+            service_data = [
+                {
+                    "id": str(service["_id"]),
+                    "name": service["name"],
+                    "status": service["status"],
+                    "search_count": service_counts.get(str(service["_id"]), 0),  # Default to 0 if not searched
+                }
+                for service in active_services
+            ]
+
+            # Sort services by search_count descending and take top 3 for top_services
+            top_services_data = sorted(service_data, key=lambda x: (-x["search_count"], x["id"]))[:3]
             top_services_data = [
                 {"id": service["id"], "name": service["name"], "search_count": service["search_count"]}
-                for service in top_services
+                for service in top_services_data
             ]
-
-            if len(top_services_data) < 3:
-                top_service_ids = {service["id"] for service in top_services_data}
-                additional_services = [service for service in service_data if service["id"] not in top_service_ids]
-                needed = 3 - len(top_services_data)
-                for service in additional_services[:needed]:
-                    top_services_data.append(
-                        {
-                            "id": service["id"],
-                            "name": service["name"],
-                            "search_count": 0,
-                        }
-                    )
 
             return {"services": service_data, "top_services": top_services_data}
         except HTTPException:
             raise
         except Exception as ex:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
     async def get_vendor_list_for_category(
@@ -1957,15 +2017,52 @@ class UserManager:
                 else:
                     raise HTTPException(status_code=500, detail=f"Failed to geolocate IP address: {ipaddress}")
 
+            search_pipeline = [
+                {
+                    "$group": {
+                        "_id": {"category_id": "$category_id", "service_id": "$service_id"},
+                        "search_count": {"$sum": 1},
+                    }
+                },
+                {"$sort": {"search_count": -1}},
+                {
+                    "$group": {
+                        "_id": "$_id.category_id",
+                        "services": {
+                            "$push": {"service_id": {"$toString": "$_id.service_id"}, "search_count": "$search_count"}
+                        },
+                    }
+                },
+                {
+                    "$project": {
+                        "_id": {"$toString": "$_id"},
+                        "services": {"$slice": ["$services", 4]},  # Limit to top 4 services
+                    }
+                },
+            ]
+
+            # Execute search pipeline
+            search_cursor = search_query_collection.aggregate(search_pipeline)
+            search_results = await search_cursor.to_list(length=None)
+            top_services_by_category = {
+                item["_id"]: {service["service_id"]: service["search_count"] for service in item["services"]}
+                for item in search_results
+            }
+            print("Top services by category:", top_services_by_category)
+
             pipeline = [
                 {"$match": {"status": "active"}},
                 {
                     "$lookup": {
                         "from": "services",
-                        "localField": "_id",
-                        "foreignField": "category_id",
+                        "let": {"category_id": {"$toString": "$_id"}},
                         "pipeline": [
-                            {"$match": {"status": "active"}},
+                            {
+                                "$match": {
+                                    "$expr": {"$eq": [{"$toString": "$category_id"}, "$$category_id"]},
+                                    "status": "active",
+                                }
+                            },
                             {
                                 "$project": {
                                     "_id": {"$toString": "$_id"},
@@ -1974,6 +2071,7 @@ class UserManager:
                                     "service_image_url": 1,
                                     "category_name": 1,
                                     "category_slug": 1,
+                                    "category_id": "$$category_id",
                                 }
                             },
                         ],
@@ -1992,7 +2090,7 @@ class UserManager:
                                     "is_subscription": True,
                                 }
                             },
-                            *geo_filter,  # Apply geo_filter here for both user location and IP
+                            *geo_filter,
                             {
                                 "$lookup": {
                                     "from": "users",
@@ -2110,20 +2208,7 @@ class UserManager:
                         "_id": 0,
                         "category": "$name",
                         "category_slug": "$slug",
-                        "services": {
-                            "$map": {
-                                "input": "$services",
-                                "as": "service",
-                                "in": {
-                                    "service_id": "$$service._id",
-                                    "name": "$$service.name",
-                                    "service_image": "$$service.service_image",
-                                    "service_image_url": "$$service.service_image_url",
-                                    "category_name": "$$service.category_name",
-                                    "category_slug": "$$service.category_slug",
-                                },
-                            }
-                        },
+                        "services": "$services",
                         "vendors": {
                             "$map": {
                                 "input": "$vendors",
@@ -2151,12 +2236,43 @@ class UserManager:
                 category = item["category"]
                 services = item["services"]
                 vendors = item["vendors"]
+                category_id = next((s["category_id"] for s in services if "category_id" in s), None)
+                if not category_id:
+                    print(f"Warning: No category_id found for {category}")
+                    continue
+
+                print(f"Raw services for {category} (category_id: {category_id}):", services)
+                # Add search_count to services
+                for service in services:
+                    search_count = top_services_by_category.get(category_id, {}).get(service["_id"], 0)
+                    service["search_count"] = search_count
+                    print(f"Service {service['_id']} ({service['name']}) search_count: {search_count}")
+
+                # Sort by search_count descending, then _id ascending
+                services.sort(key=lambda x: (-x["search_count"], x["_id"]))
+                services = services[:4]  # Limit to top 4
+                print(f"Sorted services for {category}:", services)
+
+                # Format services for response
+                services = [
+                    {
+                        "service_id": service["_id"],
+                        "name": service["name"],
+                        "service_image": service["service_image"],
+                        "service_image_url": service["service_image_url"],
+                        "category_name": service["category_name"],
+                        "category_slug": service["category_slug"],
+                        "search_count": service["search_count"],  # Include for debugging
+                    }
+                    for service in services
+                ]
                 data[category] = {"services": services, "vendors": vendors}
 
             return data
         except HTTPException:
             raise
         except Exception as ex:
+            print(ex, "ddddddd")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

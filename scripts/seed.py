@@ -2,10 +2,11 @@ from datetime import datetime
 
 from bcrypt import gensalt, hashpw
 
-from app.v1.models import User, category_collection, payment_collection
+from app.v1.models import User, category_collection, payment_collection, transfer_amount_collection
 from app.v1.models.category import Category
 from app.v1.models.payment import PaymentType
 from app.v1.models.permission import DEFAULT_MENU_STRUCTURE
+from app.v1.models.transfer_amount import TransferAmount
 
 
 def hash_password(password: str) -> str:
@@ -119,3 +120,20 @@ async def seed_payment_types():
             print(f"Payment type '{method['name']}' seeded successfully!")
         else:
             print(f"Payment type '{method['name']}' already exists!")
+
+
+async def seed_transfar_amount():
+    """Seed transfer amount."""
+    try:
+        # Check if any document exists using Beanie's count
+        existing = await TransferAmount.find().count()
+
+        if not existing:
+            transfer_amount = TransferAmount(value=0.0)
+            await transfer_amount.insert()  # Now this will work
+            print("Value Limit Added Successfully")
+        else:
+            print("Already set value limit")
+    except Exception as ex:
+        print(f"Error in Adding Value Limit: {str(ex)}")
+        raise

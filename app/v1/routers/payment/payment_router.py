@@ -79,3 +79,25 @@ async def update_payment(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.get("/get-transfer-amount", status_code=status.HTTP_200_OK)
+async def get_transfer_amount(
+    current_user: User = Depends(get_current_user),
+    payment_manager: PaymentManager = Depends(get_payment_manager),
+):
+    try:
+        result = await payment_manager.get_transfer_amount(
+            current_user=current_user,
+        )
+        return success({"message": "Transfer Value found successfully", "data": {"transfer_amount": result}})
+    except HTTPException as http_ex:
+        # Explicitly handle HTTPException and return its response
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

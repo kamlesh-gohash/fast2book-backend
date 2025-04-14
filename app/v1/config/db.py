@@ -10,6 +10,11 @@ from app.v1.models.user import User
 async def initiate_database():
     client = AsyncIOMotorClient(DATABASE_URL)
     await init_beanie(
-        database=client[DATABASE_NAME], document_models=["app.v1.models.user.User", "app.v1.models.category.Category"]
+        database=client[DATABASE_NAME],
+        document_models=[
+            "app.v1.models.user.User",
+            "app.v1.models.category.Category",
+            "app.v1.models.transfer_amount.TransferAmount",
+        ],
     )
     print("MongoDB Connected")

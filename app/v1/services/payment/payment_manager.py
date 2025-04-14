@@ -1,10 +1,13 @@
 # from app.v1.utils.token import generate_jwt_token
+import traceback
+
 from bson import ObjectId
 from fastapi import HTTPException, Request, status
 
 from app.v1.middleware.auth import get_current_user
 from app.v1.models import payment_collection
 from app.v1.models.payment import PaymentType
+from app.v1.models.transfer_amount import TransferAmount
 from app.v1.models.user import User
 
 
@@ -114,4 +117,30 @@ class PaymentManager:
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
+            )
+
+    async def get_transfer_amount(self, current_user: User):
+        try:
+            transfer_amount = await TransferAmount.find_one()
+            print("Transfer amount found:", transfer_amount)
+
+            if not transfer_amount:
+                print("No transfer amount configuration found")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Transfer amount configuration not found"
+                )
+
+            if not hasattr(transfer_amount, "value"):
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Transfer amount configuration is invalid"
+                )
+            print(transfer_amount.value, "fffffffff")
+
+            return transfer_amount.value
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

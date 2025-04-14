@@ -59,6 +59,7 @@ DEFAULT_MENU_STRUCTURE = [
             "reScheduleBookings": True,
             "totalCustomer": True,
             "appointmentList": True,
+            "overallBookings": True,
         },
     },
     {
@@ -103,7 +104,15 @@ DEFAULT_MENU_STRUCTURE = [
         "icon": "vendor-management",
         "path": "/super-admin/vendor-management",
         "status": True,
-        "actions": {"List": True, "addVendor": True, "editVendor": True, "deleteVendor": True, "vendorStatus": True},
+        "actions": {
+            "List": True,
+            "addVendor": True,
+            "editVendor": True,
+            "deleteVendor": True,
+            "vendorStatus": True,
+            "view": True,
+            "viewRating": True,
+        },
     },
     {
         "id": "costumer-management",
@@ -117,6 +126,7 @@ DEFAULT_MENU_STRUCTURE = [
             "editCostumer": True,
             "deleteCostumer": True,
             "costumerStatus": True,
+            "view": True,
         },
     },
     {
@@ -133,7 +143,7 @@ DEFAULT_MENU_STRUCTURE = [
         "icon": "booking",
         "path": "/super-admin/booking-management",
         "status": True,
-        "actions": {"List": True},
+        "actions": {"List": True, "createBooking": True},
     },
     {
         "id": "blog-management",
@@ -141,7 +151,28 @@ DEFAULT_MENU_STRUCTURE = [
         "icon": "blog-management",
         "path": "/super-admin/blog-management",
         "status": True,
-        "actions": {"List": True, "addBlog": True, "editBlog": True, "deleteBlog": True, "blogStatus": True},
+        "actions": {
+            "List": True,
+            "addBlog": True,
+            "editBlog": True,
+            "deleteBlog": True,
+            "blogStatus": True,
+            "view": True,
+        },
+    },
+    {
+        "id": "video-management",
+        "title": "Video Management",
+        "icon": "video-management",
+        "path": "/super-admin/video-management",
+        "status": True,
+        "actions": {
+            "List": True,
+            "addVideo": True,
+            "editVideo": True,
+            "deleteVideo": True,
+            "videoStatus": True,
+        },
     },
     {
         "id": "permissions-management",
@@ -157,7 +188,23 @@ DEFAULT_MENU_STRUCTURE = [
         "icon": "support",
         "path": "/super-admin/support",
         "status": True,
-        "actions": {"List": True},
+        "actions": {"List": True, "reply": True},
+    },
+    {
+        "id": "vendor-inquiries",
+        "title": "Vendor Inquiries",
+        "icon": "vendor-inquiries",
+        "path": "/super-admin/vendor-inquiries",
+        "status": True,
+        "actions": {"List": True, "reply": True},
+    },
+    {
+        "id": "support-ticket",
+        "title": "Support Ticket",
+        "icon": "support-ticket",
+        "path": "/super-admin/support-ticket",
+        "status": True,
+        "actions": {"List": True, "reply": True},
     },
     {
         "id": "payment-management",
@@ -166,6 +213,16 @@ DEFAULT_MENU_STRUCTURE = [
         "path": "/super-admin/payment-configuration",
         "status": True,
         "actions": {"List": True, "editPermissions": True, "permissionsStatus": True},
+    },
+    {
+        "id": "email-list",
+        "title": "All Email List",
+        "icon": "email-list",
+        "path": "/super-admin/email-list",
+        "status": True,
+        "actions": {
+            "List": True,
+        },
     },
     {
         "id": "slot",

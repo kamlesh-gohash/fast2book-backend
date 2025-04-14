@@ -760,23 +760,21 @@ class SuperUserManager:
                 booking_data.append(
                     {
                         "booking_id": str(booking["_id"]),
-                        "user_name": user.get("first_name") if user else None,  # Safely access 'first_name'
-                        "vendor_name": (
-                            vendor_user_name.get("first_name") if vendor_user_name else None
-                        ),  # Safely access 'first_name'
-                        "category_name": category.get("name") if category else None,  # Safely access 'name'
-                        "service_name": service.get("name") if service else None,  # Safely access 'name'
+                        "user_name": user.get("first_name") if user else None,
+                        "vendor_name": (vendor_user_name.get("first_name") if vendor_user_name else None),
+                        "category_name": category.get("name") if category else None,
+                        "service_name": service.get("name") if service else None,
                         "booking_status": booking["booking_status"],
-                        "booking_confirm": booking.get("booking_confirm"),  # Safely access optional field
-                        "booking_date": booking["booking_date"],
-                        "time_slot": booking["time_slot"],
-                        "payment_status": booking["payment_status"],
-                        "payment_method": booking.get("payment_method"),  # Safely access optional field
-                        "amount": booking["amount"],
-                        "booking_cancel_reason": booking.get("booking_cancel_reason"),  # Safely access optional field
-                        "booking_order_id": booking.get("booking_order_id"),  # Safely access optional field
-                        "payment_id": booking.get("payment_id"),  # Safely access optional field
-                        "created_at": booking.get("created_at"),  # Safely access optional field
+                        "booking_confirm": booking.get("booking_confirm"),
+                        "booking_date": booking.get("booking_date"),
+                        "time_slot": booking.get("time_slot"),
+                        "payment_status": booking.get("payment_status"),
+                        "payment_method": booking.get("payment_method"),
+                        "amount": booking.get("amount"),
+                        "booking_cancel_reason": booking.get("booking_cancel_reason"),
+                        "booking_order_id": booking.get("booking_order_id"),
+                        "payment_id": booking.get("payment_id"),
+                        "created_at": booking.get("created_at"),
                     }
                 )
 
