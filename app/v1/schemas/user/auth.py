@@ -203,6 +203,7 @@ validate_otp_validator = zon.record(
         "email": zon.string().email().optional(),  # Optional email validation
         "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional phone validation
         "otp": zon.string().min(6).max(6),  # OTP validation
+        "device_token": zon.string().optional(),
     }
 ).refine(
     lambda data: data.get("email") or data.get("phone"),  # At least one required
@@ -215,6 +216,7 @@ class ValidateOtpRequest(BaseModel):
     phone: Optional[int] = None
     otp: str
     otp_type: str
+    device_token: Optional[str] = None
 
     def validate(self):
         # Ensure either email or phone is provided, but not both

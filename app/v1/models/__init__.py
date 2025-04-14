@@ -38,6 +38,8 @@ ticket_collection = get_model("tickets")
 vendor_query_collection = get_model("vendor_queries")
 email_monitor_collection = get_model("email_monitor")
 search_query_collection = get_model("search_query")
+notification_collection = get_model("notifications")
+transfer_amount_collection = get_model("transfer_amount")
 
 
 __all__ = {
@@ -63,4 +65,6 @@ __all__ = {
     "vendor_query_collection": vendor_query_collection,
     "email_monitor_collection": email_monitor_collection,
     "search_query_collection": search_query_collection,
+    "notification_collection": notification_collection,
+    "transfer_amount_collection": transfer_amount_collection,
 }

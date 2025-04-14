@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import ClassVar, Literal
 
+from beanie import Document
 from pydantic import BaseModel, Field, validator
 
 from app.v1.models.user import StatusEnum
