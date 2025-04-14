@@ -951,15 +951,24 @@ class BookingManager:
                 total_charges = amount + admin_charge
                 total_amount = int(total_charges * 100)
                 booking_data["amount"] = total_charges
+
+                vendor_amount = int(amount * 90 * 100 / 100)
                 razorpay_order = razorpay_client.order.create(
                     {
                         "amount": total_amount,
                         "currency": "INR",
                         "receipt": f"temp_booking_{temp_order_id}",
                         "payment_capture": 1,
+                        "transfers": [
+                            {
+                                "account": vendor.get("account_id"),
+                                "amount": vendor_amount,
+                                "currency": "INR",
+                                "on_hold": False,
+                            }
+                        ],
                     }
                 )
-
                 user_data = await user_collection.find_one({"_id": ObjectId(current_user.id)})
                 if not user_data:
                     raise HTTPException(status_code=404, detail="User not found")

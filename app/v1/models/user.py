@@ -203,6 +203,7 @@ class User(Document, BaseModel):
     specialization: Optional[str] = None
     user_location: Optional[dict] = Field(default=None, description="GeoJSON Point with user location")
     location_history: List[dict] = Field(default=[], description="History of previous locations with timestamps")
+    device_token: Optional[str] = None
 
     @field_validator("blood_group", mode="before")
     def validate_blood_group(cls, value):

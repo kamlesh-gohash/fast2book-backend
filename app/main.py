@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles  # Import StaticFiles
-from scripts.seed import seed_categorys, seed_data, seed_payment_types
+from scripts.seed import seed_categorys, seed_data, seed_payment_types, seed_transfar_amount
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # app.middleware("http")(add_response_format)
@@ -54,6 +54,7 @@ async def lifespan(app: FastAPI):
     await seed_data()
     await seed_payment_types()
     await seed_categorys()
+    await seed_transfar_amount()
 
     yield
 

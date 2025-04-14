@@ -539,3 +539,33 @@ class UpdateVendorSubscriptionRequest(BaseModel):
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
         return None
+
+
+class AddVendorAccountRequest(BaseModel):
+    vendor_id: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[int] = None
+    business_name: Optional[str] = None
+    business_type: Optional[str] = None
+    category: Optional[str] = None
+    subcategory: Optional[str] = None
+    street: Optional[str] = None
+    street2: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+    pan_number: Optional[str] = None
+    gst_number: Optional[str] = None
+    account_number: Optional[int] = None
+    bank_name: Optional[str] = None
+    ifsc_code: Optional[str] = None
+    account_holder_name: Optional[str] = None
+
+    def validate(self):
+        try:
+            vendor_subscription_update_validator.validate(self.dict())
+        except zon.error.ZonError as e:
+            error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
+            return validation_error({"message": f"Validation Error: {error_message}"})
+        return None
