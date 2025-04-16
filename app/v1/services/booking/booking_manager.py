@@ -27,6 +27,7 @@ from app.v1.models import (
     vendor_collection,
 )
 from app.v1.models.booking import *
+from app.v1.models.transfer_amount import TransferAmount
 from app.v1.models.user import User
 from app.v1.schemas.booking.booking import CancelBookingRequest, CreateBookingRequest
 from app.v1.utils.email import generate_otp, send_email
@@ -826,8 +827,16 @@ class BookingManager:
             async def fetch_vendor_user():
                 return await user_collection.find_one({"_id": ObjectId(vendor_user_id)}) if vendor_user_id else None
 
-            service, category, vendor, vendor_user_obj, vendor_user = await asyncio.gather(
-                fetch_service(), fetch_category(), fetch_vendor(), fetch_vendor_user_obj(), fetch_vendor_user()
+            async def fetch_transfer_amount():
+                return await TransferAmount.find_one({})
+
+            service, category, vendor, vendor_user_obj, vendor_user, transfer_amount = await asyncio.gather(
+                fetch_service(),
+                fetch_category(),
+                fetch_vendor(),
+                fetch_vendor_user_obj(),
+                fetch_vendor_user(),
+                fetch_transfer_amount(),
             )
 
             # Validate fetched data
@@ -841,6 +850,18 @@ class BookingManager:
                 raise HTTPException(status_code=404, detail="Vendor User not found")
             if vendor_user_id and not vendor_user:
                 raise HTTPException(status_code=404, detail="Vendor User not found")
+            if transfer_amount:
+                try:
+                    # Handle dictionary case
+                    transfer_value = (
+                        transfer_amount.get("value", 90)
+                        if isinstance(transfer_amount, dict)
+                        else getattr(transfer_amount, "value", 90)
+                    )
+                except AttributeError:
+                    transfer_value = 90
+            else:
+                transfer_value = 90
 
             # Validate booking slot
             booking_datetime = datetime.strptime(booking_date, "%Y-%m-%d")
@@ -951,8 +972,7 @@ class BookingManager:
                 total_charges = amount + admin_charge
                 total_amount = int(total_charges * 100)
                 booking_data["amount"] = total_charges
-
-                vendor_amount = int(amount * 90 * 100 / 100)
+                vendor_amount = int(amount * 100) if transfer_value == 0 else int(amount * transfer_value * 100 / 100)
                 razorpay_order = razorpay_client.order.create(
                     {
                         "amount": total_amount,

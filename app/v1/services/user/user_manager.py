@@ -2048,7 +2048,6 @@ class UserManager:
                 item["_id"]: {service["service_id"]: service["search_count"] for service in item["services"]}
                 for item in search_results
             }
-            print("Top services by category:", top_services_by_category)
 
             pipeline = [
                 {"$match": {"status": "active"}},
@@ -2238,20 +2237,15 @@ class UserManager:
                 vendors = item["vendors"]
                 category_id = next((s["category_id"] for s in services if "category_id" in s), None)
                 if not category_id:
-                    print(f"Warning: No category_id found for {category}")
                     continue
 
-                print(f"Raw services for {category} (category_id: {category_id}):", services)
-                # Add search_count to services
                 for service in services:
                     search_count = top_services_by_category.get(category_id, {}).get(service["_id"], 0)
                     service["search_count"] = search_count
-                    print(f"Service {service['_id']} ({service['name']}) search_count: {search_count}")
 
                 # Sort by search_count descending, then _id ascending
                 services.sort(key=lambda x: (-x["search_count"], x["_id"]))
-                services = services[:4]  # Limit to top 4
-                print(f"Sorted services for {category}:", services)
+                services = services[:4]
 
                 # Format services for response
                 services = [
@@ -2272,7 +2266,6 @@ class UserManager:
         except HTTPException:
             raise
         except Exception as ex:
-            print(ex, "ddddddd")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )

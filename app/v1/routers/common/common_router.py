@@ -151,7 +151,6 @@ async def delete_file(filename: str):
         return success({"message": f"File deleted successfully and URL removed from database.", "data": None})
 
     except Exception as ex:
-        print(ex, "ex")
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

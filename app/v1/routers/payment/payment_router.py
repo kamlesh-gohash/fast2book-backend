@@ -7,6 +7,7 @@ from app.v1.dependencies import get_payment_manager
 from app.v1.middleware.auth import check_permission, get_current_user, get_token_from_header
 from app.v1.models import User
 from app.v1.models.payment import PaymentType
+from app.v1.models.transfer_amount import TransferAmount
 from app.v1.models.user import StatusEnum
 from app.v1.schemas.payment_type.payment_type import UpdatePaymentRequest
 from app.v1.services.payment.payment_manager import PaymentManager
@@ -85,17 +86,43 @@ async def update_payment(
 async def get_transfer_amount(
     current_user: User = Depends(get_current_user),
     payment_manager: PaymentManager = Depends(get_payment_manager),
+    page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    search: str = Query(None, description="Search term for name or category_name"),
 ):
     try:
         result = await payment_manager.get_transfer_amount(
-            current_user=current_user,
+            current_user=current_user, page=page, limit=limit, search=search
         )
-        return success({"message": "Transfer Value found successfully", "data": {"transfer_amount": result}})
+        return success({"message": "Transfer Value found successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/update-transfer-amount", status_code=status.HTTP_200_OK)
+async def update_transfer_amount(
+    transfer_amount: TransferAmount,
+    current_user: User = Depends(get_current_user),
+    payment_manager: PaymentManager = Depends(get_payment_manager),
+):
+    try:
+        result = await payment_manager.update_payment_value(
+            current_user=current_user,
+            transfer_amount=transfer_amount,
+        )
+        return success({"message": "Transfer Value updated successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
