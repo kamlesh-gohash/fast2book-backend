@@ -1012,6 +1012,29 @@ async def add_vendor_account(
         )
 
 
+@router.post("/update-vendor-account", status_code=status.HTTP_200_OK)
+async def update_vendor_account(
+    request: Request,
+    vendor_data: AddVendorAccountRequest,
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.update_vendor_account(
+            request=request, current_user=current_user, vendor_data=vendor_data
+        )
+        return success({"message": "Vendor account updated successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
 @router.get("/business-categories", status_code=status.HTTP_200_OK)
 async def get_business_categories(
     current_user: User = Depends(get_current_user),
@@ -1033,7 +1056,7 @@ async def get_business_categories(
         )
 
 
-@router.post("/add-vendor-account-by-admin{vendor_id}", status_code=status.HTTP_200_OK)
+@router.post("/add-vendor-account-by-admin/{vendor_id}", status_code=status.HTTP_200_OK)
 async def add_vendor_account_by_admin(
     request: Request,
     vendor_id: str,
@@ -1049,6 +1072,50 @@ async def add_vendor_account_by_admin(
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
 
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/update-vendor-account-by-admin/{vendor_id}", status_code=status.HTTP_200_OK)
+async def update_vendor_account_by_admin(
+    request: Request,
+    vendor_id: str,
+    vendor_data: AddVendorAccountRequest,
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.update_vendor_account_by_admin(
+            request=request, current_user=current_user, vendor_id=vendor_id, vendor_data=vendor_data
+        )
+        return success({"message": "Vendor account updated successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-vendor-bank-account", status_code=status.HTTP_200_OK)
+async def get_vendor_bank_account(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.get_vendor_bank_account(request=request, current_user=current_user)
+        return success({"message": "Vendor bank account found successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:

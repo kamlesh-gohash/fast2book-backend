@@ -2844,13 +2844,13 @@ class VendorManager:
                         "vendor_name": vendor_user_name["first_name"] if vendor_user_name else None,
                         "category_name": category["name"] if category else None,
                         "service_name": service["name"] if service else None,
-                        "booking_status": booking["booking_status"],
+                        "booking_status": booking.get("booking_status"),
                         "booking_confirm": booking["booking_confirm"] if "booking_confirm" in booking else None,
-                        "booking_date": booking["booking_date"],
-                        "time_slot": booking["time_slot"],
+                        "booking_date": booking.get("booking_date"),
+                        "time_slot": booking.get("time_slot"),
                         "payment_status": booking["payment_status"] if "payment_status" in booking else None,
                         "payment_method": booking["payment_method"] if "payment_method" in booking else None,
-                        "amount": booking["amount"],
+                        "amount": booking.get("amount"),
                         "booking_cancel_reason": (
                             booking["booking_cancel_reason"] if "booking_cancel_reason" in booking else None
                         ),
@@ -3324,7 +3324,6 @@ class VendorManager:
             }
             stakeholder_payload = {k: v for k, v in stakeholder_payload.items() if v is not None}
             stakeholder_response = razorpay_client.stakeholder.create(account_id, stakeholder_payload)
-            print(stakeholder_response, "stakeholder_response")
             if not stakeholder_response.get("id"):
                 raise ValueError("Failed to create Stakeholder")
 
@@ -3361,18 +3360,157 @@ class VendorManager:
                     }
                 },
             )
-            return {
-                "account_id": account_id,
-                "stakeholder_id": stakeholder_id,
-                "product_id": product_id,
-                "product_update_response": product_update_response,
-            }
+
+            return vendor_account_data
 
         except razorpay.errors.BadRequestError as ex:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Razorpay error: {str(ex)}")
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def update_vendor_account(
+        self, request: Request, current_user: User, vendor_data: AddVendorAccountRequest
+    ) -> Dict[str, Any]:
+        try:
+            current_user_id = str(current_user.id)
+            vendor_data_dict = vendor_data.dict(exclude_none=True)
+            if not vendor_data_dict:
+                raise ValueError("No data provided for update")
+
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            account_id = vendor.get("account_id")
+            if not account_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="No Razorpay account associated with this vendor"
+                )
+
+            account_details = razorpay_client.account.fetch(account_id)
+            clarification_needed = account_details.get("clarifications_needed", {}).get("fields", [])
+
+            linked_account_payload = {}
+            if vendor_data.email and "email" in clarification_needed:
+                linked_account_payload["email"] = vendor_data.email
+            if vendor_data.phone and "phone" in clarification_needed:
+                linked_account_payload["phone"] = str(vendor_data.phone)
+            if vendor_data.business_name and "legal_business_name" in clarification_needed:
+                linked_account_payload["legal_business_name"] = vendor_data.business_name
+            if (vendor_data.category or vendor_data.subcategory) and "profile" in clarification_needed:
+                linked_account_payload["profile"] = {
+                    "category": vendor_data.category,
+                    "subcategory": vendor_data.subcategory,
+                }
+            if (
+                any(
+                    [
+                        vendor_data.street,
+                        vendor_data.street2,
+                        vendor_data.city,
+                        vendor_data.state,
+                        vendor_data.postal_code,
+                        vendor_data.country,
+                    ]
+                )
+                and "profile.addresses" in clarification_needed
+            ):
+                linked_account_payload["profile"] = linked_account_payload.get("profile", {})
+                linked_account_payload["profile"]["addresses"] = {
+                    "registered": {
+                        "street1": vendor_data.street,
+                        "street2": vendor_data.street2,
+                        "city": vendor_data.city,
+                        "state": vendor_data.state,
+                        "postal_code": vendor_data.postal_code,
+                        "country": vendor_data.country,
+                    }
+                }
+            if (vendor_data.pan_number or vendor_data.gst_number) and "legal_info" in clarification_needed:
+                linked_account_payload["legal_info"] = {
+                    "pan": vendor_data.pan_number,
+                    "gst": vendor_data.gst_number,
+                }
+
+            if linked_account_payload:
+                linked_account_response = razorpay_client.account.edit(account_id, linked_account_payload)
+                if not linked_account_response.get("id"):
+                    raise ValueError("Failed to update Linked Account")
+
+            if (vendor_data.account_holder_name or vendor_data.email) and (
+                "name" in clarification_needed or "email" in clarification_needed
+            ):
+                stakeholder_payload = {
+                    "name": vendor_data.account_holder_name or vendor_data.business_name or "Default Stakeholder",
+                    "email": vendor_data.email,
+                }
+                stakeholder_payload = {
+                    k: v for k, v in stakeholder_payload.items() if v is not None and k in clarification_needed
+                }
+                if stakeholder_payload:
+                    stakeholders = razorpay_client.stakeholder.all(account_id)
+                    stakeholderClarificationNeeded = (
+                        stakeholders.get("items", [{}])[0].get("clarifications_needed", {}).get("fields", [])
+                        if stakeholders.get("items")
+                        else []
+                    )
+                    if not any(field in stakeholderClarificationNeeded for field in stakeholder_payload.keys()):
+                        raise ValueError("No stakeholder fields are allowed for update based on clarification needs")
+                    stakeholder_id = stakeholders.get("items", [{}])[0].get("id") if stakeholders.get("items") else None
+                    if not stakeholder_id:
+                        raise ValueError("No stakeholder found for this account")
+                    stakeholder_response = razorpay_client.stakeholder.edit(
+                        account_id, stakeholder_id, stakeholder_payload
+                    )
+                    if not stakeholder_response.get("id"):
+                        raise ValueError("Failed to update Stakeholder")
+
+            if (
+                vendor_data.account_number or vendor_data.ifsc_code or vendor_data.account_holder_name
+            ) and "settlements" in clarification_needed:
+                product_config = razorpay_client.product.fetch_all(account_id)
+                product_id = product_config.get("items", [{}])[0].get("id") if product_config.get("items") else None
+                if not product_id:
+                    raise ValueError("No product configuration found")
+
+                product_update_payload = {
+                    "settlements": {
+                        "account_number": vendor_data.account_number,
+                        "ifsc_code": vendor_data.ifsc_code,
+                        "beneficiary_name": vendor_data.account_holder_name,
+                    },
+                    "tnc_accepted": True,
+                }
+                product_update_payload["settlements"] = {
+                    k: v for k, v in product_update_payload["settlements"].items() if v is not None
+                }
+                product_update_response = razorpay_client.product.edit(account_id, product_id, product_update_payload)
+                if not product_update_response.get("id"):
+                    raise ValueError("Failed to update product configuration")
+
+            vendor_account_data = vendor.get("vendor_account_data", [{}])[0] | vendor_data_dict
+            vendor_account_data = [vendor_account_data]
+
+            update_result = await vendor_collection.update_one(
+                {"_id": ObjectId(current_user.vendor_id)},
+                {"$set": {"vendor_account_data": vendor_account_data}},
+            )
+
+            if update_result.modified_count == 0:
+                raise ValueError("No changes applied to vendor account")
+
+            return vendor_account_data
+
+        except razorpay.errors.BadRequestError as ex:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Razorpay error: {str(ex)}")
+        except ValueError as ex:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ex))
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
             )
 
     async def get_business_categories(self, current_user: User, response_model=BusinessCategoryResponse):
@@ -3426,7 +3564,6 @@ class VendorManager:
             }
             stakeholder_payload = {k: v for k, v in stakeholder_payload.items() if v is not None}
             stakeholder_response = razorpay_client.stakeholder.create(account_id, stakeholder_payload)
-            print(stakeholder_response, "stakeholder_response")
             if not stakeholder_response.get("id"):
                 raise ValueError("Failed to create Stakeholder")
 
@@ -3450,6 +3587,9 @@ class VendorManager:
                 "tnc_accepted": True,
             }
             product_update_response = razorpay_client.product.edit(account_id, product_id, product_update_payload)
+            # vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_id)})
+            # if not vendor_user:
+            #     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
             vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
@@ -3472,6 +3612,196 @@ class VendorManager:
 
         except razorpay.errors.BadRequestError as ex:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Razorpay error: {str(ex)}")
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def update_vendor_account_by_admin(
+        self, request: Request, current_user: User, vendor_id: str, vendor_data: AddVendorAccountRequest
+    ) -> Dict[str, Any]:
+        try:
+            vendor_data_dict = vendor_data.dict(exclude_none=True)
+            if not vendor_data_dict:
+                raise ValueError("No data provided for update")
+
+            # Fetch the existing vendor
+            vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            account_id = vendor.get("account_id")
+            if not account_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="No Razorpay account associated with this vendor"
+                )
+
+            # Fetch account details to check clarification needs
+            account_details = razorpay_client.account.fetch(account_id)
+            clarification_needed = account_details.get("clarifications_needed", {}).get("fields", [])
+
+            # Prepare Razorpay account update payload (only editable fields)
+            linked_account_payload = {}
+            if vendor_data.email and "email" in clarification_needed:
+                linked_account_payload["email"] = vendor_data.email
+            if vendor_data.phone and "phone" in clarification_needed:
+                linked_account_payload["phone"] = str(vendor_data.phone)
+            if vendor_data.business_name and "legal_business_name" in clarification_needed:
+                linked_account_payload["legal_business_name"] = vendor_data.business_name
+            if (vendor_data.category or vendor_data.subcategory) and "profile" in clarification_needed:
+                linked_account_payload["profile"] = {
+                    "category": vendor_data.category,
+                    "subcategory": vendor_data.subcategory,
+                }
+            if (
+                any(
+                    [
+                        vendor_data.street,
+                        vendor_data.street2,
+                        vendor_data.city,
+                        vendor_data.state,
+                        vendor_data.postal_code,
+                        vendor_data.country,
+                    ]
+                )
+                and "profile.addresses" in clarification_needed
+            ):
+                linked_account_payload["profile"] = linked_account_payload.get("profile", {})
+                linked_account_payload["profile"]["addresses"] = {
+                    "registered": {
+                        "street1": vendor_data.street,
+                        "street2": vendor_data.street2,
+                        "city": vendor_data.city,
+                        "state": vendor_data.state,
+                        "postal_code": vendor_data.postal_code,
+                        "country": vendor_data.country,
+                    }
+                }
+            if (vendor_data.pan_number or vendor_data.gst_number) and "legal_info" in clarification_needed:
+                linked_account_payload["legal_info"] = {
+                    "pan": vendor_data.pan_number,
+                    "gst": vendor_data.gst_number,
+                }
+
+            # Update Razorpay account if there are changes
+            if linked_account_payload:
+                linked_account_response = razorpay_client.account.edit(account_id, linked_account_payload)
+                if not linked_account_response.get("id"):
+                    raise ValueError("Failed to update Linked Account")
+
+            # Update stakeholder if name or email changed
+            stakeholder_id = None
+            stakeholder_payload = {}  # Initialize to avoid undefined variable
+            if (vendor_data.account_holder_name or vendor_data.email) and (
+                "name" in clarification_needed or "email" in clarification_needed
+            ):
+                stakeholder_payload = {
+                    "name": vendor_data.account_holder_name or vendor_data.business_name or "Default Stakeholder",
+                    "email": vendor_data.email,
+                }
+                stakeholder_payload = {
+                    k: v for k, v in stakeholder_payload.items() if v is not None and k in clarification_needed
+                }
+                if stakeholder_payload:
+                    # Fetch existing stakeholders
+                    stakeholders = razorpay_client.stakeholder.all(account_id)
+                    stakeholder_clarification_needed = (
+                        stakeholders.get("items", [{}])[0].get("clarifications_needed", {}).get("fields", [])
+                        if stakeholders.get("items")
+                        else []
+                    )
+                    if not any(field in stakeholder_clarification_needed for field in stakeholder_payload.keys()):
+                        raise ValueError("No stakeholder fields are allowed for update based on clarification needs")
+                    stakeholder_id = stakeholders.get("items", [{}])[0].get("id") if stakeholders.get("items") else None
+                    if not stakeholder_id:
+                        raise ValueError("No stakeholder found for this account")
+                    stakeholder_response = razorpay_client.stakeholder.edit(
+                        account_id, stakeholder_id, stakeholder_payload
+                    )
+                    if not stakeholder_response.get("id"):
+                        raise ValueError("Failed to update Stakeholder")
+                    stakeholder_id = stakeholder_response["id"]
+
+            # Update bank account details if provided
+            product_id = None
+            product_update_response = None
+            if (
+                vendor_data.account_number or vendor_data.ifsc_code or vendor_data.account_holder_name
+            ) and "settlements" in clarification_needed:
+                product_config = razorpay_client.product.fetch_all(account_id)
+                product_id = product_config.get("items", [{}])[0].get("id") if product_config.get("items") else None
+                if not product_id:
+                    raise ValueError("No product configuration found")
+
+                product_update_payload = {
+                    "settlements": {
+                        "account_number": vendor_data.account_number,
+                        "ifsc_code": vendor_data.ifsc_code,
+                        "beneficiary_name": vendor_data.account_holder_name,
+                    },
+                    "tnc_accepted": True,
+                }
+                product_update_payload["settlements"] = {
+                    k: v for k, v in product_update_payload["settlements"].items() if v is not None
+                }
+                product_update_response = razorpay_client.product.edit(account_id, product_id, product_update_payload)
+                if not product_update_response.get("id"):
+                    raise ValueError("Failed to update product configuration")
+                product_id = product_update_response["id"]
+
+            vendor_account_data = vendor.get("vendor_account_data", [{}])[0] | vendor_data_dict
+            vendor_account_data = [vendor_account_data]
+
+            update_result = await vendor_collection.update_one(
+                {"_id": ObjectId(vendor_id)},
+                {"$set": {"vendor_account_data": vendor_account_data}},
+            )
+
+            if update_result.modified_count == 0 and not any(
+                [
+                    linked_account_payload,
+                    stakeholder_payload,
+                    product_update_payload.get("settlements", {}) if "product_update_payload" in locals() else {},
+                ]
+            ):
+                raise ValueError("No changes applied to vendor account")
+
+            return vendor_account_data
+
+        except razorpay.errors.BadRequestError as ex:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Razorpay error: {str(ex)}")
+        except ValueError as ex:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ex))
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )
+
+    async def get_vendor_bank_account(
+        self,
+        request: Request,
+        current_user: User,
+    ) -> Dict[str, Any]:
+        try:
+            vendor_user = await user_collection.find_one({"_id": ObjectId(current_user.id)})
+            if not vendor_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+            vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_user["vendor_id"])})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            vendor_account_data = vendor.get("vendor_account_data")
+            if not vendor_account_data:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor account data not found")
+            return vendor_account_data
+
+        except HTTPException:
+            raise
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
