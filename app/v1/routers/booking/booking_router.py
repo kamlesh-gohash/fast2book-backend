@@ -42,29 +42,6 @@ razorpay_client = razorpay.Client(auth=(os.getenv("RAZOR_PAY_KEY_ID"), os.getenv
 router = APIRouter()
 
 
-async def transfer_funds(self, account_id: str, amount: int, currency: str = "INR") -> Dict[str, Any]:
-    try:
-        transfer_payload = {"account": account_id, "amount": amount, "currency": currency}
-        transfer_response = razorpay_client.transfer.create(transfer_payload)
-        print(transfer_response, "transfer_response")
-        if not transfer_response.get("id"):
-            raise ValueError("Failed to create transfer")
-
-        return {
-            "transfer_id": transfer_response["id"],
-            "account_id": account_id,
-            "amount": amount,
-            "currency": currency,
-        }
-
-    except razorpay.errors.BadRequestError as ex:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Razorpay transfer error: {str(ex)}")
-    except Exception as ex:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
-        )
-
-
 @router.post("/appointment-slot", status_code=status.HTTP_200_OK)
 async def appointment_time(
     current_user: User = Depends(get_current_user),
