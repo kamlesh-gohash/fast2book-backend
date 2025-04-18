@@ -87,6 +87,8 @@ sign_in_validator = zon.record(
         "email": zon.string().email().optional(),  # Optional email validation
         "phone": zon.number().int().min(1000000000).max(9999999999).optional(),  # Optional phone validation
         "password": zon.string().min(6).max(20).optional(),
+        "device_token": zon.string().optional(),
+        "web_token": zon.string().optional(),
         "is_login_with_otp": zon.boolean().optional(),
     }
 )
@@ -96,6 +98,8 @@ class SignInRequest(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[int] = None
     password: Optional[str] = None
+    device_token: Optional[str] = None
+    web_token: Optional[str] = None
     is_login_with_otp: Optional[bool] = False
 
     def validate(self):
@@ -337,6 +341,7 @@ update_profile_validator = zon.record(
         "gender": zon.string().min(1).max(50).optional(),
         "blood_group": zon.string().min(1).max(50).optional(),
         "address": zon.string().min(1).max(50).optional(),
+        "secondary_phone_number": zon.number().int().min(1000000000).max(9999999999).optional(),
         "dob": zon.string().min(1).max(50).optional(),
     }
 )

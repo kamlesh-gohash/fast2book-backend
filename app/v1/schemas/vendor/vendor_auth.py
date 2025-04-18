@@ -247,6 +247,8 @@ class SignInVendorRequest(BaseModel):
     phone: Optional[int] = None
     password: Optional[str] = None
     is_login_with_otp: bool = False
+    device_token: Optional[str] = None
+    web_token: Optional[str] = None
 
     def validate(self):
         try:

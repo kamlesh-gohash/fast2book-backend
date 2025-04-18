@@ -231,13 +231,14 @@ async def get_service_by_category(
 @router.post("/sign-in", status_code=status.HTTP_200_OK)
 async def vendor_sign_in(
     vendor_request: SignInVendorRequest,
+    background_tasks: BackgroundTasks,
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     validation_result = vendor_request.validate()
     if validation_result:
         return validation_result
     try:
-        result = await vendor_manager.vendor_sign_in(vendor_request)
+        result = await vendor_manager.vendor_sign_in(vendor_request, background_tasks)
         return success({"message": "Vendor sign in successfully", "data": result})
     except HTTPException as http_ex:
         # Explicitly handle HTTPException and return its response

@@ -20,6 +20,7 @@ from app.v1.middleware.auth import get_current_user
 from app.v1.models import (
     booking_collection,
     category_collection,
+    notification_collection,
     payment_collection,
     services_collection,
     slots_collection,
@@ -31,6 +32,7 @@ from app.v1.models.transfer_amount import TransferAmount
 from app.v1.models.user import User
 from app.v1.schemas.booking.booking import CancelBookingRequest, CreateBookingRequest
 from app.v1.utils.email import generate_otp, send_email
+from app.v1.utils.notification import send_push_notification
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
@@ -641,6 +643,64 @@ class BookingManager:
                 context=context,
                 cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
             )
+            subscriptions = []
+
+            device_token = current_user.device_token
+            web_subscription = current_user.web_token
+            subscriptions = []
+            if device_token:
+                subscriptions.append(device_token)
+            if web_subscription:
+                subscriptions.append(web_subscription)
+            try:
+                background_tasks.add_task(
+                    send_push_notification,
+                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
+                    subscriptions=subscriptions,
+                    title="Booking Cancelled",
+                    body=f"Your booking with {vendor_user.get('first_name')} {vendor_user.get('last_name')} has been Cancelled.",
+                    data={"booking_id": str(booking["_id"]), "type": "booking_cancelled"},
+                )
+                await notification_collection.insert_one(
+                    {
+                        "user_id": current_user.id,
+                        "message_title": "Booking Cancelled",
+                        "message": f"Your booking with {vendor_user.get('first_name')} {vendor_user.get('last_name')} has been Cancelled.",
+                        "seen": False,
+                        "sent": True,
+                        "created_at": datetime.now(),
+                    }
+                )
+                subscriptions = []
+                device_token = vendor_user_obj.get("device_token")
+                web_subscription = vendor_user_obj.get("web_token")
+                subscriptions = []
+                if device_token:
+                    subscriptions.append(device_token)
+                if web_subscription:
+                    subscriptions.append(web_subscription)
+                background_tasks.add_task(
+                    send_push_notification,
+                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
+                    subscriptions=subscriptions,
+                    title="Booking Cancelled",
+                    body=f"Your booking with {current_user.first_name} {current_user.last_name} has been Cancelled.",
+                    data={"booking_id": str(booking["_id"]), "type": "booking_cancelled"},
+                )
+
+                await notification_collection.insert_one(
+                    {
+                        "user_id": vendor_user_obj.get("id"),
+                        "message_title": "Booking Cancelled",
+                        "message": f"Your booking with {current_user.first_name} {current_user.last_name} has been Cancelled.",
+                        "seen": False,
+                        "sent": True,
+                        "created_at": datetime.now(),
+                    }
+                )
+            except Exception as e:
+                # Log the error but don't interrupt the flow
+                print(f"Failed to send push notification: {str(e)}")
 
             return {"reason": cancel_request.reason}
 
@@ -1168,7 +1228,9 @@ class BookingManager:
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-    async def user_booking_resulding(self, current_user: User, booking_id: str, reason_for_reschulding):
+    async def user_booking_resulding(
+        self, current_user: User, booking_id: str, reason_for_reschulding, background_tasks: BackgroundTasks
+    ):
         try:
             booking = await booking_collection.find_one({"_id": ObjectId(booking_id)})
             if not booking:
@@ -1226,6 +1288,67 @@ class BookingManager:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update booking"
                 )
+
+            subscriptions = []
+
+            device_token = current_user.device_token
+            web_subscription = current_user.web_token
+            subscriptions = []
+            if device_token:
+                subscriptions.append(device_token)
+            if web_subscription:
+                subscriptions.append(web_subscription)
+            vendor_user = await user_collection.find_one({"vendor_id": ObjectId(vendor.get("_id"))})
+            vendor_user_obj = await user_collection.find_one({"_id": ObjectId(booking.get("vendor_user_id"))})
+            try:
+                background_tasks.add_task(
+                    send_push_notification,
+                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
+                    subscriptions=subscriptions,
+                    title="Booking Rescheduled",
+                    body=f"Your booking with {vendor_user_obj.get('first_name')} {vendor_user_obj.get('last_name')} has been rescheduled to {reason_for_reschulding.new_date} at {reason_for_reschulding.new_slot}.",
+                    data={"booking_id": str(booking_id), "type": "booking_rescheduled"},
+                )
+                await notification_collection.insert_one(
+                    {
+                        "user_id": current_user.id,
+                        "message_title": "Booking Rescheduled",
+                        "message": f"Your booking with {vendor_user_obj.get('first_name')} {vendor_user_obj.get('last_name')} has been rescheduled to {reason_for_reschulding.new_date} at {reason_for_reschulding.new_slot}.",
+                        "seen": False,
+                        "sent": True,
+                        "created_at": datetime.now(),
+                    }
+                )
+                subscriptions = []
+                device_token = vendor_user.get("device_token")
+                web_subscription = vendor_user.get("web_token")
+                subscriptions = []
+                if device_token:
+                    subscriptions.append(device_token)
+                if web_subscription:
+                    subscriptions.append(web_subscription)
+                background_tasks.add_task(
+                    send_push_notification,
+                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
+                    subscriptions=subscriptions,
+                    title="Booking Rescheduled",
+                    body=f"Your booking with {current_user.first_name} {current_user.last_name} has been rescheduled to {reason_for_reschulding.new_date} at {reason_for_reschulding.new_slot}.",
+                    data={"booking_id": str(booking_id), "type": "booking_rescheduled"},
+                )
+
+                await notification_collection.insert_one(
+                    {
+                        "user_id": vendor_user.get("id"),
+                        "message_title": "Booking Rescheduled",
+                        "message": f"Your booking with {current_user.first_name} {current_user.last_name} has been rescheduled to {reason_for_reschulding.new_date} at {reason_for_reschulding.new_slot}.",
+                        "seen": False,
+                        "sent": True,
+                        "created_at": datetime.now(),
+                    }
+                )
+            except Exception as e:
+                # Log the error but don't interrupt the flow
+                print(f"Failed to send push notification: {str(e)}")
 
             return {"status": "SUCCESS", "message": "Booking updated successfully"}
 

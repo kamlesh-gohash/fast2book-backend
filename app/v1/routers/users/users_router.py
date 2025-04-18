@@ -65,7 +65,12 @@ async def sign_in_user(sign_in_request: SignInRequest, user_manager: UserManager
     try:
         # Proceed with the sign-in logic after Zon validation
         data = await user_manager.sign_in(
-            sign_in_request.email, sign_in_request.phone, sign_in_request.password, sign_in_request.is_login_with_otp
+            sign_in_request.email,
+            sign_in_request.phone,
+            sign_in_request.password,
+            sign_in_request.is_login_with_otp,
+            sign_in_request.device_token,
+            sign_in_request.web_token,
         )
         if "OTP sent successfully" in data.get("message", ""):
             return data
@@ -84,7 +89,11 @@ async def sign_in_user(sign_in_request: SignInRequest, user_manager: UserManager
 
 # Resend OTP if expired (POST request)
 @router.post("/resend-otp")
-async def resend_otp(resend_otp_request: ResendOtpRequest, user_manager: UserManager = Depends(get_user_manager)):
+async def resend_otp(
+    resend_otp_request: ResendOtpRequest,
+    background_tasks: BackgroundTasks,
+    user_manager: UserManager = Depends(get_user_manager),
+):
     validation_result = resend_otp_request.validate()
     if validation_result:
         return validation_result
@@ -92,7 +101,10 @@ async def resend_otp(resend_otp_request: ResendOtpRequest, user_manager: UserMan
     try:
         # Resend OTP logic
         otp = await user_manager.resend_otp(
-            email=resend_otp_request.email, phone=resend_otp_request.phone, otp_type=resend_otp_request.otp_type
+            email=resend_otp_request.email,
+            phone=resend_otp_request.phone,
+            otp_type=resend_otp_request.otp_type,
+            background_tasks=background_tasks,
         )
         return success({"message": "OTP resent", "data": None})
     except HTTPException as http_ex:
