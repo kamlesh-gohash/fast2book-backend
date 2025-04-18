@@ -789,10 +789,7 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def vendor_sign_in(
-        self,
-        vendor_request: SignInVendorRequest,
-    ):
+    async def vendor_sign_in(self, vendor_request: SignInVendorRequest, background_tasks: BackgroundTasks = None):
         try:
             if vendor_request.email:
                 query = {"email": vendor_request.email}
@@ -814,6 +811,13 @@ class VendorManager:
                     status_code=status.HTTP_403_FORBIDDEN, detail="Vendor status is not active, please contact admin"
                 )
 
+            # Prepare update data for device_token and web_token
+            update_data = {}
+            if vendor_request.device_token:
+                update_data["device_token"] = vendor_request.device_token
+            if vendor_request.web_token:
+                update_data["web_token"] = vendor_request.web_token
+
             if vendor_request.is_login_with_otp:
                 if not vendor.get("is_active", False):
                     raise HTTPException(
@@ -830,15 +834,21 @@ class VendorManager:
                 otp_expires = datetime.utcnow() + timedelta(minutes=10)
                 await user_collection.update_one(
                     {"_id": vendor["_id"]},
-                    {"$set": {"login_otp": otp, "login_otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
+                    {
+                        "$set": {
+                            "login_otp": otp,
+                            "login_otp_expires": otp_expires,
+                            **update_data,  # Store device_token and web_token
+                        }
+                    },
                 )
 
                 if vendor.get("email"):
                     # Send OTP to email
                     source = "Login With Otp"
-                    context = {"otp": otp}
+                    context = {"otp": otp, "first_name": vendor.get("first_name")}
                     to_email = vendor["email"]
-                    await send_email(to_email, source, context)
+                    background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
                 elif vendor.get("phone"):
                     to_phone = vendor["phone"]
                     expiry_minutes = 10
@@ -860,6 +870,10 @@ class VendorManager:
             if not vendor.get("is_active", False):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Vendor user is not active")
 
+            # Store device_token and web_token if provided
+            if update_data:
+                await user_collection.update_one({"_id": vendor["_id"]}, {"$set": update_data})
+
             vendor_data = await vendor_collection.find_one({"_id": ObjectId(vendor["vendor_id"])})
             if not vendor_data:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor details not found")
@@ -869,7 +883,7 @@ class VendorManager:
             refresh_token = create_refresh_token(data={"sub": vendor["email"] or vendor["phone"]})
 
             user_data = {
-                "first_name": vendor.get("first_name"),
+                "first_name": vendor.get("first_name", ""),
                 "last_name": vendor.get("last_name"),
                 "email": vendor.get("email"),
                 "user_image": vendor.get("user_image"),
@@ -921,7 +935,7 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred"
             )
 
-    async def vendor_sign_up(self, vendor_request: SignUpVendorRequest, background_tasks: BackgroundTasks):
+    async def vendor_sign_up(self, vendor_request: SignUpVendorRequest, background_tasks: BackgroundTasks = None):
         try:
             existing_vendor = None
 
@@ -1014,7 +1028,7 @@ class VendorManager:
             vendor_result = await vendor_collection.insert_one(vendor_data)
             if vendor_result.inserted_id is None:
                 raise HTTPException(status_code=500, detail="Failed to create vendor")
-
+            vendor_id = ObjectId(vendor_result.inserted_id)
             new_vendor_user = {
                 "first_name": vendor_request.first_name,
                 "last_name": vendor_request.last_name,
@@ -1026,10 +1040,9 @@ class VendorManager:
                 "password": hashed_password,
                 "status": vendor_request.status,
                 "is_dashboard_created": vendor_request.is_dashboard_created,
-                "vendor_id": ObjectId(vendor_result.inserted_id),
+                "vendor_id": vendor_id,
                 "gender": vendor_request.gender,
             }
-
             if vendor_request.business_type.lower() == "individual":
                 new_vendor_user["availability_slots"] = default_availability_slots()
 
@@ -1043,7 +1056,7 @@ class VendorManager:
             new_vendor_user.pop("_id", None)
             new_vendor_user.pop("password", None)
             new_vendor_user.pop("sign_up_otp", None)
-            new_vendor_user.pop("vendor_id")
+            new_vendor_user.pop("vendor_id", None)
             new_vendor_user["vendor_details"] = {
                 "id": str(vendor_result.inserted_id),
                 "business_name": vendor_request.business_name,
@@ -1053,9 +1066,9 @@ class VendorManager:
 
             if vendor_request.email:
                 source = "Activation_code"
-                context = {"otp": otp}
+                context = {"otp": otp, "name": vendor_request.first_name}
                 to_email = vendor_request.email
-                background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
+                background_tasks.add_task(send_email, to_email, source, context)
             elif vendor_request.phone:
                 to_phone = vendor_request.phone
                 await send_sms_on_phone(to_phone, otp, expiry_minutes)

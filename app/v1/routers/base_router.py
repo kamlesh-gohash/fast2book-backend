@@ -5,6 +5,7 @@ from app.v1.routers.booking import booking_router
 from app.v1.routers.category import category_router
 from app.v1.routers.common import common_router
 from app.v1.routers.costumer import costumer_router
+from app.v1.routers.notification import notification_router
 from app.v1.routers.payment import payment_router
 from app.v1.routers.permission import permission_router
 from app.v1.routers.rating import rating_router
@@ -35,3 +36,4 @@ router.include_router(permission_router.router, prefix="/permission", tags=["Per
 router.include_router(razor_pay.router, prefix="/razorpay", tags=["RazorPay"])
 router.include_router(video_router.router, prefix="/video", tags=["Video"])
 router.include_router(rating_router.router, prefix="/rating", tags=["Rating"])
+router.include_router(notification_router.router, prefix="/notification", tags=["Notification"])

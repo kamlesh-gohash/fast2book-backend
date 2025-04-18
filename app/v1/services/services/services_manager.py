@@ -12,7 +12,7 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import Body, HTTPException, Path, Request, status
 
 from app.v1.middleware.auth import get_current_user
-from app.v1.models import category_collection, services_collection
+from app.v1.models import category_collection, services_collection, vendor_collection
 from app.v1.models.category import Category
 from app.v1.models.services import Service
 from app.v1.models.user import User
@@ -245,6 +245,12 @@ class ServicesManager:
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Category with ID '{service_request.category_id}' does not exist.",
                     )
+                # vendor_using_service = await vendor_collection.find_one({"services.id": id})
+                # if vendor_using_service:
+                #     raise HTTPException(
+                #         status_code=status.HTTP_400_BAD_REQUEST,
+                #         detail="This service is in use by a vendor and its category cannot be updated"
+                #     )
             else:
                 # Fetch the existing category for the error message if needed
                 category = await category_collection.find_one({"_id": service["category_id"]})
@@ -334,8 +340,20 @@ class ServicesManager:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page "
                 )
+            service = await services_collection.find_one({"_id": ObjectId(id)})
+            if not service:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+            # vendor_using_service = await vendor_collection.find_one({"services.id": id})
+            # if vendor_using_service:
+            #     raise HTTPException(
+            #         status_code=status.HTTP_400_BAD_REQUEST,
+            #         detail="This service is in use by a vendor and cannot be deleted"
+            #     )
             await services_collection.delete_one({"_id": ObjectId(id)})
             return {"data": None}
+
+        except HTTPException as e:
+            raise e
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
