@@ -82,7 +82,7 @@ class UserManager:
 
                 if user.email:
                     source = "Activation_code"
-                    context = {"otp": otp, "to_email": user.email, "user_name": user.first_name}
+                    context = {"otp": otp, "to_email": user.email, "name": user.first_name + " " + user.last_name}
                     to_email = user.email
                     background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
 
@@ -175,10 +175,22 @@ class UserManager:
             )
 
     async def sign_in(
-        self, email: str = None, phone: int = None, password: str = None, is_login_with_otp: bool = False
+        self,
+        email: str = None,
+        phone: int = None,
+        password: str = None,
+        is_login_with_otp: bool = False,
+        device_token: str = None,
+        web_token: str = None,
     ) -> dict:
         """Sign in a user by email or password."""
         try:
+            update_data = {}
+            if device_token:
+                update_data["device_token"] = device_token
+            if web_token:
+                update_data["web_token"] = web_token
+
             if email:
                 result = await user_collection.find_one({"email": {"$regex": f"^{email}$", "$options": "i"}})
                 if not result:
@@ -200,19 +212,14 @@ class UserManager:
                     otp = generate_otp()
                     await user_collection.update_one(
                         {"email": email},
-                        {"$set": {"login_otp": otp, "login_otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
+                        {
+                            "$set": {
+                                "login_otp": otp,
+                                "login_otp_expires": datetime.utcnow() + timedelta(minutes=10),
+                                **update_data,  # Store device_token and web_token
+                            }
+                        },
                     )
-                    # device_token = result.get("device_token")
-                    # if device_token:
-                    #     try:
-                    #         await send_push_notification(
-                    #             device_token=device_token,
-                    #             title="Your OTP Code",
-                    #             body=f"Your OTP is {otp}. It expires in 10 minutes.",
-                    #             data={"otp": otp, "type": "login"}
-                    #         )
-                    #     except Exception as e:
-                    #         print(f"Push notification failed: {str(e)}")
                     source = "Login With Otp"
                     context = {"otp": otp, "first_name": result.get("first_name")}
                     await send_email(email, source, context)
@@ -245,6 +252,10 @@ class UserManager:
                         status_code=status.HTTP_400_BAD_REQUEST, detail="Your account is inactive, please contact admin"
                     )
 
+                # Store device_token and web_token if provided
+                if update_data:
+                    await user_collection.update_one({"email": email}, {"$set": update_data})
+
                 user_data = user.dict()
                 user_data["id"] = str(user.id)
                 user_data.pop("password", None)
@@ -271,19 +282,14 @@ class UserManager:
                     otp = generate_otp()
                     await user_collection.update_one(
                         {"phone": phone},
-                        {"$set": {"login_otp": otp, "login_otp_expires": datetime.utcnow() + timedelta(minutes=10)}},
+                        {
+                            "$set": {
+                                "login_otp": otp,
+                                "login_otp_expires": datetime.utcnow() + timedelta(minutes=10),
+                                **update_data,  # Store device_token and web_token
+                            }
+                        },
                     )
-                    # device_token = result.get("device_token")
-                    # if device_token:
-                    #     try:
-                    #         await send_push_notification(
-                    #             device_token=device_token,
-                    #             title="Your OTP Code",
-                    #             body=f"Your OTP is {otp}. It expires in 10 minutes.",
-                    #             data={"otp": otp, "type": "login"}
-                    #         )
-                    #     except Exception as e:
-                    #         print(f"Push notification failed: {str(e)}")
                     await send_sms_on_phone(phone, otp, expiry_minutes=10)
                     return {"message": "OTP sent to your phone"}
 
@@ -314,6 +320,10 @@ class UserManager:
                         status_code=status.HTTP_400_BAD_REQUEST, detail="Your account is inactive, please contact admin"
                     )
 
+                # Store device_token and web_token if provided
+                if update_data:
+                    await user_collection.update_one({"phone": phone}, {"$set": update_data})
+
                 user_data = user.dict()
                 user_data["id"] = str(user.id)
                 user_data.pop("password", None)
@@ -330,7 +340,11 @@ class UserManager:
             )
 
     async def resend_otp(
-        self, email: Optional[str] = None, phone: Optional[int] = None, otp_type: Optional[str] = None
+        self,
+        email: Optional[str] = None,
+        phone: Optional[int] = None,
+        otp_type: Optional[str] = None,
+        background_tasks: BackgroundTasks = None,
     ) -> str:
         """Send OTP to the user's email or phone based on the specified otp_type."""
         try:
@@ -350,7 +364,7 @@ class UserManager:
                 source = "Resend OTP"
                 context = {"otp": otp, "user_name": user.get("first_name")}
                 to_email = email
-                await send_email(to_email, source, context)
+                background_tasks.add_task(send_email, to_email, source, context)
 
                 await user_collection.update_one(
                     {"email": email}, {"$set": {otp_field: otp, otp_expires_field: otp_expiration_time}}
@@ -458,9 +472,10 @@ class UserManager:
         otp: str = None,
         otp_type: Optional[str] = None,
         device_token: Optional[str] = None,
+        web_token: Optional[str] = None,
     ) -> dict:
         """
-        Validates an OTP for the specified type ('login', 'forgot_password', 'resend_otp').
+        Validates an OTP for the specified type ('login', 'forgot_password', 'resend_otp', 'sign_up').
         """
         try:
             if otp_type not in ["login", "forgot_password", "resend_otp", "sign_up"]:
@@ -473,9 +488,13 @@ class UserManager:
             otp_field = f"{otp_type}_otp"
             otp_expires_field = f"{otp_type}_otp_expires"
 
-            device_token_update = {}
+            # Prepare update data for device_token and web_token
+            update_data = {}
             if device_token:
-                device_token_update["device_token"] = device_token
+                update_data["device_token"] = device_token
+            if web_token:
+                update_data["web_token"] = web_token
+
             if email:
                 user = await user_collection.find_one({"email": email})
                 if user is None:
@@ -488,23 +507,27 @@ class UserManager:
                     raise HTTPException(status_code=400, detail=f"Invalid OTP for {otp_type}")
                 if expires_at and datetime.utcnow() > expires_at:
                     raise HTTPException(status_code=400, detail=f"OTP for {otp_type} has expired")
-                if not user.get("device_token"):
+
+                # Update device_token and web_token if not already set or provided
+                if not user.get("device_token") or device_token:
                     await user_collection.update_one(
                         {"email": email},
-                        {
-                            "$set": {
-                                "device_token": device_token,
-                            }
-                        },
+                        {"$set": {"device_token": device_token} if device_token else {}},
                     )
-                # Clear the OTP fields after successful validation
+                if web_token:
+                    await user_collection.update_one(
+                        {"email": email},
+                        {"$set": {"web_token": web_token}},
+                    )
+
+                # Clear the OTP fields and set is_active after successful validation
                 await user_collection.update_one(
                     {"email": email},
                     {
                         "$unset": {otp_field: 1, otp_expires_field: 1},
                         "$set": {
                             "is_active": True if otp_type == "sign_up" else user.get("is_active"),
-                            **device_token_update,
+                            **update_data,  # Include device_token and web_token if provided
                         },
                     },
                 )
@@ -530,7 +553,6 @@ class UserManager:
                     if vendor:
                         vendor_data = vendor.copy()
                         vendor_data["id"] = str(vendor_data.pop("_id"))
-                        # Convert nested ObjectId fields to strings
                         vendor_data["category_id"] = (
                             str(vendor_data.get("category_id")) if vendor_data.get("category_id") else None
                         )
@@ -539,7 +561,7 @@ class UserManager:
                                 service["id"] = str(service["id"]) if "id" in service else None
                         user_data["is_subscription"] = vendor_data.get("is_subscription", False)
                         user_data["business_type"] = vendor_data.get("business_type", None)
-                        user_data["vendor_details"] = vendor_data  # Optionally include vendor details
+                        user_data["vendor_details"] = vendor_data
 
                 access_token = create_access_token(data={"sub": str(user.get("email"))})
                 refresh_token = create_refresh_token(data={"sub": str(user.get("email"))})
@@ -557,25 +579,28 @@ class UserManager:
                     raise HTTPException(status_code=400, detail=f"Invalid OTP for {otp_type}")
                 if expires_at and datetime.utcnow() > expires_at:
                     raise HTTPException(status_code=400, detail=f"OTP for {otp_type} has expired")
-                if not user.get("device_token"):
+
+                # Update device_token and web_token if not already set or provided
+                if not user.get("device_token") or device_token:
                     await user_collection.update_one(
                         {"phone": phone},
-                        {
-                            "$set": {
-                                "device_token": device_token,
-                            }
-                        },
+                        {"$set": {"device_token": device_token} if device_token else {}},
+                    )
+                if web_token:
+                    await user_collection.update_one(
+                        {"phone": phone},
+                        {"$set": {"web_token": web_token}},
                     )
 
+                # Clear the OTP fields and set is_active after successful validation
                 await user_collection.update_one(
                     {"phone": phone},
                     {
+                        "$unset": {otp_field: 1, otp_expires_field: 1},
                         "$set": {
-                            otp_field: None,
-                            otp_expires_field: None,
                             "is_active": True if otp_type == "sign_up" else user.get("is_active"),
-                            **device_token_update,
-                        }
+                            **update_data,  # Include device_token and web_token if provided
+                        },
                     },
                 )
 
@@ -600,7 +625,6 @@ class UserManager:
                     if vendor:
                         vendor_data = vendor.copy()
                         vendor_data["id"] = str(vendor_data.pop("_id"))
-                        # Convert nested ObjectId fields to strings
                         vendor_data["category_id"] = (
                             str(vendor_data.get("category_id")) if vendor_data.get("category_id") else None
                         )
@@ -609,7 +633,7 @@ class UserManager:
                                 service["id"] = str(service["id"]) if "id" in service else None
                         user_data["is_subscription"] = vendor_data.get("is_subscription", False)
                         user_data["business_type"] = vendor_data.get("business_type", None)
-                        user_data["vendor_details"] = vendor_data  # Optionally include vendor details
+                        user_data["vendor_details"] = vendor_data
 
                 access_token = create_access_token(data={"sub": str(user.get("phone"))})
                 refresh_token = create_refresh_token(data={"sub": str(user.get("phone"))})

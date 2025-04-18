@@ -23,6 +23,7 @@ from app.v1.middleware.auth import get_current_user, get_token_from_header
 from app.v1.models import (
     booking_collection,
     category_collection,
+    notification_collection,
     services,
     services_collection,
     user_collection,
@@ -33,6 +34,7 @@ from app.v1.schemas.booking.booking import *
 from app.v1.schemas.subscription.subscription_auth import CreateSubscriptionRequest, UpdateSubscriptionRequest
 from app.v1.services import BookingManager
 from app.v1.utils.email import send_email
+from app.v1.utils.notification import send_push_notification
 from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
 
 
@@ -400,6 +402,13 @@ async def verify_payment(request: Request, payload: dict, background_tasks: Back
         if not user_data:
             raise HTTPException(status_code=404, detail="User not found")
 
+        device_token = user_data.get("device_token")
+        web_subscription = user_data.get("web_token")
+        subscriptions = []
+        if device_token:
+            subscriptions.append(device_token)
+        if web_subscription:
+            subscriptions.append(web_subscription)
         notification_settings = user_data.get("notification_settings", {})
         if notification_settings.get("booking_confirmation", True):
             source = "Payment Success"
@@ -458,6 +467,53 @@ async def verify_payment(request: Request, payload: dict, background_tasks: Back
                 context=vendor_context,
                 cc_email=vendor.get("email") if vendor.get("business_type") == "business" else None,
             )
+            try:
+                background_tasks.add_task(
+                    send_push_notification,
+                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
+                    subscriptions=subscriptions,
+                    title="Booking Confirmed",
+                    body=f"Your booking for {service.get('name')} with {vendor_user.get('first_name')} on {updated_booking.get('booking_date')} at {updated_booking.get('time_slot')} has been confirmed.",
+                    data={"booking_id": str(booking_id), "type": "booking_confirmed"},
+                )
+                await notification_collection.insert_one(
+                    {
+                        "user_id": user_id,
+                        "message_title": "Booking Confirmed",
+                        "message": f"Your booking for {service.get('name')} with {vendor_user.get('first_name')} on {updated_booking.get('booking_date')} at {updated_booking.get('time_slot')} has been confirmed.",
+                        "seen": False,
+                        "sent": True,
+                        "created_at": datetime.now(),
+                    }
+                )
+                subscriptions = []
+                vendor_device_token = vendor.get("device_token")
+                if vendor_device_token:
+                    subscriptions.append(vendor_device_token)
+                vendor_web_token = vendor.get("web_token")
+                if vendor_web_token:
+                    subscriptions.append(vendor_web_token)
+                background_tasks.add_task(
+                    send_push_notification,
+                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
+                    subscriptions=subscriptions,
+                    title="Booking Confirmed",
+                    body=f"You got new booking from {user_data.get('first_name')} on {updated_booking.get('booking_date')} at {updated_booking.get('time_slot')} .",
+                    data={"booking_id": str(booking_id), "type": "booking_confirmed"},
+                )
+                await notification_collection.insert_one(
+                    {
+                        "user_id": vendor.get("_id"),
+                        "message_title": "Booking Confirmed",
+                        "message": f"You got new booking from {user_data.get('first_name')} on {updated_booking.get('booking_date')} at {updated_booking.get('time_slot')} .",
+                        "seen": False,
+                        "sent": True,
+                        "created_at": datetime.now(),
+                    }
+                )
+            except Exception as e:
+                # Log the error but don't interrupt the flow
+                print(f"Failed to send push notification: {str(e)}")
         return success(
             {
                 "message": "Payment verification successful",
@@ -520,6 +576,7 @@ async def user_booking_update_request(
 @router.post("/user-booking-reschedule/{booking_id}", status_code=status.HTTP_200_OK)
 async def user_booking_reschedule(
     reason_for_reschulding: ResuldlinBookingRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     booking_id: str = Path(..., min_length=1, max_length=100),
     booking_manager: BookingManager = Depends(get_booking_manager),
@@ -529,6 +586,7 @@ async def user_booking_reschedule(
             current_user=current_user,
             reason_for_reschulding=reason_for_reschulding,
             booking_id=booking_id,
+            background_tasks=background_tasks,
         )
         return success({"message": "Booking rescheduled successfully", "data": result})
     except HTTPException as http_ex:
