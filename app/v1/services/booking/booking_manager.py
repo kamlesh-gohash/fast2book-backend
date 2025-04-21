@@ -671,6 +671,7 @@ class BookingManager:
                         "created_at": datetime.now(),
                     }
                 )
+                print("Notification sent successfully")
                 subscriptions = []
                 device_token = vendor_user_obj.get("device_token")
                 web_subscription = vendor_user_obj.get("web_token")
