@@ -63,6 +63,17 @@ jobs:
             --build-arg RAZOR_PAY_KEY_ID="${{ secrets.RAZOR_PAY_KEY_ID }}" \
             --build-arg RAZOR_PAY_KEY_SECRET="${{ secrets.RAZOR_PAY_KEY_SECRET }}" \
             --build-arg AWS_S3_REGION="${{ secrets.AWS_S3_REGION }}" \
+            --build-arg PROJECT_ID="${{ secrets.PROJECT_ID }}" \
+            --build-arg PRIVATE_KEY_ID="${{ secrets.PRIVATE_KEY_ID }}" \
+            --build-arg PRIVATE_KEY="${{ secrets.PRIVATE_KEY }}" \
+            --build-arg CLIENT_EMAIL="${{ secrets.CLIENT_EMAIL }}" \
+            --build-arg CLIENT_ID="${{ secrets.CLIENT_ID }}" \
+            --build-arg AUTH_URI="${{ secrets.AUTH_URI }}" \
+            --build-arg TOKEN_URI="${{ secrets.TOKEN_URI }}" \
+            --build-arg AUTH_PROVIDER_X509_CERT_URL="${{ secrets.AUTH_PROVIDER_X509_CERT_URL }}" \
+            --build-arg CLIENT_X509_CERT_URL="${{ secrets.CLIENT_X509_CERT_URL }}" \
+            --build-arg UNIVERSE_DOMAIN="${{ secrets.UNIVERSE_DOMAIN }}" \
+            --build-arg TYPE="${{ vars.TYPE }}" \
             -t $AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/fast2book-backend:latest \
             --load .
 
@@ -115,4 +126,15 @@ jobs:
             -e RAZOR_PAY_KEY_ID="${{ secrets.RAZOR_PAY_KEY_ID }}" \
             -e RAZOR_PAY_KEY_SECRET="${{ secrets.RAZOR_PAY_KEY_SECRET }}" \
             -e AWS_S3_REGION="${{ secrets.AWS_S3_REGION }}" \
+            -e PROJECT_ID="${{ secrets.PROJECT_ID }}" \
+            -e PRIVATE_KEY_ID="${{ secrets.PRIVATE_KEY_ID }}" \
+            -e PRIVATE_KEY="${{ secrets.PRIVATE_KEY }}" \
+            -e CLIENT_EMAIL="${{ secrets.CLIENT_EMAIL }}" \
+            -e CLIENT_ID="${{ secrets.CLIENT_ID }}" \
+            -e AUTH_URI="${{ secrets.AUTH_URI }}" \
+            -e TOKEN_URI="${{ secrets.TOKEN_URI }}" \
+            -e AUTH_PROVIDER_X509_CERT_URL="${{ secrets.AUTH_PROVIDER_X509_CERT_URL }}" \
+            -e CLIENT_X509_CERT_URL="${{ secrets.CLIENT_X509_CERT_URL }}" \
+            -e UNIVERSE_DOMAIN="${{ secrets.UNIVERSE_DOMAIN }}" \
+            -e TYPE="${{ vars.TYPE }}" \
             $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/fast2book-backend:latest
