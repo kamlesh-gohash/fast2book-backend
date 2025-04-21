@@ -93,10 +93,11 @@ async def send_push_notification(
         Dict[str, str]: Response message
     """
     try:
+        print("test notification")
         responses = []
         for sub in subscriptions:
             if isinstance(sub, dict) and "endpoint" in sub and "keys" in sub:
-
+                print(sub, "sub")
                 message = messaging.Message(
                     notification=messaging.Notification(
                         title=title,
@@ -112,7 +113,9 @@ async def send_push_notification(
                         fcm_options=messaging.WebpushFCMOptions(link="https://fast2book.com"),  # Optional: URL to open
                     ),
                 )
+                print(message, "message")
                 response = messaging.send(message, subscription_info=sub)
+                print(response, "response")
             else:
                 message = messaging.Message(
                     notification=messaging.Notification(
