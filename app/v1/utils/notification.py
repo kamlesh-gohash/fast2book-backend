@@ -77,7 +77,7 @@ if not firebase_admin._apps:
 
 
 async def send_push_notification(
-    subscriptions: List[Any], title: str, body: str, data: Dict[str, Any] = None
+    subscriptions: List[Any], title: str, body: str, data: Dict[str, Any] = None, api_type: str = None
 ) -> Dict[str, str]:
     """
     Sends a push notification to multiple web and mobile clients using Firebase Admin SDK.
@@ -88,41 +88,43 @@ async def send_push_notification(
         title (str): Notification title
         body (str): Notification body
         data (Dict[str, Any], optional): Additional data to send with the notification
+        api_type (str, optional): Type of API call triggering the notification
 
     Returns:
         Dict[str, str]: Response message
     """
     try:
-        print("test notification")
+        # Ensure data is a dictionary and include api_type if provided
+        notification_data = data or {}
+        if api_type:
+            notification_data["api_type"] = api_type
+
         responses = []
         for sub in subscriptions:
             if isinstance(sub, dict) and "endpoint" in sub and "keys" in sub:
-                print(sub, "sub")
                 message = messaging.Message(
                     notification=messaging.Notification(
                         title=title,
                         body=body,
                     ),
-                    data=data or {},
+                    data=notification_data,
                     webpush=messaging.WebpushConfig(
                         notification=messaging.WebpushNotification(
                             title=title,
                             body=body,
-                            data=data or {},
+                            data=notification_data,
                         ),
                         fcm_options=messaging.WebpushFCMOptions(link="https://fast2book.com"),  # Optional: URL to open
                     ),
                 )
-                print(message, "message")
                 response = messaging.send(message, subscription_info=sub)
-                print(response, "response")
             else:
                 message = messaging.Message(
                     notification=messaging.Notification(
                         title=title,
                         body=body,
                     ),
-                    data=data or {},
+                    data=notification_data,
                     token=sub,
                 )
                 response = messaging.send(message)
