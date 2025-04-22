@@ -589,16 +589,14 @@ class BookingManager:
             booking = await booking_collection.find_one({"_id": ObjectId(id)})
             if not booking:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+
             cancellation_data = {
                 "booking_status": "cancelled",
                 "booking_cancel_reason": cancel_request.reason,
                 "cancelled_at": datetime.utcnow(),
             }
             update_result = await booking_collection.update_one({"_id": ObjectId(id)}, {"$set": cancellation_data})
-            # if update_result.modified_count == 0:
-            #     raise HTTPException(
-            #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to cancel booking"
-            #     )
+
             service = await services_collection.find_one({"_id": ObjectId(booking["service_id"])})
             if not service:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
@@ -643,65 +641,66 @@ class BookingManager:
                 context=context,
                 cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
             )
-            subscriptions = []
 
-            device_token = current_user.device_token
-            web_subscription = current_user.web_token
+            # Handle notifications for the user
             subscriptions = []
+            device_token = current_user.device_token
+            web_token = current_user.web_token
             if device_token:
                 subscriptions.append(device_token)
-            if web_subscription:
-                subscriptions.append(web_subscription)
-            try:
+            if web_token:
+                subscriptions.append(web_token)
+
+            if subscriptions:
                 background_tasks.add_task(
                     send_push_notification,
-                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
                     subscriptions=subscriptions,
                     title="Booking Cancelled",
                     body=f"Your booking with {vendor_user.get('first_name')} {vendor_user.get('last_name')} has been Cancelled.",
                     data={"booking_id": str(booking["_id"]), "type": "booking_cancelled"},
+                    api_type="booking",
                 )
                 await notification_collection.insert_one(
                     {
                         "user_id": current_user.id,
                         "message_title": "Booking Cancelled",
                         "message": f"Your booking with {vendor_user.get('first_name')} {vendor_user.get('last_name')} has been Cancelled.",
+                        "user_image_url": vendor_user.get("user_image_url"),
                         "seen": False,
                         "sent": True,
                         "created_at": datetime.now(),
                     }
                 )
-                print("Notification sent successfully")
-                subscriptions = []
-                device_token = vendor_user_obj.get("device_token")
-                web_subscription = vendor_user_obj.get("web_token")
-                subscriptions = []
-                if device_token:
-                    subscriptions.append(device_token)
-                if web_subscription:
-                    subscriptions.append(web_subscription)
+
+            # Handle notifications for the vendor
+            subscriptions = []
+            vendor_device_token = vendor_user_obj.get("device_token")
+            vendor_web_token = vendor_user_obj.get("web_token")
+            if vendor_device_token:
+                subscriptions.append(vendor_device_token)
+            if vendor_web_token:
+                subscriptions.append(vendor_web_token)
+
+            if subscriptions:
                 background_tasks.add_task(
                     send_push_notification,
-                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
                     subscriptions=subscriptions,
                     title="Booking Cancelled",
                     body=f"Your booking with {current_user.first_name} {current_user.last_name} has been Cancelled.",
                     data={"booking_id": str(booking["_id"]), "type": "booking_cancelled"},
+                    api_type="booking",
                 )
-
                 await notification_collection.insert_one(
                     {
                         "user_id": vendor_user_obj.get("id"),
                         "message_title": "Booking Cancelled",
                         "message": f"Your booking with {current_user.first_name} {current_user.last_name} has been Cancelled.",
+                        "user_image_url": current_user.user_image_url,
                         "seen": False,
                         "sent": True,
                         "created_at": datetime.now(),
                     }
                 )
-            except Exception as e:
-                # Log the error but don't interrupt the flow
-                print(f"Failed to send push notification: {str(e)}")
 
             return {"reason": cancel_request.reason}
 
@@ -1158,7 +1157,57 @@ class BookingManager:
                 #     context=vendor_context,
                 #     cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
                 # )
-
+                try:
+                    background_tasks.add_task(
+                        send_push_notification,
+                        # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
+                        subscriptions=subscriptions,
+                        title="Booking Confirmed",
+                        body=f"Your booking for {service.get('name')} with {vendor_user.get('first_name')} on {booking_date} at {standardized_slot} has been confirmed.",
+                        data={"booking_id": str(booking_id), "type": "booking_confirmed"},
+                        api_type="booking",
+                    )
+                    await notification_collection.insert_one(
+                        {
+                            "user_id": ObjectId(current_user.id),
+                            "message_title": "Booking Confirmed",
+                            "message": f"Your booking for {service.get('name')} with {vendor_user.get('first_name')} on {booking_date} at {standardized_slot} has been confirmed.",
+                            "user_image_url": vendor_user.get("user_image_url"),
+                            "seen": False,
+                            "sent": True,
+                            "created_at": datetime.now(),
+                        }
+                    )
+                    subscriptions = []
+                    vendor_device_token = vendor.get("device_token")
+                    if vendor_device_token:
+                        subscriptions.append(vendor_device_token)
+                    vendor_web_token = vendor.get("web_token")
+                    if vendor_web_token:
+                        subscriptions.append(vendor_web_token)
+                    background_tasks.add_task(
+                        send_push_notification,
+                        # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
+                        subscriptions=subscriptions,
+                        title="Booking Confirmed",
+                        body=f"You got new booking from {user_data.get('first_name')} on {booking_date} at {standardized_slot} .",
+                        data={"booking_id": str(booking_id), "type": "booking_confirmed"},
+                        api_type="booking",
+                    )
+                    await notification_collection.insert_one(
+                        {
+                            "user_id": vendor.get("_id"),
+                            "message_title": "Booking Confirmed",
+                            "message": f"You got new booking from {user_data.get('first_name')} on {booking_date} at {standardized_slot} .",
+                            "user_image_url": user_data.get("user_image_url"),
+                            "seen": False,
+                            "sent": True,
+                            "created_at": datetime.now(),
+                        }
+                    )
+                except Exception as e:
+                    # Log the error but don't interrupt the flow
+                    print(f"Failed to send push notification: {str(e)}")
                 return {
                     "data": {
                         "order_id": str(booking_id),
@@ -1291,56 +1340,61 @@ class BookingManager:
                 )
 
             subscriptions = []
-
             device_token = current_user.device_token
             web_subscription = current_user.web_token
-            subscriptions = []
             if device_token:
                 subscriptions.append(device_token)
             if web_subscription:
                 subscriptions.append(web_subscription)
+
             vendor_user = await user_collection.find_one({"vendor_id": ObjectId(vendor.get("_id"))})
             vendor_user_obj = await user_collection.find_one({"_id": ObjectId(booking.get("vendor_user_id"))})
+
             try:
+                # Send notification to the user
                 background_tasks.add_task(
                     send_push_notification,
-                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
                     subscriptions=subscriptions,
                     title="Booking Rescheduled",
                     body=f"Your booking with {vendor_user_obj.get('first_name')} {vendor_user_obj.get('last_name')} has been rescheduled to {reason_for_reschulding.new_date} at {reason_for_reschulding.new_slot}.",
                     data={"booking_id": str(booking_id), "type": "booking_rescheduled"},
+                    api_type="booking",  # Add api_type here
                 )
                 await notification_collection.insert_one(
                     {
                         "user_id": current_user.id,
                         "message_title": "Booking Rescheduled",
                         "message": f"Your booking with {vendor_user_obj.get('first_name')} {vendor_user_obj.get('last_name')} has been rescheduled to {reason_for_reschulding.new_date} at {reason_for_reschulding.new_slot}.",
+                        "user_image_url": vendor_user_obj.get("user_image_url"),
                         "seen": False,
                         "sent": True,
                         "created_at": datetime.now(),
                     }
                 )
+
+                # Prepare subscriptions for vendor
                 subscriptions = []
                 device_token = vendor_user.get("device_token")
                 web_subscription = vendor_user.get("web_token")
-                subscriptions = []
                 if device_token:
                     subscriptions.append(device_token)
                 if web_subscription:
                     subscriptions.append(web_subscription)
+
+                # Send notification to the vendor
                 background_tasks.add_task(
                     send_push_notification,
-                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
                     subscriptions=subscriptions,
                     title="Booking Rescheduled",
                     body=f"Your booking with {current_user.first_name} {current_user.last_name} has been rescheduled to {reason_for_reschulding.new_date} at {reason_for_reschulding.new_slot}.",
                     data={"booking_id": str(booking_id), "type": "booking_rescheduled"},
+                    api_type="booking",  # Add api_type here
                 )
-
                 await notification_collection.insert_one(
                     {
                         "user_id": vendor_user.get("id"),
                         "message_title": "Booking Rescheduled",
+                        "user_image_url": current_user.user_image_url,
                         "message": f"Your booking with {current_user.first_name} {current_user.last_name} has been rescheduled to {reason_for_reschulding.new_date} at {reason_for_reschulding.new_slot}.",
                         "seen": False,
                         "sent": True,

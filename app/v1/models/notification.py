@@ -20,6 +20,7 @@ class Notification(BaseModel):
     sent: bool
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    user_image_url: Optional[str] = None
     message_title: str
     message: str
     url: str
