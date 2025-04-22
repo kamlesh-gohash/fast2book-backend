@@ -1146,21 +1146,16 @@ class BookingManager:
                     "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                 }
 
-                # if payment_confirmation_enabled:
-                #     background_tasks.add_task(
-                #         send_email, to_email=current_user.email, source="Booking Confirmation", context=user_context
-                #     )
-                # background_tasks.add_task(
-                #     send_email,
-                #     to_email=vendor_user.get("email") if vendor_user else vendor_user_obj.get("email"),
-                #     source="Booking Notification",
-                #     context=vendor_context,
-                #     cc_email=vendor_user_obj.get("email") if vendor.get("business_type") == "business" else None,
-                # )
                 try:
+                    device_token = user_data.get("device_token")
+                    web_subscription = user_data.get("web_token")
+                    subscriptions = []
+                    if device_token:
+                        subscriptions.append(device_token)
+                    if web_subscription:
+                        subscriptions.append(web_subscription)
                     background_tasks.add_task(
                         send_push_notification,
-                        # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
                         subscriptions=subscriptions,
                         title="Booking Confirmed",
                         body=f"Your booking for {service.get('name')} with {vendor_user.get('first_name')} on {booking_date} at {standardized_slot} has been confirmed.",
@@ -1187,7 +1182,6 @@ class BookingManager:
                         subscriptions.append(vendor_web_token)
                     background_tasks.add_task(
                         send_push_notification,
-                        # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
                         subscriptions=subscriptions,
                         title="Booking Confirmed",
                         body=f"You got new booking from {user_data.get('first_name')} on {booking_date} at {standardized_slot} .",

@@ -481,7 +481,7 @@ async def verify_payment(request: Request, payload: dict, background_tasks: Back
                         "user_id": user_id,
                         "message_title": "Booking Confirmed",
                         "message": f"Your booking for {service.get('name')} with {vendor_user.get('first_name')} on {updated_booking.get('booking_date')} at {updated_booking.get('time_slot')} has been confirmed.",
-                        "user_image_url": user_data.get("user_image_url"),
+                        "user_image_url": vendor_user.get("user_image_url"),
                         "seen": False,
                         "sent": True,
                         "created_at": datetime.now(),
@@ -496,7 +496,6 @@ async def verify_payment(request: Request, payload: dict, background_tasks: Back
                     subscriptions.append(vendor_web_token)
                 background_tasks.add_task(
                     send_push_notification,
-                    # device_token="dcgG3i3XxScJ5hI4LU-uwI:APA91bHEgnCDp-VGnJ6iNGpPQ4XTuO3pvnRiK2XPhLviXen9cIwMLA5Hp2ploBPkRv3qvBolhANkYZXreJgOcKuQrwaQ7kFu9xFVRdeLd6wlatdUaTs1EVk",
                     subscriptions=subscriptions,
                     title="Booking Confirmed",
                     body=f"You got new booking from {user_data.get('first_name')} on {updated_booking.get('booking_date')} at {updated_booking.get('time_slot')} .",
@@ -508,7 +507,7 @@ async def verify_payment(request: Request, payload: dict, background_tasks: Back
                         "user_id": vendor.get("_id"),
                         "message_title": "Booking Confirmed",
                         "message": f"You got new booking from {user_data.get('first_name')} on {updated_booking.get('booking_date')} at {updated_booking.get('time_slot')} .",
-                        "user_image_url": vendor.get("user_image_url"),
+                        "user_image_url": user_data.get("user_image_url"),
                         "seen": False,
                         "sent": True,
                         "created_at": datetime.now(),
