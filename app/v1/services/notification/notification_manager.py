@@ -29,8 +29,10 @@ class NotificationManager:
 
     async def notification_list(self, current_user: User):
         try:
-            notifications = await notification_collection.find({"user_id": ObjectId(current_user.id)}).to_list(
-                length=None
+            notifications = (
+                await notification_collection.find({"user_id": ObjectId(current_user.id)})
+                .sort("created_at", -1)
+                .to_list(length=None)
             )
 
             for notification in notifications:
