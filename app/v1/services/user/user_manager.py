@@ -42,6 +42,8 @@ from app.v1.models.user import *
 from app.v1.models.vendor import Vendor
 from app.v1.schemas.user.auth import *
 from app.v1.utils.email import generate_otp, send_email, send_sms_on_phone
+from app.v1.utils.response.response_format import failure, internal_server_error, success, validation_error
+from app.v1.utils.response.response_status import ResponseStatus
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
 
@@ -176,6 +178,7 @@ class UserManager:
 
     async def sign_in(
         self,
+        background_tasks: BackgroundTasks,
         email: str = None,
         phone: int = None,
         password: str = None,
@@ -185,6 +188,7 @@ class UserManager:
     ) -> dict:
         """Sign in a user by email or password."""
         try:
+            print("email", email)
             update_data = {}
             if device_token:
                 update_data["device_token"] = device_token
@@ -192,6 +196,7 @@ class UserManager:
                 update_data["web_token"] = web_token
 
             if email:
+                print("email", email)
                 result = await user_collection.find_one({"email": {"$regex": f"^{email}$", "$options": "i"}})
                 if not result:
                     raise HTTPException(
@@ -216,15 +221,21 @@ class UserManager:
                             "$set": {
                                 "login_otp": otp,
                                 "login_otp_expires": datetime.utcnow() + timedelta(minutes=10),
-                                **update_data,  # Store device_token and web_token
+                                **update_data,
                             }
                         },
                     )
                     source = "Login With Otp"
                     context = {"otp": otp, "first_name": result.get("first_name")}
-                    await send_email(email, source, context)
-                    return {"message": "OTP sent to your email address"}
+                    background_tasks.add_task(send_email, to_email=email, source=source, context=context)
 
+                    return {
+                        "status": ResponseStatus.SUCCESS,
+                        "message": "OTP sent successfully",
+                        "data": None,
+                    }
+
+                # Non-OTP email login
                 stored_password_hash = result.get("password")
                 if not stored_password_hash:
                     raise HTTPException(
@@ -252,7 +263,6 @@ class UserManager:
                         status_code=status.HTTP_400_BAD_REQUEST, detail="Your account is inactive, please contact admin"
                     )
 
-                # Store device_token and web_token if provided
                 if update_data:
                     await user_collection.update_one({"email": email}, {"$set": update_data})
 
@@ -262,6 +272,8 @@ class UserManager:
                 user_data.pop("otp", None)
                 access_token = create_access_token(data={"sub": user.email})
                 refresh_token = create_refresh_token(data={"sub": user.email})
+
+                return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
 
             if phone:
                 result = await user_collection.find_one({"phone": phone})
@@ -286,13 +298,19 @@ class UserManager:
                             "$set": {
                                 "login_otp": otp,
                                 "login_otp_expires": datetime.utcnow() + timedelta(minutes=10),
-                                **update_data,  # Store device_token and web_token
+                                **update_data,
                             }
                         },
                     )
                     await send_sms_on_phone(phone, otp, expiry_minutes=10)
-                    return {"message": "OTP sent to your phone"}
 
+                    return {
+                        "status": ResponseStatus.SUCCESS,
+                        "message": "OTP sent successfully",
+                        "data": None,
+                    }
+
+                # Non-OTP phone login
                 stored_password_hash = result.get("password")
                 if not stored_password_hash:
                     raise HTTPException(
@@ -320,7 +338,6 @@ class UserManager:
                         status_code=status.HTTP_400_BAD_REQUEST, detail="Your account is inactive, please contact admin"
                     )
 
-                # Store device_token and web_token if provided
                 if update_data:
                     await user_collection.update_one({"phone": phone}, {"$set": update_data})
 
@@ -331,7 +348,10 @@ class UserManager:
                 access_token = create_access_token(data={"sub": str(user.phone)})
                 refresh_token = create_refresh_token(data={"sub": str(user.phone)})
 
-            return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
+                return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
+
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email or phone must be provided")
+
         except HTTPException as e:
             raise e
         except Exception as ex:
@@ -348,7 +368,7 @@ class UserManager:
     ) -> str:
         """Send OTP to the user's email or phone based on the specified otp_type."""
         try:
-            if otp_type not in ["login", "forgot_password", "sign_up"]:
+            if otp_type not in ["login", "forgot_password", "sign_up", "resend"]:
                 raise HTTPException(status_code=400, detail="Invalid OTP type. Must be 'login' or 'forgot_password'")
 
             otp = generate_otp()
@@ -478,7 +498,7 @@ class UserManager:
         Validates an OTP for the specified type ('login', 'forgot_password', 'resend_otp', 'sign_up').
         """
         try:
-            if otp_type not in ["login", "forgot_password", "resend_otp", "sign_up"]:
+            if otp_type not in ["login", "forgot_password", "resend", "sign_up"]:
                 raise HTTPException(
                     status_code=400,
                     detail="Invalid OTP type. Must be 'login', 'forgot_password', 'resend_otp', or 'sign_up'",
@@ -526,7 +546,7 @@ class UserManager:
                     {
                         "$unset": {otp_field: 1, otp_expires_field: 1},
                         "$set": {
-                            "is_active": True if otp_type == "sign_up" else user.get("is_active"),
+                            "is_active": True if otp_type in ["sign_up", "resend"] else user.get("is_active"),
                             **update_data,  # Include device_token and web_token if provided
                         },
                     },
@@ -598,7 +618,7 @@ class UserManager:
                     {
                         "$unset": {otp_field: 1, otp_expires_field: 1},
                         "$set": {
-                            "is_active": True if otp_type == "sign_up" else user.get("is_active"),
+                            "is_active": True if otp_type in ["sign_up", "resend"] else user.get("is_active"),
                             **update_data,  # Include device_token and web_token if provided
                         },
                     },
