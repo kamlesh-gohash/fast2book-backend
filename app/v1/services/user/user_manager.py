@@ -1991,6 +1991,7 @@ class UserManager:
 
             if user and user.user_location:
                 user_location = user.user_location
+                print(user_location, "user_location")
                 geo_filter = [
                     {
                         "$addFields": {
@@ -2011,8 +2012,10 @@ class UserManager:
                         }
                     },
                 ]
+
             elif ipaddress:
                 geo = geocoder.ip(ipaddress)
+                print(geo, "geo")
                 if geo.ok and geo.latlng:
                     ip_location = {
                         "type": "Point",
