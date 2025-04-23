@@ -58,13 +58,18 @@ async def register_user(
 
 # Sign in (POST request) - For authentication, e.g., JWT tokens
 @router.post("/sign-in")
-async def sign_in_user(sign_in_request: SignInRequest, user_manager: UserManager = Depends(get_user_manager)):
+async def sign_in_user(
+    sign_in_request: SignInRequest,
+    background_tasks: BackgroundTasks,
+    user_manager: UserManager = Depends(get_user_manager),
+):
     validation_result = sign_in_request.validate()
     if validation_result:
         return validation_result
     try:
         # Proceed with the sign-in logic after Zon validation
         data = await user_manager.sign_in(
+            background_tasks,
             sign_in_request.email,
             sign_in_request.phone,
             sign_in_request.password,
