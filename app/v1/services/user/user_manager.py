@@ -185,6 +185,7 @@ class UserManager:
         is_login_with_otp: bool = False,
         device_token: str = None,
         web_token: str = None,
+        is_mobile: bool = False,  # Add is_mobile parameter
     ) -> dict:
         """Sign in a user by email or password."""
         try:
@@ -268,7 +269,7 @@ class UserManager:
                 user_data["id"] = str(user.id)
                 user_data.pop("password", None)
                 user_data.pop("otp", None)
-                access_token = create_access_token(data={"sub": user.email})
+                access_token = create_access_token(data={"sub": user.email}, is_mobile=is_mobile)  # Pass is_mobile
                 refresh_token = create_refresh_token(data={"sub": user.email})
 
                 return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
@@ -343,7 +344,7 @@ class UserManager:
                 user_data["id"] = str(user.id)
                 user_data.pop("password", None)
                 user_data.pop("otp", None)
-                access_token = create_access_token(data={"sub": str(user.phone)})
+                access_token = create_access_token(data={"sub": str(user.phone)}, is_mobile=is_mobile)  # Pass is_mobile
                 refresh_token = create_refresh_token(data={"sub": str(user.phone)})
 
                 return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
@@ -491,6 +492,7 @@ class UserManager:
         otp_type: Optional[str] = None,
         device_token: Optional[str] = None,
         web_token: Optional[str] = None,
+        is_mobile: bool = False,  # Add is_mobile parameter
     ) -> dict:
         """
         Validates an OTP for the specified type ('login', 'forgot_password', 'resend_otp', 'sign_up').
@@ -581,7 +583,9 @@ class UserManager:
                         user_data["business_type"] = vendor_data.get("business_type", None)
                         user_data["vendor_details"] = vendor_data
 
-                access_token = create_access_token(data={"sub": str(user.get("email"))})
+                access_token = create_access_token(
+                    data={"sub": str(user.get("email"))}, is_mobile=is_mobile
+                )  # Pass is_mobile
                 refresh_token = create_refresh_token(data={"sub": str(user.get("email"))})
                 return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
 
@@ -653,7 +657,9 @@ class UserManager:
                         user_data["business_type"] = vendor_data.get("business_type", None)
                         user_data["vendor_details"] = vendor_data
 
-                access_token = create_access_token(data={"sub": str(user.get("phone"))})
+                access_token = create_access_token(
+                    data={"sub": str(user.get("phone"))}, is_mobile=is_mobile
+                )  # Pass is_mobile
                 refresh_token = create_refresh_token(data={"sub": str(user.get("phone"))})
                 return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
 

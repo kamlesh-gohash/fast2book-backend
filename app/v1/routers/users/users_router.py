@@ -76,6 +76,7 @@ async def sign_in_user(
             sign_in_request.is_login_with_otp,
             sign_in_request.device_token,
             sign_in_request.web_token,
+            sign_in_request.is_mobile,
         )
         if "OTP sent successfully" in data.get("message", ""):
             return data
@@ -187,6 +188,7 @@ async def validate_otp(validate_otp_request: ValidateOtpRequest, user_manager: U
             otp_type=validate_otp_request.otp_type,
             device_token=validate_otp_request.device_token,
             web_token=validate_otp_request.web_token,
+            is_mobile=validate_otp_request.is_mobile,
         )
         return success({"message": "OTP validated successfully", "data": result})
     except HTTPException as http_ex:
