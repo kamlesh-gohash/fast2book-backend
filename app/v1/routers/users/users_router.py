@@ -186,6 +186,7 @@ async def validate_otp(validate_otp_request: ValidateOtpRequest, user_manager: U
             otp=validate_otp_request.otp,
             otp_type=validate_otp_request.otp_type,
             device_token=validate_otp_request.device_token,
+            web_token=validate_otp_request.web_token,
         )
         return success({"message": "OTP validated successfully", "data": result})
     except HTTPException as http_ex:

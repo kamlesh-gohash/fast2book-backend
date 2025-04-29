@@ -221,6 +221,7 @@ class ValidateOtpRequest(BaseModel):
     otp: str
     otp_type: str
     device_token: Optional[str] = None
+    web_token: Optional[str] = None
 
     def validate(self):
         # Ensure either email or phone is provided, but not both
