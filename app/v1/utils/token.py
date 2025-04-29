@@ -11,7 +11,7 @@ from app.v1.config.auth import oauth
 
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 ALGORITHM = "HS256"  # You can use other algorithms like RS256 if you want
-ACCESS_TOKEN_EXPIRE_MINUTES = 24 * 60  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 1
 REFRESH_TOKEN_EXPIRE_MINUTES = 30 * 24 * 60  # 30 days
 
 
@@ -38,11 +38,11 @@ async def get_oauth_tokens(user) -> dict:
         raise HTTPException(status_code=500, detail="Failed to retrieve OAuth tokens: " + str(ex))
 
 
-def create_access_token(data: dict) -> str:
+def create_access_token(data: dict, is_mobile: bool = False) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-
+    if not is_mobile:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
