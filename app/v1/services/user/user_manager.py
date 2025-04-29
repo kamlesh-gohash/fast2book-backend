@@ -188,7 +188,6 @@ class UserManager:
     ) -> dict:
         """Sign in a user by email or password."""
         try:
-            print("email", email)
             update_data = {}
             if device_token:
                 update_data["device_token"] = device_token
@@ -196,7 +195,6 @@ class UserManager:
                 update_data["web_token"] = web_token
 
             if email:
-                print("email", email)
                 result = await user_collection.find_one({"email": {"$regex": f"^{email}$", "$options": "i"}})
                 if not result:
                     raise HTTPException(
