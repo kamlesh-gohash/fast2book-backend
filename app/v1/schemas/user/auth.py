@@ -101,6 +101,7 @@ class SignInRequest(BaseModel):
     device_token: Optional[str] = None
     web_token: Optional[str] = None
     is_login_with_otp: Optional[bool] = False
+    is_mobile: Optional[bool] = False
 
     def validate(self):
         try:
@@ -222,6 +223,7 @@ class ValidateOtpRequest(BaseModel):
     otp_type: str
     device_token: Optional[str] = None
     web_token: Optional[str] = None
+    is_mobile: Optional[bool] = False
 
     def validate(self):
         # Ensure either email or phone is provided, but not both
