@@ -529,22 +529,46 @@ class BookingManager:
 
                 # Safely parse time_slot with fallback
                 time_slot = booking.get("time_slot", "")
-                booking_datetime = None
+                booking_start_datetime = None
+                booking_end_datetime = None
+
                 try:
-                    start_time = time_slot.split("-")[0].strip() if "-" in time_slot else time_slot.strip()
-                    if start_time and any(c.isdigit() for c in start_time):
-                        booking_datetime = tz.localize(
-                            datetime.strptime(booking["booking_date"] + " " + start_time, "%Y-%m-%d %I:%M %p")
-                        )
+                    if "-" in time_slot:
+                        start_time_str, end_time_str = [t.strip() for t in time_slot.split("-")]
+                        if start_time_str and end_time_str and any(c.isdigit() for c in start_time_str):
+                            # Parse start time
+                            booking_start_datetime = tz.localize(
+                                datetime.strptime(booking["booking_date"] + " " + start_time_str, "%Y-%m-%d %I:%M %p")
+                            )
+                            # Parse end time
+                            booking_end_datetime = tz.localize(
+                                datetime.strptime(booking["booking_date"] + " " + end_time_str, "%Y-%m-%d %I:%M %p")
+                            )
+                            # Handle case where end time is next day (e.g., 11:00 PM - 1:00 AM)
+                            if booking_end_datetime < booking_start_datetime:
+                                booking_end_datetime += timedelta(days=1)
                     else:
-                        booking_datetime = tz.localize(datetime.strptime(booking["booking_date"], "%Y-%m-%d"))
+                        # If no time slot or invalid format, just use the date
+                        start_time_str = time_slot.strip()
+                        if start_time_str and any(c.isdigit() for c in start_time_str):
+                            booking_start_datetime = tz.localize(
+                                datetime.strptime(booking["booking_date"] + " " + start_time_str, "%Y-%m-%d %I:%M %p")
+                            )
+                            # Default duration of 1 hour if no end time specified
+                            booking_end_datetime = booking_start_datetime + timedelta(hours=1)
+                        else:
+                            # Just the date with no time - consider it as all day
+                            booking_start_datetime = tz.localize(datetime.strptime(booking["booking_date"], "%Y-%m-%d"))
+                            booking_end_datetime = booking_start_datetime + timedelta(days=1)
                 except (ValueError, IndexError) as e:
-                    booking_datetime = tz.localize(datetime.strptime(booking["booking_date"], "%Y-%m-%d"))
+                    # Fallback to just the date if parsing fails
+                    booking_start_datetime = tz.localize(datetime.strptime(booking["booking_date"], "%Y-%m-%d"))
+                    booking_end_datetime = booking_start_datetime + timedelta(days=1)
 
                 booking_status = booking.get("booking_status", "").lower()
 
-                # Split into upcoming and past based on datetime
-                if booking_datetime >= current_datetime and booking_status not in ["cancelled", "completed"]:
+                # Split into upcoming and past based on end datetime
+                if booking_end_datetime >= current_datetime and booking_status not in ["cancelled", "completed"]:
                     upcoming_bookings.append(booking)
                 else:
                     # Include past bookings with any status, but filter by status_filter if provided

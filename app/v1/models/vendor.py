@@ -77,6 +77,7 @@ class Vendor(Document):
     is_subscription: bool = Field(default=False)
     is_payment_required: bool = Field(default=False)
     vendor_account_data: Optional[List[Dict]] = None  # New field for array storage
+    vendor_services_image: Optional[List[str]] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
