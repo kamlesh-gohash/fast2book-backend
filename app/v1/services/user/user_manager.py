@@ -993,7 +993,6 @@ class UserManager:
                     },
                 ]
             else:
-
                 ip_address = request.query_params.get("ipAddress")
                 if ip_address:
                     geo = geocoder.ip(ip_address)
@@ -1185,13 +1184,23 @@ class UserManager:
                                                         {
                                                             "$and": [
                                                                 {"$eq": ["$$business_type", "business"]},
-                                                                {"$in": ["$vendor_user_id", "$$created_users_ids"]},
+                                                                {
+                                                                    "$in": [
+                                                                        {"$toString": "$vendor_user_id"},
+                                                                        "$$created_users_ids",
+                                                                    ]
+                                                                },
                                                             ]
                                                         },
                                                         {
                                                             "$and": [
                                                                 {"$ne": ["$$business_type", "business"]},
-                                                                {"$in": ["$vendor_user_id", "$$vendor_user_ids"]},
+                                                                {
+                                                                    "$in": [
+                                                                        {"$toString": "$vendor_user_id"},
+                                                                        "$$vendor_user_ids",
+                                                                    ]
+                                                                },
                                                             ]
                                                         },
                                                     ]
@@ -1207,6 +1216,9 @@ class UserManager:
                                         "seat_count": 1,
                                         "vendor_user_id": {"$toString": "$vendor_user_id"},
                                         "time_slot": 1,
+                                        "start_time": {
+                                            "$trim": {"input": {"$arrayElemAt": [{"$split": ["$time_slot", "-"]}, 0]}}
+                                        },
                                     }
                                 },
                             ],
@@ -1222,6 +1234,7 @@ class UserManager:
                             "business_address": 1,
                             "business_details": 1,
                             "is_payment_required": 1,
+                            "vendor_services_image_urls": 1,
                             "category_id": {"$toString": "$category_id"},
                             "services": "$vendor_service.services",
                             "location": 1,
@@ -1237,9 +1250,11 @@ class UserManager:
                                         "seat_count": {"$ifNull": ["$$booking.seat_count", 1]},
                                         "vendor_user_id": "$$booking.vendor_user_id",
                                         "time_slot": "$$booking.time_slot",
+                                        "start_time": "$$booking.start_time",
                                     },
                                 }
                             },
+                            "debug_bookings": "$bookings",  # Added for debugging
                         }
                     },
                     {"$unwind": {"path": "$created_users", "preserveNullAndEmptyArrays": True}},
@@ -1439,20 +1454,19 @@ class UserManager:
                                                                                                                         ]
                                                                                                                     },
                                                                                                                     {
-                                                                                                                        "$eq": [
-                                                                                                                            {
-                                                                                                                                "$arrayElemAt": [
-                                                                                                                                    {
-                                                                                                                                        "$split": [
-                                                                                                                                            "$$booking.time_slot",
-                                                                                                                                            " - ",
-                                                                                                                                        ]
-                                                                                                                                    },
-                                                                                                                                    0,
-                                                                                                                                ]
+                                                                                                                        "$regexMatch": {
+                                                                                                                            "input": {
+                                                                                                                                "$trim": {
+                                                                                                                                    "input": "$$booking.start_time"
+                                                                                                                                }
                                                                                                                             },
-                                                                                                                            "$$time_slot.start_time",
-                                                                                                                        ]
+                                                                                                                            "regex": {
+                                                                                                                                "$trim": {
+                                                                                                                                    "input": "$$time_slot.start_time"
+                                                                                                                                }
+                                                                                                                            },
+                                                                                                                            "options": "i",
+                                                                                                                        }
                                                                                                                     },
                                                                                                                 ]
                                                                                                             },
@@ -1521,6 +1535,7 @@ class UserManager:
                             "business_type": 1,
                             "business_address": 1,
                             "business_details": 1,
+                            "vendor_services_image_urls": 1,
                             "category_id": 1,
                             "services": 1,
                             "fees": 1,
@@ -1529,6 +1544,7 @@ class UserManager:
                             "booking_count": 1,
                             "average_rating": 1,
                             "current_user_rating": 1,
+                            "debug_bookings": 1,  # Added for debugging
                         }
                     },
                     {"$skip": skip},
@@ -2015,7 +2031,6 @@ class UserManager:
 
             if user and user.user_location:
                 user_location = user.user_location
-                print(user_location, "user_location")
                 geo_filter = [
                     {
                         "$addFields": {
@@ -2039,7 +2054,6 @@ class UserManager:
 
             elif ipaddress:
                 geo = geocoder.ip(ipaddress)
-                print(geo, "geo")
                 if geo.ok and geo.latlng:
                     ip_location = {
                         "type": "Point",

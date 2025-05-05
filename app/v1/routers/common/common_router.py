@@ -42,6 +42,7 @@ async def upload_file(
             "5": "thumbnails",
             "6": "video",
             "7": "other",
+            "8": "vednor_services_images",
         }
 
         folder_name = folder_mapping.get(type, "other")

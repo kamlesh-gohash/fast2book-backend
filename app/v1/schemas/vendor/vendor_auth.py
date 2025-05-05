@@ -179,6 +179,7 @@ class UpdateVendorRequest(BaseModel):
     manage_offer: Optional[str] = None
     location: Optional[Location] = Field(None, description="Location details of the vendor")
     specialization: Optional[str] = Field(None, description="specialization of the vendor")
+    vendor_services_image: Optional[List[str]] = None
     status: StatusEnum = Field(default=StatusEnum.Active)
 
     @root_validator(pre=True)

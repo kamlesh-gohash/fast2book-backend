@@ -245,12 +245,13 @@ class ServicesManager:
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Category with ID '{service_request.category_id}' does not exist.",
                     )
-                # vendor_using_service = await vendor_collection.find_one({"services.id": id})
-                # if vendor_using_service:
-                #     raise HTTPException(
-                #         status_code=status.HTTP_400_BAD_REQUEST,
-                #         detail="This service is in use by a vendor and its category cannot be updated"
-                #     )
+                # Check if the service is in use by a vendor
+                vendor_using_service = await vendor_collection.find_one({"services.id": id})
+                if vendor_using_service:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="This service is in use by a vendor and its category cannot be updated",
+                    )
             else:
                 # Fetch the existing category for the error message if needed
                 category = await category_collection.find_one({"_id": service["category_id"]})
@@ -294,9 +295,11 @@ class ServicesManager:
 
             # Update category_id and category_name if provided
             if service_request.category_id is not None:
-                update_data["category_id"] = ObjectId(service_request.category_id)
-                update_data["category_name"] = category["name"]
-                update_data["category_slug"] = category["slug"]
+                # Update category_id and category_name if provided
+                if service_request.category_id is not None:
+                    update_data["category_id"] = ObjectId(service_request.category_id)
+                    update_data["category_name"] = category["name"]
+                    update_data["category_slug"] = category["slug"]
 
             # Check if there are any fields to update
             if not update_data:
@@ -343,12 +346,12 @@ class ServicesManager:
             service = await services_collection.find_one({"_id": ObjectId(id)})
             if not service:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-            # vendor_using_service = await vendor_collection.find_one({"services.id": id})
-            # if vendor_using_service:
-            #     raise HTTPException(
-            #         status_code=status.HTTP_400_BAD_REQUEST,
-            #         detail="This service is in use by a vendor and cannot be deleted"
-            #     )
+            vendor_using_service = await vendor_collection.find_one({"services.id": id})
+            if vendor_using_service:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This service is in use by a vendor and cannot be deleted",
+                )
             await services_collection.delete_one({"_id": ObjectId(id)})
             return {"data": None}
 
