@@ -687,6 +687,19 @@ class VendorManager:
                 vendor_update_data["is_payment_required"] = update_vendor_request.is_payment_required
             if update_vendor_request.service_details is not None:
                 vendor_update_data["service_details"] = update_vendor_request.service_details
+            if update_vendor_request.vendor_services_image is not None:
+                vendor_services_images = update_vendor_request.vendor_services_image
+                if not isinstance(vendor_services_images, list):
+                    vendor_services_images = [vendor_services_images]
+                vendor_services_image_urls = [
+                    f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+                    for image_name in vendor_services_images
+                ]
+
+                # Store both image names and their URLs
+                vendor_update_data["vendor_services_image"] = vendor_services_images
+                vendor_update_data["vendor_services_image_urls"] = vendor_services_image_urls
+
             # Check if there are any updates to perform
             if not user_update_data and not vendor_update_data:
                 raise HTTPException(
@@ -732,6 +745,8 @@ class VendorManager:
                 "location": updated_vendor.get("location"),
                 "specialization": updated_user.get("specialization"),
                 "is_payment_required": updated_vendor.get("is_payment_required"),
+                "vendor_services_image": updated_vendor.get("vendor_services_image"),
+                "vendor_services_image_urls": updated_vendor.get("vendor_services_image_urls"),
                 "fees": updated_user.get("fees"),
                 "status": updated_vendor.get("status"),
             }
@@ -1127,6 +1142,7 @@ class VendorManager:
                 vendor_data["id"] = str(vendor_data.pop("_id"))
                 vendor_data["is_payment_required"] = vendor_data.get("is_payment_required", False)
                 vendor_data["location"] = vendor_data.get("location", "")
+                vendor_data["vednor_services_image"] = vendor_data.get("vednor_services_image", "")
                 vendor_data.pop("_id", None)
                 vendor.update(vendor_data)
 
@@ -1290,6 +1306,18 @@ class VendorManager:
                 vendor_data["status"] = update_vendor_request.status
             if update_vendor_request.business_details is not None:
                 vendor_data["business_details"] = update_vendor_request.business_details
+            if update_vendor_request.vendor_services_image is not None:
+                vendor_services_images = update_vendor_request.vendor_services_image
+                if not isinstance(vendor_services_images, list):
+                    vendor_services_images = [vendor_services_images]
+                vendor_services_image_urls = [
+                    f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/{image_name}"
+                    for image_name in vendor_services_images
+                ]
+
+                # Store both image names and their URLs
+                vendor_data["vendor_services_image"] = vendor_services_images
+                vendor_data["vendor_services_image_urls"] = vendor_services_image_urls
 
             if vendor_data:
                 await vendor_collection.update_one(vendor_query, {"$set": vendor_data})
@@ -1325,6 +1353,8 @@ class VendorManager:
                     "is_payment_required": updated_vendor.get("is_payment_required"),
                     "availability_slots": updated_vendor.get("availability_slots"),
                     "location": updated_vendor.get("location"),
+                    "vendor_services_image": updated_vendor.get("vendor_services_image"),
+                    "vendor_services_image_urls": updated_vendor.get("vendor_services_image_urls"),
                     "status": updated_vendor.get("status"),
                 },
             }
