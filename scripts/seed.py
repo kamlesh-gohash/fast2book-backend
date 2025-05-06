@@ -34,25 +34,24 @@ async def seed_data():
         print("Admin user already exists!")
 
 
-async def seed_payment_types():
-    """Seed payment types into the database."""
-    payment_methods = [
-        {"name": "Card", "description": "Payment via credit or debit card"},
-        {"name": "Razorpay", "description": "Payment via Razorpay gateway"},
-        {"name": "PhonePe", "description": "Payment via PhonePe wallet"},
-    ]
+# async def seed_payment_types():
+#     """Seed payment types into the database."""
+#     payment_methods = [
+#         {"name": "GST", "description": "GST Payment"},
+#         {"name": "Platform Fees", "description": "Platform Fees Payment"},
+#     ]
 
-    for method in payment_methods:
-        print(f"Seeding payment type: {method['name']}")
-        # Check if the payment type already exists
-        existing_method = await payment_collection.count_documents({"name": method["name"]})
-        if existing_method == 0:
-            # Create a new payment type
-            payment_type = PaymentType(name=method["name"], description=method["description"])
-            await payment_collection.insert_one(payment_type.dict())
-            print(f"Payment type '{method['name']}' seeded successfully!")
-        else:
-            print(f"Payment type '{method['name']}' already exists!")
+#     for method in payment_methods:
+#         print(f"Seeding payment type: {method['name']}")
+#         # Check if the payment type already exists
+#         existing_method = await payment_collection.count_documents({"name": method["name"]})
+#         if existing_method == 0:
+#             # Create a new payment type
+#             payment_type = PaymentType(name=method["name"], description=method["description"])
+#             await payment_collection.insert_one(payment_type.dict())
+#             print(f"Payment type '{method['name']}' seeded successfully!")
+#         else:
+#             print(f"Payment type '{method['name']}' already exists!")
 
 
 async def seed_categorys():
@@ -85,22 +84,16 @@ async def seed_payment_types():
     """Seed payment types into the database."""
     payment_methods = [
         {
-            "name": "Card",
-            "description": "Payment via credit or debit card",
+            "name": "GST",
+            "description": "GST Fees",
             "charge_type": "percentage",
-            "charge_value": 2.5,
+            "charge_value": 18,
         },
         {
-            "name": "Razorpay",
-            "description": "Payment via Razorpay gateway",
+            "name": "Platform Fees",
+            "description": "Platform Fees",
             "charge_type": "fixed",
             "charge_value": 50,
-        },
-        {
-            "name": "PhonePe",
-            "description": "Payment via PhonePe wallet",
-            "charge_type": "percentage",
-            "charge_value": 1.5,
         },
     ]
 

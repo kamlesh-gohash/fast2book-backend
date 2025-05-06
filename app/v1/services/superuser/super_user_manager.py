@@ -734,9 +734,7 @@ class SuperUserManager:
 
             # Fetch latest 10 bookings sorted by 'created_at'
             bookings_cursor = (
-                booking_collection.find({"booking_status": "pending", "payment_status": "paid"})
-                .sort("created_at", DESCENDING)
-                .limit(10)
+                booking_collection.find({"payment_status": "paid"}).sort("created_at", DESCENDING).limit(10)
             )
 
             bookings = await bookings_cursor.to_list(length=10)  # Convert cursor to list
