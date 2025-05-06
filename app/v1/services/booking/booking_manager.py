@@ -120,25 +120,44 @@ class BookingManager:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid fees value")
 
             # Fetch payment configuration
-            payment_method = "Razorpay"
-            payment_config = await payment_collection.find_one({"name": payment_method})
-            if not payment_config:
+            payment_configs = await payment_collection.find({"status": "active"}).to_list(length=None)
+            if not payment_configs:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
 
-            admin_charge_type = payment_config.get("charge_type")  # 'percentage' or 'fixed'
-            admin_charge_value = payment_config.get("charge_value")  # e.g., 10 for 10% or 50 for $50
+            # Initialize GST and Platform Fees
+            gst_amount = 0.0
+            platform_fee = 0.0
+            gst_charge_type = None
+            gst_charge_value = 0.0
 
-            # Calculate admin charge
-            if admin_charge_type == "percentage":
-                admin_charge = (admin_charge_value / 100) * amount
-            elif admin_charge_type == "fixed":
-                admin_charge = admin_charge_value
-            else:
-                admin_charge = 0.0
+            # Process each payment config entry
+            for config in payment_configs:
+                charge_type = config.get("charge_type")
+                charge_value = config.get("charge_value", 0.0)
+                config_name = config.get("name")
 
-            # Calculate total amount
-            total_amount = amount + admin_charge
+                # Calculate the charge based on the charge_type
+                if charge_type == "percentage":
+                    charge_amount = (charge_value / 100) * amount
+                elif charge_type == "fixed":
+                    charge_amount = float(charge_value)
+                else:
+                    charge_amount = 0.0
+                    print(f"Unsupported charge type for {config_name}: {charge_type}")
 
+                # Assign the calculated amount to GST or Platform Fee
+                if config_name == "GST":
+                    gst_amount = charge_amount
+                    gst_charge_type = charge_type
+                    gst_charge_value = charge_value
+                elif config_name == "Platform Fees":
+                    platform_fee = charge_amount
+                else:
+                    print(f"Unknown config name: {config_name}")
+
+            # Calculate total amount by adding base amount, platform fee, and GST
+            total_amount = amount + platform_fee + gst_amount
+            gst_display = f"{gst_charge_value}%" if gst_charge_type == "percentage" else str(gst_amount)
             # Prepare response data
             response_data = {
                 "vendor": {
@@ -163,7 +182,8 @@ class BookingManager:
                 },
                 "booking_date": booking_date,
                 "time_slot": slot,
-                "platform_fee": str(admin_charge),  # Convert float to string
+                "gst_amount": gst_display,  # Convert float to string
+                "platform_fee": str(platform_fee),  # Convert float to string
                 "total_amount": str(total_amount),  # Convert float to string
                 "vendor_user_id": str(vendor_user.get("_id")) if vendor_user else None,
             }
@@ -1041,22 +1061,54 @@ class BookingManager:
             }
 
             if is_payment_required:
-                payment_config = await payment_collection.find_one({"name": "Razorpay"})
-                if not payment_config:
-                    raise HTTPException(status_code=404, detail="Payment configuration not found")
+                # payment_config = await payment_collection.find_one({"name": "Razorpay"})
+                # if not payment_config:
+                #     raise HTTPException(status_code=404, detail="Payment configuration not found")
 
-                admin_charge_type = payment_config.get("charge_type")
-                admin_charge_value = payment_config.get("charge_value")
+                # admin_charge_type = payment_config.get("charge_type")
+                # admin_charge_value = payment_config.get("charge_value")
                 amount = float(fees)
-                admin_charge = (
-                    (admin_charge_value / 100) * amount
-                    if admin_charge_type == "percentage"
-                    else admin_charge_value if admin_charge_type == "fixed" else 0
-                )
-                total_charges = amount + admin_charge
+                # admin_charge = (
+                #     (admin_charge_value / 100) * amount
+                #     if admin_charge_type == "percentage"
+                #     else admin_charge_value if admin_charge_type == "fixed" else 0
+                # )
+                # total_charges = amount + admin_charge
+                payment_configs = await payment_collection.find({"status": "active"}).to_list(length=None)
+                if not payment_configs:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+
+                # Initialize GST and Platform Fees
+                gst_amount = 0.0
+                platform_fee = 0.0
+
+                # Process each payment config entry
+                for config in payment_configs:
+                    charge_type = config.get("charge_type")
+                    charge_value = config.get("charge_value", 0.0)
+                    config_name = config.get("name")
+
+                    # Calculate the charge based on the charge_type
+                    if charge_type == "percentage":
+                        charge_amount = (charge_value / 100) * amount
+                    elif charge_type == "fixed":
+                        charge_amount = float(charge_value)
+                    else:
+                        charge_amount = 0.0
+
+                    # Assign the calculated amount to GST or Platform Fee
+                    if config_name == "GST":
+                        gst_amount = charge_amount
+                    elif config_name == "Platform Fees":
+                        platform_fee = charge_amount
+                    else:
+                        print(f"Unknown config name: {config_name}")
+
+                # Calculate total amount by adding base amount, platform fee, and GST
+                total_charges = amount + platform_fee + gst_amount
                 total_amount = int(total_charges * 100)
                 booking_data["amount"] = total_charges
-                vendor_amount = int(amount * 100) if transfer_value == 0 else int(amount * transfer_value * 100 / 100)
+                vendor_amount = amount
                 razorpay_order = razorpay_client.order.create(
                     {
                         "amount": total_amount,
@@ -1536,7 +1588,7 @@ class BookingManager:
     async def user_payment_history(self, current_user: User):
         try:
             payment_history = await booking_collection.find({"user_id": ObjectId(current_user.id)}).to_list(length=None)
-
+            print(payment_history)
             if not payment_history:
                 return {"message": "No payment history found", "data": []}
 
@@ -1560,34 +1612,35 @@ class BookingManager:
 
                 payment_id = booking.get("payment_id", "N/A")
                 order_id = booking.get("booking_order_id", "N/A")
-                if payment_id != "N/A" and order_id != "N/A":
-                    booking_status = booking.get("booking_status", "N/A")
-                    if booking_status == "cancelled":
-                        booking_status_formatted = "Cancelled"
-                    elif booking_status == "completed":
-                        booking_status_formatted = "Completed"
-                    else:
-                        booking_status_formatted = "Pending"
 
-                    if booking_status_formatted == "Cancelled":
-                        payment_status = "Initiated"
-                    else:
-                        payment_status = "Paid" if booking.get("payment_status") == "paid" else "Pending"
+                # Include booking even if payment_id or order_id is missing
+                booking_status = booking.get("booking_status", "N/A")
+                if booking_status == "cancelled":
+                    booking_status_formatted = "Cancelled"
+                elif booking_status == "completed":
+                    booking_status_formatted = "Completed"
+                else:
+                    booking_status_formatted = "Pending"
 
-                    history_entry = {
-                        "order_id": order_id,
-                        "payment_status": payment_status,
-                        "booking_status": booking_status_formatted,
-                        "date": date_str_formatted,
-                        "time": time_str,
-                        "transaction_id": payment_id,
-                        "payment_method": booking.get("payment_method", "N/A"),
-                        "created_at": created_at_ist,
-                    }
-                    formatted_history.append(history_entry)
+                if booking_status_formatted == "Cancelled":
+                    payment_status = "Refund Initiated"
+                else:
+                    payment_status = "Paid" if booking.get("payment_status") == "paid" else "Pending"
+
+                history_entry = {
+                    "order_id": order_id,
+                    "payment_status": payment_status,
+                    "booking_status": booking_status_formatted,
+                    "date": date_str_formatted,
+                    "time": time_str,
+                    "transaction_id": payment_id,
+                    "payment_method": booking.get("payment_method", "N/A"),
+                    "created_at": created_at_ist,
+                }
+                formatted_history.append(history_entry)
 
             formatted_history.sort(key=lambda x: x["created_at"], reverse=True)
-
+            print(formatted_history)
             for entry in formatted_history:
                 del entry["created_at"]
 

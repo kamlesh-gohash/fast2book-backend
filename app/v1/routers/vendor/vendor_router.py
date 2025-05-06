@@ -1124,3 +1124,32 @@ async def get_vendor_bank_account(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+class RefundRequest(BaseModel):
+    refund_type: str  # "full" or "partial"
+    refund_percentage: float | None = None  # Required if refund_type is "partial"
+
+
+@router.post("/refund-request/{booking_id}", status_code=status.HTTP_200_OK)
+async def refund_request(
+    request: Request,
+    booking_id: str,
+    refund_data: RefundRequest,
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.refund_request(
+            request=request, current_user=current_user, booking_id=booking_id, refund_data=refund_data
+        )
+        return success({"message": "Refund request sent successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

@@ -136,6 +136,7 @@ class UserManager:
             if not user.roles:
                 user_dict["roles"] = [Role.user]
             user_dict["notification_settings"] = DEFAULT_NOTIFICATION_PREFERENCES
+            user_dict["created_at"] = datetime.utcnow()
             user_dict["is_active"] = False
             result = await user_collection.insert_one(user_dict)
             user_dict["_id"] = str(result.inserted_id)
