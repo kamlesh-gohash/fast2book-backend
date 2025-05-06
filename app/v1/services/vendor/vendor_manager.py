@@ -91,6 +91,11 @@ def calculate_remaining_amount(current_subscription, current_plan_details):
     return remaining_amount, remaining_days
 
 
+class RefundRequest(BaseModel):
+    refund_type: str  # "full" or "partial"
+    refund_percentage: float | None = None  # Required if refund_type is "partial"
+
+
 def validate_time_format(time_str: str):
     try:
         datetime.strptime(time_str, "%H:%M")
@@ -480,7 +485,9 @@ class VendorManager:
             result["created_by"] = result.get("created_by", "Unknown")
             result["fees"] = result.get("fees")
             result.pop("vendor_id")
+            bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
             vendor_details = await vendor_collection.find_one({"_id": ObjectId(id)})
+
             if vendor_details:
                 result["business_name"] = vendor_details.get("business_name")
                 result["business_type"] = vendor_details.get("business_type")
@@ -504,6 +511,9 @@ class VendorManager:
                 result["location"] = vendor_details.get("location")
                 result["created_at"] = vendor_details.get("created_at")
                 result["vendor_account_data"] = vendor_details.get("vendor_account_data")
+                result["vendor_services_images"] = vendor_details.get("vendor_services_images")
+                result["vendor_services_images_url"] = vendor_details.get("vendor_services_images_url")
+                result["base_url"] = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/"
                 result["id"] = str(vendor_details.get("_id"))
                 vendor_details.pop("_id", None)
 
@@ -747,6 +757,7 @@ class VendorManager:
                 "is_payment_required": updated_vendor.get("is_payment_required"),
                 "vendor_services_image": updated_vendor.get("vendor_services_image"),
                 "vendor_services_image_urls": updated_vendor.get("vendor_services_image_urls"),
+                "base_url": f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/",
                 "fees": updated_user.get("fees"),
                 "status": updated_vendor.get("status"),
             }
@@ -1139,10 +1150,14 @@ class VendorManager:
             vendor["specialization"] = vendor.get("specialization", "")
             vendor.pop("vendor_id", None)
             if vendor_data:
+
+                bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
                 vendor_data["id"] = str(vendor_data.pop("_id"))
                 vendor_data["is_payment_required"] = vendor_data.get("is_payment_required", False)
                 vendor_data["location"] = vendor_data.get("location", "")
-                vendor_data["vednor_services_image"] = vendor_data.get("vednor_services_image", "")
+                vendor_data["vendor_services_image"] = vendor_data.get("vendor_services_image", "")
+                vendor_data["vendor_services_image_urls"] = vendor_data.get("vendor_services_image_urls", "")
+                vendor_data["base_url"] = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/"
                 vendor_data.pop("_id", None)
                 vendor.update(vendor_data)
 
@@ -1355,6 +1370,7 @@ class VendorManager:
                     "location": updated_vendor.get("location"),
                     "vendor_services_image": updated_vendor.get("vendor_services_image"),
                     "vendor_services_image_urls": updated_vendor.get("vendor_services_image_urls"),
+                    "base_url": f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/",
                     "status": updated_vendor.get("status"),
                 },
             }
@@ -2383,6 +2399,10 @@ class VendorManager:
             vendor_update_data = {
                 "razorpay_order_id": razorpay_order["id"],
             }
+            if vendor_subscription_request.billing_address:
+                vendor_update_data["billing_address"] = vendor_subscription_request.billing_address.dict(
+                    exclude_none=True
+                )
 
             result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
             if result.modified_count == 0:
@@ -2396,8 +2416,10 @@ class VendorManager:
             }
 
         except HTTPException as e:
+            print(e)
             raise e
         except Exception as ex:
+            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
@@ -2527,6 +2549,7 @@ class VendorManager:
                     "business_name": vendor.get("business_name"),
                     "razorpay_subscription_id": vendor.get("razorpay_subscription_id"),
                     "is_subscription": vendor.get("is_subscription"),
+                    "billing_address": vendor.get("billing_address"),
                 },
                 "subscription_details": subscription_details,
                 "plan_details": plan_details,
@@ -2664,6 +2687,7 @@ class VendorManager:
                     "first_name": current_user.first_name,
                     "email": current_user.email,
                     "phone": current_user.phone,
+                    "billing_address": vendor.get("billing_address", {}),
                 },
                 "payments": payments,
                 "plans": plans,  # Include all plans here
@@ -2857,7 +2881,6 @@ class VendorManager:
             bookings_cursor = (
                 booking_collection.find(
                     {
-                        "booking_status": "pending",
                         "payment_status": "paid",
                         "vendor_id": ObjectId(current_user.vendor_id),
                     }
@@ -3842,6 +3865,112 @@ class VendorManager:
             if not vendor_account_data:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor account data not found")
             return vendor_account_data
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def refund_request(self, request: Request, current_user: User, booking_id: str, refund_data: RefundRequest):
+        try:
+            booking = await booking_collection.find_one(
+                {"_id": ObjectId(booking_id), "vendor_id": ObjectId(current_user.vendor_id)}
+            )
+            if not booking:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+
+            if booking.get("booking_status") != "cancelled":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Booking must be canceled to request a refund"
+                )
+            if booking.get("refund_status") == "processed":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Refund has already been processed for this booking"
+                )
+
+            payment_id = booking.get("payment_id")
+            if not payment_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="No payment ID found for this booking"
+                )
+
+            amount = booking.get("amount")
+            if not amount or amount <= 0:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid amount for refund")
+
+            if refund_data.refund_type not in ["full", "partial"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid refund_type. Must be 'full' or 'partial'"
+                )
+
+            if refund_data.refund_type == "full":
+                refund_percentage = 1.0
+            else:  # partial
+                if not refund_data.refund_percentage:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="refund_percentage is required for partial refunds",
+                    )
+                if not (0 < refund_data.refund_percentage <= 100):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="refund_percentage must be between 0 and 100"
+                    )
+                refund_percentage = refund_data.refund_percentage / 100
+
+            refund_amount = amount * refund_percentage
+            refund_amount_paisa = int(refund_amount * 100)
+
+            try:
+                refund_response = razorpay_client.payment.refund(
+                    payment_id=payment_id,
+                    data={
+                        "amount": refund_amount_paisa,
+                        "speed": "normal",
+                        "notes": {
+                            "reason": "Booking canceled by user",
+                            "booking_id": str(booking_id),
+                            "refund_percentage": str(refund_percentage * 100) + "%",
+                        },
+                    },
+                )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to process refund with Razorpay: {str(e)}",
+                )
+
+            refund_id = refund_response.get("id")
+            update_result = await booking_collection.update_one(
+                {"_id": ObjectId(booking_id)},
+                {
+                    "$set": {
+                        "refund_status": "processed",
+                        "refund_id": refund_id,
+                        "refunded_at": datetime.utcnow(),
+                        "refund_amount": refund_amount,
+                        "refund_percentage": refund_percentage * 100,
+                    }
+                },
+            )
+
+            if update_result.modified_count == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to update booking with refund details",
+                )
+
+            result = {
+                "booking_id": str(booking_id),
+                "refund_id": refund_id,
+                "original_amount": amount,
+                "refund_amount": refund_amount,
+                "refund_percentage": refund_percentage * 100,
+                "refund_status": "processed",
+            }
+
+            return result
 
         except HTTPException:
             raise

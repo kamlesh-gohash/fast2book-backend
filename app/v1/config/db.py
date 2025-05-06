@@ -15,6 +15,8 @@ async def initiate_database():
             "app.v1.models.user.User",
             "app.v1.models.category.Category",
             "app.v1.models.transfer_amount.TransferAmount",
+            "app.v1.models.vendor.Vendor",
+            "app.v1.models.vendor.BillingAddress",
         ],
     )
     print("MongoDB Connected")

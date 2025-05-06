@@ -42,16 +42,13 @@ class DaySlot(BaseModel):
 #     name: Optional[str] = None
 
 
-# class Location(BaseModel):
-#     address_components: Optional[List[Dict]] = Field(None, description="Address components of the location")
-#     formatted_address: Optional[str] = Field(None, description="Formatted address of the location")
-#     geometry: Optional[Dict] = Field(None, description="Geometry details of the location")
-#     place_id: Optional[str] = Field(None, description="Place ID of the location")
-#     types: Optional[List[str]] = Field(None, description="Types of the location")
-#     url: Optional[str] = Field(None, description="URL of the location")
-#     utc_offset_minutes: Optional[int] = Field(None, description="UTC offset in minutes")
-#     vicinity: Optional[str] = Field(None, description="Vicinity of the location")
-#     website: Optional[str] = Field(None, description="Website of the location")
+class BillingAddress(Document):
+    address_line_1: Optional[str] = Field(None, max_length=255, description="First line of the billing address")
+    address_line_2: Optional[str] = Field(None, max_length=255, description="Second line of the billing address")
+    city: Optional[str] = Field(None, max_length=100, description="City of the billing address")
+    state_province: Optional[str] = Field(None, max_length=100, description="State or province of the billing address")
+    postcode: Optional[str] = Field(None, max_length=20, description="Postcode of the billing address")
+    country: Optional[str] = Field(None, max_length=100, description="Country of the billing address")
 
 
 class Vendor(Document):
@@ -64,6 +61,7 @@ class Vendor(Document):
     business_name: Optional[str] = Field(None, max_length=100)
     business_address: Optional[str] = Field(None, max_length=255)
     business_details: Optional[str] = None
+    billing_address: Optional[BillingAddress] = Field(None, description="Structured billing address of the vendor")
     category_id: Optional[str] = Field(None, description="ID of the selected category")
     category_name: Optional[str] = Field(None, description="Name of the selected category")
     services: Optional[List[Service]] = Field(None, description="List of selected services with their IDs and names")
