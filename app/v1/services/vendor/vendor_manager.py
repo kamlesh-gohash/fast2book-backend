@@ -511,8 +511,8 @@ class VendorManager:
                 result["location"] = vendor_details.get("location")
                 result["created_at"] = vendor_details.get("created_at")
                 result["vendor_account_data"] = vendor_details.get("vendor_account_data")
-                result["vendor_services_images"] = vendor_details.get("vendor_services_images")
-                result["vendor_services_images_url"] = vendor_details.get("vendor_services_images_url")
+                result["vendor_services_images"] = vendor_details.get("vendor_services_image")
+                result["vendor_services_images_url"] = vendor_details.get("vendor_services_image_urls")
                 result["base_url"] = f"https://{bucket_name}.s3.{os.getenv('AWS_S3_REGION')}.amazonaws.com/"
                 result["id"] = str(vendor_details.get("_id"))
                 vendor_details.pop("_id", None)
@@ -2298,6 +2298,7 @@ class VendorManager:
             period = plan_details.get("period", "monthly").lower()
 
             if period not in ["daily", "weekly", "monthly", "yearly"]:
+                print(f"Unsupported interval type: {period}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
                 )
