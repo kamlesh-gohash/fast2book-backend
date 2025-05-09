@@ -32,6 +32,7 @@ from app.v1.models import (
     ticket_collection,
     user_collection,
     vendor_collection,
+    vendor_services_collection,
 )
 from app.v1.models.category import Category
 from app.v1.models.search_query import SearchQuery
@@ -202,6 +203,11 @@ class UserManager:
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED, detail="User does not exist with this email"
                     )
+                user_roles = result.get("roles", [])
+                if "user" not in [role if isinstance(role, str) else role.value for role in user_roles]:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN, detail="Only users with 'user' role can log in"
+                    )
                 if is_login_with_otp:
                     if not result.get("is_active", False):
                         raise HTTPException(
@@ -279,6 +285,11 @@ class UserManager:
                 result = await user_collection.find_one({"phone": phone})
                 if not result:
                     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid phone number")
+                user_roles = result.get("roles", [])
+                if "user" not in [role if isinstance(role, str) else role.value for role in user_roles]:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN, detail="Only users with 'user' role can log in"
+                    )
                 if is_login_with_otp:
                     if not result.get("is_active", False):
                         raise HTTPException(
@@ -548,6 +559,7 @@ class UserManager:
                         "$unset": {otp_field: 1, otp_expires_field: 1},
                         "$set": {
                             "is_active": True if otp_type in ["sign_up", "resend"] else user.get("is_active"),
+                            "status": "active" if otp_type in ["sign_up", "resend"] else user.get("status"),
                             **update_data,  # Include device_token and web_token if provided
                         },
                     },
@@ -622,6 +634,7 @@ class UserManager:
                         "$unset": {otp_field: 1, otp_expires_field: 1},
                         "$set": {
                             "is_active": True if otp_type in ["sign_up", "resend"] else user.get("is_active"),
+                            "status": "active" if otp_type in ["sign_up", "resend"] else user.get("status"),
                             **update_data,  # Include device_token and web_token if provided
                         },
                     },
@@ -915,7 +928,30 @@ class UserManager:
                 service = await services_collection.find_one({"_id": ObjectId(service_id), "status": "active"})
                 if not service:
                     raise HTTPException(status_code=404, detail="Service not found")
-                vendor_filter["services.id"] = service_id
+
+                # Query vendor_services_collection to match service_id in either services.id or services.service_id
+                vendor_services = await vendor_services_collection.find(
+                    {"$or": [{"services.id": service_id}, {"services.service_id": ObjectId(service_id)}]}
+                ).to_list(length=None)
+
+                # Create a mapping of vendor_id to vendor_user_ids that offer the service
+                vendor_user_map = {}
+                for vendor_service in vendor_services:
+                    vendor_id = str(vendor_service["vendor_id"])
+                    vendor_user_id = str(vendor_service["vendor_user_id"])
+                    if vendor_id not in vendor_user_map:
+                        vendor_user_map[vendor_id] = []
+                    vendor_user_map[vendor_id].append(vendor_user_id)
+
+                # Extract unique vendor_ids
+                vendor_ids = list(vendor_user_map.keys())
+
+                # If no vendors are found with the service, raise an exception
+                if not vendor_ids:
+                    raise HTTPException(status_code=404, detail="No vendors found for the specified service")
+
+                # Add vendor_id filter to the main vendor_filter
+                vendor_filter["_id"] = {"$in": [ObjectId(vid) for vid in vendor_ids]}
 
             current_date = date if date else datetime.now().date()
             date_range = [current_date + timedelta(days=i) for i in range(7)]
@@ -1115,6 +1151,14 @@ class UserManager:
                                     }
                                 },
                                 {
+                                    "$match": {
+                                        "$or": [
+                                            {"services.id": service_id} if service_id else {},
+                                            {"services.service_id": ObjectId(service_id)} if service_id else {},
+                                        ]
+                                    }
+                                },
+                                {
                                     "$project": {
                                         "_id": {"$toString": "$_id"},
                                         "services": {
@@ -1138,6 +1182,14 @@ class UserManager:
                                 },
                             ],
                             "as": "vendor_service",
+                        }
+                    },
+                    {
+                        "$match": {
+                            "$or": [
+                                {"vendor_service": {"$exists": True, "$ne": []}},
+                                {"business_type": {"$ne": "business"}},
+                            ]
                         }
                     },
                     {"$unwind": {"path": "$vendor_service", "preserveNullAndEmptyArrays": True}},

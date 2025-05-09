@@ -243,7 +243,7 @@ class CostumerManager:
 
             # Convert _id to string and format other fields
             result["id"] = str(result.pop("_id"))
-            result["first_name"] = result["first_name"].capitalize()
+            result["first_name"] = result["first_name"]
             result["last_name"] = result["last_name"].capitalize()
             result["email"] = result.get("email")
             result["phone"] = result.get("phone")
@@ -341,7 +341,7 @@ class CostumerManager:
 
             response_data = {
                 "id": str(updated_costumer.get("_id")),
-                "first_name": updated_costumer.get("first_name", "").capitalize(),
+                "first_name": updated_costumer.get("first_name", ""),
                 "last_name": updated_costumer.get("last_name", "").capitalize(),
                 "email": updated_costumer.get("email", ""),
                 "phone": updated_costumer.get("phone", ""),

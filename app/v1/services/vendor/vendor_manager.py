@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 import bcrypt
 import httpx
+import pkg_resources
 import pytz
 import razorpay
 import requests
@@ -39,6 +40,7 @@ from app.v1.models.slots import *
 from app.v1.models.vendor import Vendor
 from app.v1.models.vendor_query import VendorQuery
 from app.v1.schemas.vendor.vendor_auth import *
+from app.v1.utils.celery_config import *
 from app.v1.utils.email import *
 from app.v1.utils.token import create_access_token, create_refresh_token, get_oauth_tokens
 
@@ -105,6 +107,17 @@ def validate_time_format(time_str: str):
 
 
 import razorpay.errors
+
+
+def convert_objectid_to_str(data):
+    """Recursively convert ObjectId to string in a dictionary or list."""
+    if isinstance(data, dict):
+        return {k: convert_objectid_to_str(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [convert_objectid_to_str(item) for item in data]
+    elif isinstance(data, ObjectId):
+        return str(data)
+    return data
 
 
 RAZOR_PAY_KEY_ID = os.getenv("RAZOR_PAY_KEY_ID")
@@ -377,7 +390,7 @@ class VendorManager:
                 vendor_id = str(vendor.pop("_id"))
                 vendor["id"] = vendor_id
                 # Capitalize names and format email
-                vendor["first_name"] = vendor["first_name"].capitalize()
+                vendor["first_name"] = vendor["first_name"]
                 vendor["last_name"] = vendor["last_name"].capitalize()
                 vendor["email"] = vendor["email"]
                 vendor["user_image"] = vendor.get("user_image", "")
@@ -471,7 +484,7 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
             result["id"] = str(result.pop("_id"))
-            result["first_name"] = result.get("first_name", "").capitalize()
+            result["first_name"] = result.get("first_name", "")
             result["last_name"] = result.get("last_name", "").capitalize()
             result["email"] = result.get("email", "")
             result["phone"] = result.get("phone", "Unknown")
@@ -1128,7 +1141,7 @@ class VendorManager:
             vendor["id"] = str(vendor.pop("_id"))
             vendor.pop("password", None)
             vendor.pop("otp", None)
-            vendor["first_name"] = vendor["first_name"].capitalize()
+            vendor["first_name"] = vendor["first_name"]
             vendor["last_name"] = vendor["last_name"].capitalize()
             if vendor["phone"]:
                 vendor["phone"] = vendor["phone"] or ""
@@ -1301,12 +1314,19 @@ class VendorManager:
                 vendor_data["services"] = updated_services
 
                 # Update the vendor_services_collection with the updated services
-                vendor_service_update_result = await vendor_services_collection.update_one(
+                await vendor_services_collection.update_one(
                     {
                         "vendor_id": ObjectId(current_user.vendor_id),
                         "vendor_user_id": ObjectId(current_user.id),
                     },
-                    {"$set": {"services": updated_services}},
+                    {
+                        "$set": {
+                            "services": updated_services,
+                            "vendor_id": ObjectId(current_user.vendor_id),
+                            "vendor_user_id": ObjectId(current_user.id),
+                        }
+                    },
+                    upsert=True,
                 )
 
             if update_vendor_request.service_details is not None:
@@ -1965,7 +1985,7 @@ class VendorManager:
                 vendor["id"] = vendor_id
 
                 # Capitalize names and format email
-                vendor["first_name"] = vendor.get("first_name", "").capitalize()
+                vendor["first_name"] = vendor.get("first_name", "")
                 vendor["last_name"] = vendor.get("last_name", "").capitalize()
                 vendor["email"] = vendor.get("email", "").lower()
                 vendor_user_id = vendor.get("vendor_id", None)
@@ -2036,7 +2056,7 @@ class VendorManager:
             for user in users:
                 user_data = {
                     "id": str(user["_id"]),
-                    "first_name": user.get("first_name", "").capitalize(),
+                    "first_name": user.get("first_name", ""),
                     "last_name": user.get("last_name", "").capitalize(),
                     "email": user.get("email", ""),
                     "created_at": user.get("created_at"),
@@ -2086,7 +2106,7 @@ class VendorManager:
             user_vendor_update_data = {}
 
             if vendor_user_request.first_name is not None:
-                user_vendor_update_data["first_name"] = vendor_user_request.first_name.capitalize()
+                user_vendor_update_data["first_name"] = vendor_user_request.first_name
             if vendor_user_request.last_name is not None:
                 user_vendor_update_data["last_name"] = vendor_user_request.last_name.capitalize()
             if vendor_user_request.email is not None:
@@ -2325,44 +2345,78 @@ class VendorManager:
                 current_subscription_id = vendor["razorpay_subscription_id"]
                 try:
                     current_subscription = razorpay_client.subscription.fetch(current_subscription_id)
+                    if current_subscription["status"] == "active":
+                        # Fetch current plan details to determine the period
+                        current_plan_id = current_subscription["plan_id"]
+                        current_plan_details = razorpay_client.plan.fetch(current_plan_id)
+                        current_period = current_plan_details.get("period", "monthly").lower()
+                        current_interval = current_plan_details.get("interval", 1)
+
+                        # Calculate the end of the current billing period
+                        current_start_date = datetime.fromtimestamp(current_subscription["start_at"])
+                        if current_period == "weekly":
+                            period_duration = timedelta(weeks=current_interval)
+                        elif current_period == "monthly":
+                            period_duration = timedelta(days=30 * current_interval)  # Approximate month
+                        elif current_period == "daily":
+                            period_duration = timedelta(days=current_interval)
+                        elif current_period == "yearly":
+                            period_duration = timedelta(days=365 * current_interval)
+                        else:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Unsupported current plan period: {current_period}",
+                            )
+
+                        # Estimate the end of the current billing period
+                        current_period_end = current_start_date + period_duration
+                        while current_period_end < datetime.now():
+                            current_period_end += period_duration  # Move to the current active period
+                        next_period_start = current_period_end
+
+                        # Fallback: Cancel current subscription and schedule new one
+                        razorpay_subscription_data["start_at"] = int(next_period_start.timestamp())
+                        try:
+                            # Cancel current subscription at the end of the current period
+                            razorpay_client.subscription.cancel(
+                                current_subscription_id, data={"cancel_at_cycle_end": 1}
+                            )
+                            # Create new subscription starting at the next period
+                            updated_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
+                        except Exception as e:
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail=f"Failed to schedule new subscription: {str(e)}",
+                            )
+
+                        # Update vendor's billing address if provided
+                        # vendor_update_data = {
+                        #     "razorpay_subscription_id": updated_subscription["id"]
+                        # }
+                        # if vendor_subscription_request.billing_address:
+                        #     vendor_update_data["billing_address"] = vendor_subscription_request.billing_address.dict(
+                        #         exclude_none=True
+                        #     )
+
+                        # result = await vendor_collection.update_one(
+                        #     {"_id": vendor["_id"]}, {"$set": vendor_update_data}
+                        # )
+                        # if result.modified_count == 0:
+                        #     raise HTTPException(
+                        #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        #         detail="Failed to update vendor"
+                        #     )
+
+                        return {
+                            "subscription_id": updated_subscription["id"],
+                            "message": "Subscription plan scheduled to change at the next billing cycle",
+                            "amount": new_plan_amount,
+                            "currency": plan_details["item"].get("currency", "INR"),
+                        }
                 except Exception as e:
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"Failed to fetch current subscription details: {str(e)}",
-                    )
-
-                # Fetch the plan details for the current subscription
-                try:
-                    current_plan_id = current_subscription["plan_id"]
-                    if isinstance(current_plan_id, dict):
-                        current_plan_id = current_plan_id["id"]  # Extract the plan ID if it's a dictionary
-
-                    current_plan_details = razorpay_client.plan.fetch(current_plan_id)
-
-                    # Ensure current_plan_details["item"] is a dictionary
-                    if isinstance(current_plan_details["item"], str):
-                        current_plan_details["item"] = json.loads(current_plan_details["item"])
-
-                    # Calculate the remaining amount from the current subscription
-                    current_plan_amount = int(current_plan_details["item"]["amount"])
-                    current_plan_start_date = datetime.fromtimestamp(current_subscription["start_at"])
-                    current_plan_period = current_plan_details["period"].lower()
-
-                    total_days_in_plan = PERIOD_TO_DURATION.get(current_plan_period, 30)
-                    # Calculate the unused portion of the current subscription
-                    current_date = datetime.now()
-                    subscription_end_date = current_plan_start_date + timedelta(days=total_days_in_plan)
-                    days_used = (subscription_end_date - current_date).days
-                    remaining_days = (subscription_end_date - current_date).days
-                    remaining_amount = (current_plan_amount / total_days_in_plan) * remaining_days
-
-                    # Deduct the remaining amount from the new plan's cost
-                    adjusted_amount = max(new_plan_amount - remaining_amount, 0)  # Ensure it doesn’t go negative
-                    adjusted_amount = int(round(adjusted_amount))  # Round to the nearest integer
-                except Exception as e:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to fetch or process current plan details: {str(e)}",
                     )
             else:
                 adjusted_amount = int(plan_details["item"]["amount"])
@@ -2647,31 +2701,31 @@ class VendorManager:
                 new_plan_price = p.get("amount", 0)
                 discounted_price = new_plan_price
 
-                if "manage_plan" in vendor and vendor["manage_plan"]:
-                    # Fetch current plan details
-                    current_plan = await plan_collection.find_one({"razorpay_plan_id": vendor["manage_plan"]})
-                    if current_plan:
-                        current_plan_price = current_plan.get("amount", 0)
+                # if "manage_plan" in vendor and vendor["manage_plan"]:
+                #     # Fetch current plan details
+                #     current_plan = await plan_collection.find_one({"razorpay_plan_id": vendor["manage_plan"]})
+                #     if current_plan:
+                #         current_plan_price = current_plan.get("amount", 0)
 
-                        # Calculate current_plan_duration based on period
-                        current_plan_period = current_plan.get("period")
-                        current_plan_duration = PERIOD_TO_DURATION.get(current_plan_period, 30)
+                #         # Calculate current_plan_duration based on period
+                #         current_plan_period = current_plan.get("period")
+                #         current_plan_duration = PERIOD_TO_DURATION.get(current_plan_period, 30)
 
-                        subscription_id = vendor.get("razorpay_subscription_id")
-                        subscription = razorpay_client.subscription.fetch(subscription_id)
-                        subscription_start_date = subscription.get("start_at")
-                        if subscription_start_date:
-                            subscription_start_date = datetime.fromtimestamp(subscription_start_date)
-                            today = datetime.now()
-                            subscription_end_date = subscription_start_date + timedelta(days=current_plan_duration)
+                #         subscription_id = vendor.get("razorpay_subscription_id")
+                #         subscription = razorpay_client.subscription.fetch(subscription_id)
+                #         subscription_start_date = subscription.get("start_at")
+                #         if subscription_start_date:
+                #             subscription_start_date = datetime.fromtimestamp(subscription_start_date)
+                #             today = datetime.now()
+                #             subscription_end_date = subscription_start_date + timedelta(days=current_plan_duration)
 
-                            remaining_days = (subscription_end_date - today).days
-                            if remaining_days > 0:
-                                # Calculate daily rate based on the current plan's price and duration
-                                daily_rate = current_plan_price / current_plan_duration
-                                remaining_value = daily_rate * remaining_days
-                                # Deduct the remaining value from the new plan's price
-                                discounted_price = max(new_plan_price - remaining_value, 0)
+                #             remaining_days = (subscription_end_date - today).days
+                #             if remaining_days > 0:
+                #                 # Calculate daily rate based on the current plan's price and duration
+                #                 daily_rate = current_plan_price / current_plan_duration
+                #                 remaining_value = daily_rate * remaining_days
+                #                 # Deduct the remaining value from the new plan's price
+                #                 discounted_price = max(new_plan_price - remaining_value, 0)
                 # Add the calculated price to the response
                 p["amount"] = discounted_price
 
@@ -2689,6 +2743,7 @@ class VendorManager:
                     "email": current_user.email,
                     "phone": current_user.phone,
                     "billing_address": vendor.get("billing_address", {}),
+                    "is_subscription": vendor.get("is_subscription", False),
                 },
                 "payments": payments,
                 "plans": plans,  # Include all plans here
@@ -3972,6 +4027,468 @@ class VendorManager:
             }
 
             return result
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def cancel_subscription(self, request: Request, current_user: User, cancel_at_cycle_end: bool = False):
+        try:
+            print(cancel_at_cycle_end, "cancel_at_cycle_end")
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            subscription_id = vendor.get("razorpay_subscription_id")
+            if not subscription_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+
+            razorpay_cancel_flag = 1 if cancel_at_cycle_end else 0
+            print(razorpay_cancel_flag, "razorpay_cancel_flag")
+            try:
+                razorpay_client.subscription.cancel(subscription_id, data={"cancel_at_cycle_end": razorpay_cancel_flag})
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to cancel Razorpay subscription: {str(e)}",
+                )
+            if not cancel_at_cycle_end:
+                await vendor_collection.update_one(
+                    {"_id": ObjectId(current_user.vendor_id)},
+                    {"$set": {"razorpay_subscription_id": None, "is_subscription": False, "manage_plan": None}},
+                )
+            else:
+                try:
+                    subscription = razorpay_client.subscription.fetch(subscription_id)
+                    end_at = subscription.get("end_at")  # Unix timestamp
+                    if not end_at:
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Could not determine billing cycle end date",
+                        )
+
+                    eta = datetime.fromtimestamp(end_at)
+                    update_vendor_subscription_status.apply_async(args=[str(current_user.vendor_id)], eta=eta)
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to schedule subscription update: {str(e)}",
+                    )
+
+            cancellation_type = "at the end of the billing cycle" if cancel_at_cycle_end else "immediately"
+            return cancellation_type
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    # async def pause_subscription(self, request: Request, current_user: User, subscription_id: str, pause_immediately: bool = True):
+    #     try:
+    #         # Check if the user has the "vendor" role
+    #         if "vendor" not in [role.value for role in current_user.roles]:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_403_FORBIDDEN,
+    #                 detail="You do not have permission to access this page"
+    #             )
+
+    #         try:
+    #             subscription = razorpay_client.subscription.fetch(subscription_id)
+    #         except Exception as e:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #                 detail=f"Failed to fetch subscription: {str(e)}"
+    #             )
+    #         if subscription.get("status") != "active":
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #                 detail="Only active subscriptions can be paused"
+    #             )
+
+    #         if pause_immediately:
+    #             try:
+    #                 razorpay_client.subscription.pause(subscription_id, pause_at="now")
+    #             except Exception as e:
+    #                 raise HTTPException(
+    #                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #                     detail=f"Failed to pause Razorpay subscription: {str(e)}"
+    #                 )
+    #         vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+    #         if not vendor:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_404_NOT_FOUND,
+    #                 detail="Vendor not found"
+    #             )
+    #         await vendor_collection.update_one(
+    #         {"_id": ObjectId(current_user.vendor_id)},
+    #         {"$set": {
+    #             "is_subscription": False,
+    #             "subscription_pause": True
+    #         }}
+    #         )
+    #         # else:
+    #             # Return billing cycle end date for scheduled pause
+    #             # billing_cycle_end = subscription.get("current_end", None)
+    #             # if not billing_cycle_end:
+    #             #     raise HTTPException(
+    #             #         status_code=status.HTTP_400_BAD_REQUEST,
+    #             #         detail="Cannot determine billing cycle end date"
+    #             #     )
+    #             # # Note: Actual scheduling of the pause should be handled externally
+    #             # return {
+    #             #     "message": "Subscription pause scheduled for the end of the billing cycle",
+    #             #     "billing_cycle_end": billing_cycle_end
+    #             # }
+
+    #         return vendor
+
+    #     except HTTPException:
+    #         raise
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #             detail=f"An unexpected error occurred: {str(ex)}"
+    #         )
+
+    # async def resume_subscription(self, request: Request, current_user: User, subscription_id: str,resume_at:bool = True):
+    #     try:
+    #         if "vendor" not in [role.value for role in current_user.roles]:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_403_FORBIDDEN,
+    #                 detail="You do not have permission to access this page"
+    #             )
+    #         try:
+    #             subscription = razorpay_client.subscription.fetch(subscription_id)
+    #         except Exception as e:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #                 detail=f"Failed to fetch subscription: {str(e)}"
+    #             )
+    #         if subscription.get("status") != "paused":
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #                 detail="Only paused subscriptions can be resumed"
+    #             )
+    #         if resume_at:
+    #             try:
+    #                 razorpay_client.subscription.resume(subscription_id, resume_at="now")
+    #             except Exception as e:
+    #                 raise HTTPException(
+    #                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #                     detail=f"Failed to resume Razorpay subscription: {str(e)}"
+    #                 )
+    #         vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+    #         if not vendor:
+    #             raise HTTPException(
+    #                 status_code=status.HTTP_404_NOT_FOUND,
+    #                 detail="Vendor not found"
+    #             )
+    #         await vendor_collection.update_one(
+    #         {"_id": ObjectId(current_user.vendor_id)},
+    #         {"$set": {
+    #             "is_subscription": True
+    #         }}
+    #         )
+    #         # else:
+    #             # Return billing cycle end date for scheduled resume
+    #             # billing_cycle_end = subscription.get("current_end", None)
+    #             # if not billing_cycle_end:
+    #             #     raise HTTPException(
+    #             #         status_code=status.HTTP_400_BAD_REQUEST,
+    #             #         detail="Cannot determine billing cycle end date"
+    #             #     )
+
+    #         return vendor
+
+    #     except HTTPException as ex:
+    #         raise ex
+    #     except Exception as ex:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #             detail=f"An unexpected error occurred: {str(ex)}"
+    #         )
+
+    async def manage_subscription(self, request: Request, current_user: User, action: str, immediate: bool = True):
+        try:
+            if action not in ["pause", "resume"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Action must be 'pause' or 'resume'"
+                )
+
+            if "vendor" not in [role.value for role in current_user.roles]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
+                )
+
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            subscription_id = vendor.get("razorpay_subscription_id", None)
+            if not subscription_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subscription ID not found")
+
+            try:
+                subscription = razorpay_client.subscription.fetch(subscription_id)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to fetch subscription: {str(e)}"
+                )
+
+            # Optional: Reinstate active status check for pause if needed
+            # if action == "pause" and subscription.get("status") != "active":
+            #     raise HTTPException(
+            #         status_code=status.HTTP_400_BAD_REQUEST,
+            #         detail="Only active subscriptions can be paused"
+            #     )
+            if action == "resume" and subscription.get("status") != "paused":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Only paused subscriptions can be resumed"
+                )
+
+            if immediate:
+                try:
+                    if action == "pause":
+                        razorpay_client.subscription.pause(subscription_id, data={"pause_at": "now"})
+                        await vendor_collection.update_one(
+                            {"_id": ObjectId(current_user.vendor_id)},
+                            {
+                                "$set": {
+                                    "is_subscription": False,
+                                }
+                            },
+                        )
+                    else:
+                        razorpay_client.subscription.resume(subscription_id, data={"resume_at": "now"})
+                        await vendor_collection.update_one(
+                            {"_id": ObjectId(current_user.vendor_id)},
+                            {
+                                "$set": {
+                                    "is_subscription": True,
+                                }
+                            },
+                        )
+                    # Fetch updated vendor document
+                    updated_vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to {action} Razorpay subscription: {str(e)}",
+                    )
+            else:
+                try:
+                    billing_cycle_end = subscription.get("current_end")
+                    if not billing_cycle_end:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot determine billing cycle end date"
+                        )
+
+                    eta = datetime.fromtimestamp(billing_cycle_end)
+                    if action == "pause":
+                        pause_vendor_subscription.apply_async(
+                            args=[str(current_user.vendor_id), subscription_id], eta=eta
+                        )
+                    else:  # resume
+                        resume_vendor_subscription.apply_async(
+                            args=[str(current_user.vendor_id), subscription_id], eta=eta
+                        )
+                    # Use existing vendor document for response (no immediate update)
+                    updated_vendor = vendor
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to schedule {action}: {str(e)}",
+                    )
+
+            action_type = "immediately" if immediate else "at the end of the billing cycle"
+            return {
+                "message": f"Subscription {action}d {action_type}",
+                "vendor": {
+                    "is_subscription": updated_vendor.get("is_subscription", False),
+                },
+            }
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def is_subscration(self, request: Request, current_user: User):
+        try:
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+            is_subscription = vendor.get("is_subscription", False)
+            return {"is_subscration": is_subscription}
+
+        except HTTPException as ex:
+            raise ex
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def vendor_all_bookings(
+        self,
+        request: Request,
+        current_user: User,
+        page: int,
+        limit: int,
+        search: Optional[str] = None,
+        statuss: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ):
+        try:
+            # Validate vendor_id
+            if not current_user.vendor_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="User is not associated with a vendor"
+                )
+
+            # Check if vendor exists
+            vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+            if not vendor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            # Build query
+            query = {"vendor_id": ObjectId(current_user.vendor_id)}
+            pipeline = [{"$match": query}]
+
+            if search:
+                search = search.strip()
+                if not search:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Search term cannot be empty")
+                search_regex = {"$regex": search, "$options": "i"}
+
+                # Aggregation pipeline for search with lookups
+                pipeline = [
+                    {"$match": {"vendor_id": ObjectId(current_user.vendor_id)}},
+                    {
+                        "$lookup": {
+                            "from": "categories",
+                            "localField": "category_id",
+                            "foreignField": "_id",
+                            "as": "category",
+                        }
+                    },
+                    {"$unwind": {"path": "$category", "preserveNullAndEmptyArrays": True}},
+                    {
+                        "$lookup": {
+                            "from": "services",
+                            "localField": "service_id",
+                            "foreignField": "_id",
+                            "as": "service",
+                        }
+                    },
+                    {"$unwind": {"path": "$service", "preserveNullAndEmptyArrays": True}},
+                    {"$lookup": {"from": "users", "localField": "user_id", "foreignField": "_id", "as": "user"}},
+                    {"$unwind": {"path": "$user", "preserveNullAndEmptyArrays": True}},
+                    {"$lookup": {"from": "vendor", "localField": "vendor_id", "foreignField": "_id", "as": "vendor"}},
+                    {"$unwind": {"path": "$vendor", "preserveNullAndEmptyArrays": True}},
+                    {
+                        "$match": {
+                            "$or": [
+                                {"booking_order_id": search_regex},
+                                {"user.first_name": search_regex},
+                                {"category.name": search_regex},
+                                {"service.name": search_regex},
+                                {"vendor.business_name": search_regex},
+                            ]
+                        }
+                    },
+                ]
+
+            # Status filter
+            if statuss:
+                query["booking_status"] = statuss
+                pipeline.append({"$match": {"booking_status": statuss}})
+
+            # Date filter
+            if start_date or end_date:
+                date_filter = {}
+                if start_date:
+                    date_filter["$gte"] = start_date
+                if end_date:
+                    date_filter["$lte"] = end_date
+                if date_filter:
+                    query["booking_date"] = date_filter
+                    pipeline.append({"$match": {"booking_date": date_filter}})
+
+            # Sort by created_at descending
+            pipeline.append({"$sort": {"created_at": -1}})
+
+            # Pagination
+            skip = max((page - 1) * limit, 0)
+            pipeline.extend([{"$skip": skip}, {"$limit": limit}])
+
+            vendor_bookings = await booking_collection.aggregate(pipeline).to_list(length=limit)
+            total_count = await booking_collection.count_documents(query)
+            total_pages = (total_count + limit - 1) // limit
+            has_prev_page = page > 1
+            has_next_page = page < total_pages
+            prev_page = page - 1 if has_prev_page else None
+            next_page = page + 1 if has_next_page else None
+
+            for booking in vendor_bookings:
+                booking["id"] = str(booking["_id"])
+                booking.pop("_id", None)
+                booking["user_id"] = str(booking["user_id"])
+                booking["vendor_id"] = str(booking["vendor_id"])
+                booking["category_id"] = str(booking["category_id"])
+                booking["service_id"] = str(booking["service_id"])
+
+                ist_timezone = pytz.timezone("Asia/Kolkata")
+                created_at = booking.get("created_at")
+                if isinstance(created_at, datetime):
+                    created_at_utc = created_at.replace(tzinfo=pytz.utc)  # Assume UTC
+                    created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
+                    booking["created_at"] = created_at_ist.isoformat()
+                user = booking.get("user_id", {})
+                user = await user_collection.find_one({"_id": ObjectId(user)})
+                if user:
+                    booking["user_name"] = user.get("first_name")
+
+                vendor_user = await user_collection.find_one({"vendor_id": ObjectId(booking["vendor_id"])})
+                if vendor.get("business_type") == "business" and vendor_user:
+                    vendor_user = await user_collection.find_one({"created_by": str(vendor_user["_id"])})
+                if vendor_user:
+                    booking["vendor_email"] = vendor_user.get("email")
+                    booking["vendor_name"] = vendor_user.get("first_name")
+
+                category = await category_collection.find_one({"_id": ObjectId(booking["category_id"])})
+                if category:
+                    booking["category_name"] = category.get("name")
+
+                service = await services_collection.find_one({"_id": ObjectId(booking["service_id"])})
+                if service:
+                    booking["service_name"] = service.get("name")
+
+            vendor_bookings = convert_objectid_to_str(vendor_bookings)
+            return {
+                "data": vendor_bookings,
+                "paginator": {
+                    "itemCount": total_count,
+                    "perPage": limit,
+                    "pageCount": total_pages,
+                    "currentPage": page,
+                    "slNo": skip + 1,
+                    "hasPrevPage": has_prev_page,
+                    "hasNextPage": has_next_page,
+                    "prev": prev_page,
+                    "next": next_page,
+                },
+            }
 
         except HTTPException:
             raise
