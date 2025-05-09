@@ -155,9 +155,22 @@ class BookingManager:
                 else:
                     print(f"Unknown config name: {config_name}")
 
-            # Calculate total amount by adding base amount, platform fee, and GST
-            total_amount = amount + platform_fee + gst_amount
+            # Calculate total tax (GST + platform fee)
+            total_tax = gst_amount + platform_fee
+
+            # Calculate total amount by adding base amount and total tax
+            total_amount = amount + total_tax
+
+            # Prepare tax display information
+            tax_details = {
+                "amount": str(total_tax),
+                "breakdown": {
+                    "gst": {"type": gst_charge_type, "value": str(gst_charge_value), "amount": str(gst_amount)},
+                    "platform_fee": str(platform_fee),
+                },
+            }
             gst_display = f"{gst_charge_value}%" if gst_charge_type == "percentage" else str(gst_amount)
+
             # Prepare response data
             response_data = {
                 "vendor": {
@@ -168,8 +181,8 @@ class BookingManager:
                     "fees": str(amount),  # Convert float to string
                     "location": vendor.get("location"),
                     "specialization": vendor_user.get("specialization"),
-                    "user_image": vendor_user.get("user_image", ""),
-                    "user_image_url": vendor_user.get("user_image_url", ""),
+                    "user_image": vendor_user.get("user_image"),
+                    "user_image_url": vendor_user.get("user_image_url"),
                     "is_payment_required": vendor.get("is_payment_required", False),
                 },
                 "category": {
@@ -183,7 +196,7 @@ class BookingManager:
                 "booking_date": booking_date,
                 "time_slot": slot,
                 "gst_amount": gst_display,  # Convert float to string
-                "platform_fee": str(platform_fee),  # Convert float to string
+                "platform_fee": str(total_tax),  # Convert float to string
                 "total_amount": str(total_amount),  # Convert float to string
                 "vendor_user_id": str(vendor_user.get("_id")) if vendor_user else None,
             }
@@ -1588,7 +1601,6 @@ class BookingManager:
     async def user_payment_history(self, current_user: User):
         try:
             payment_history = await booking_collection.find({"user_id": ObjectId(current_user.id)}).to_list(length=None)
-            print(payment_history)
             if not payment_history:
                 return {"message": "No payment history found", "data": []}
 
@@ -1640,7 +1652,6 @@ class BookingManager:
                 formatted_history.append(history_entry)
 
             formatted_history.sort(key=lambda x: x["created_at"], reverse=True)
-            print(formatted_history)
             for entry in formatted_history:
                 del entry["created_at"]
 
@@ -1648,5 +1659,70 @@ class BookingManager:
 
         except HTTPException:
             raise
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def vendor_monthly_booking(self, current_user: User, start_date: str, end_date: str):
+        try:
+            start_date = datetime.fromisoformat(start_date)
+            end_date = datetime.fromisoformat(end_date)
+            start_date_str = start_date.strftime("%Y-%m-%d")
+            end_date_str = end_date.strftime("%Y-%m-%d")
+
+            pipeline = [
+                {
+                    "$match": {
+                        "vendor_id": ObjectId(current_user.vendor_id),
+                        "booking_date": {"$gte": start_date_str, "$lte": end_date_str},
+                    }
+                },
+                {
+                    "$project": {
+                        "booking_date": 1,  # Include only the booking_date field
+                        "_id": 0,  # Exclude the _id field
+                    }
+                },
+                {"$sort": {"booking_date": 1}},  # Sort by booking_date in ascending order
+            ]
+
+            result = await booking_collection.aggregate(pipeline).to_list(length=None)
+            # Extract booking_date from each document
+            booking_dates = [doc["booking_date"] for doc in result]
+            return {"booking_dates": booking_dates}
+
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+    async def super_admin_monthly_booking(self, current_user: User, start_date: str, end_date: str):
+        try:
+            start_date = datetime.fromisoformat(start_date)
+            end_date = datetime.fromisoformat(end_date)
+            start_date_str = start_date.strftime("%Y-%m-%d")
+            end_date_str = end_date.strftime("%Y-%m-%d")
+
+            pipeline = [
+                {
+                    "$match": {
+                        "booking_date": {"$gte": start_date_str, "$lte": end_date_str},
+                    }
+                },
+                {
+                    "$project": {
+                        "booking_date": 1,  # Include only the booking_date field
+                        "_id": 0,  # Exclude the _id field
+                    }
+                },
+                {"$sort": {"booking_date": 1}},  # Sort by booking_date in ascending order
+            ]
+
+            result = await booking_collection.aggregate(pipeline).to_list(length=None)
+            # Extract booking_date from each document
+            booking_dates = [doc["booking_date"] for doc in result]
+            return {"booking_dates": booking_dates}
+
+        except HTTPException as e:
+            raise e
         except Exception as ex:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
