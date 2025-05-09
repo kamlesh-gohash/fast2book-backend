@@ -41,6 +41,7 @@ search_query_collection = get_model("search_query")
 notification_collection = get_model("notifications")
 transfer_amount_collection = get_model("transfer_amount")
 billing_collection = get_model("BillingAddress")
+offer_collection = get_model("offers")
 
 
 __all__ = {
@@ -69,4 +70,5 @@ __all__ = {
     "notification_collection": notification_collection,
     "transfer_amount_collection": transfer_amount_collection,
     "billing_collection": billing_collection,
+    "offer_collection": offer_collection,
 }

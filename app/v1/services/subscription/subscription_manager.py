@@ -15,7 +15,7 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import Body, HTTPException, Path, Request, status
 
 from app.v1.middleware.auth import get_current_user
-from app.v1.models import category_collection, plan_collection, subscription_collection
+from app.v1.models import category_collection, plan_collection, subscription_collection, vendor_collection
 from app.v1.models.category import Category
 from app.v1.models.services import Service
 from app.v1.models.subscription import Subscription, SubscriptionDuration
@@ -241,8 +241,28 @@ class SubscriptionManager:
 
     async def subscription_delete(self, id: str):
         try:
-            await plan_collection.delete_one({"_id": ObjectId(id)})
-            return {"data": None}
+            if not ObjectId.is_valid(id):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan ID format")
+            razorpay_plan_id = await plan_collection.find_one({"_id": ObjectId(id)})
+            if not razorpay_plan_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+            vendor_count = await vendor_collection.count_documents(
+                {"manage_plan": razorpay_plan_id.get("razorpay_plan_id")}
+            )
+            if vendor_count > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot delete plan: It is currently assigned to one or more vendors",
+                )
+
+            result = await plan_collection.delete_one({"_id": ObjectId(id)})
+            if result.deleted_count == 0:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+            return {"message": "Plan deleted successfully"}
+        except HTTPException as e:
+            raise e
         except Exception as ex:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"

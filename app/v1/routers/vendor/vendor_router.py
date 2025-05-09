@@ -1153,3 +1153,178 @@ async def refund_request(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.post("/cancel-subscration", status_code=status.HTTP_200_OK)
+async def cancel_subscription(
+    request: Request,
+    cancel_at_cycle_end: bool = False,
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.cancel_subscription(
+            request=request, current_user=current_user, cancel_at_cycle_end=cancel_at_cycle_end
+        )
+        return success({"message": "Subscription cancelled successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+# @router.post("/pause-subscration/{subscription_id}", status_code=status.HTTP_200_OK)
+# async def pause_subscription(
+#     request: Request,
+#     subscription_id: str,
+#     pause_immediately: bool = True,
+#     current_user: User = Depends(get_current_user),
+#     vendor_manager: VendorManager = Depends(get_vendor_manager),
+# ):
+#     try:
+#         result = await vendor_manager.pause_subscription(
+#             request=request, current_user=current_user, subscription_id=subscription_id, pause_immediately=pause_immediately
+#         )
+#         return success({"message": "Subscription paused successfully", "data": result})
+#     except HTTPException as http_ex:
+#         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+#     except ValueError as ex:
+#         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+#     except Exception as ex:
+#         return internal_server_error(
+#             {"message": "An unexpected error occurred", "error": str(ex)},
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#         )
+# @router.post("/resume-subscration/{subscription_id}", status_code=status.HTTP_200_OK)
+# async def resume_subscription(
+#     request: Request,
+#     subscription_id: str,
+#     resume_at:bool = True,
+#     current_user: User = Depends(get_current_user),
+#     vendor_manager: VendorManager = Depends(get_vendor_manager),
+# ):
+#     try:
+#         result = await vendor_manager.resume_subscription(
+#             request=request, current_user=current_user, subscription_id=subscription_id, resume_at=resume_at
+#         )
+#         return success({"message": "Subscription resumed successfully", "data": result})
+#     except HTTPException as http_ex:
+#         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+#     except ValueError as ex:
+#         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+#     except Exception as ex:
+#         return internal_server_error(
+#             {"message": "An unexpected error occurred", "error": str(ex)},
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#         )
+
+
+@router.post("/manage-subscription", status_code=status.HTTP_200_OK)
+async def manage_subscription_endpoint(
+    request: Request,
+    action: str,
+    immediate: bool = True,
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.manage_subscription(
+            request=request, current_user=current_user, action=action, immediate=immediate
+        )
+        return success({"message": result["message"], "data": result["vendor"]})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/is-subscration", status_code=status.HTTP_200_OK)
+async def is_subscration(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.is_subscration(request=request, current_user=current_user)
+        return success({"message": "Subscription found successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        print(ex)
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/vendor-all-bookings", status_code=status.HTTP_200_OK)
+async def vendor_all_bookings_endpoint(
+    request: Request,
+    page: int = Query(1, ge=1, description="Page number (must be >= 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (1-100)"),
+    search: str = Query(None, description="Search term to filter vendors by name, email, or phone"),
+    start_date: Optional[str] = Query(None, description="Start date in YYYY-MM-DD format"),
+    end_date: Optional[str] = Query(None, description="End date in YYYY-MM-DD format"),
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        # Parse and validate dates
+        parsed_start_date = None
+        parsed_end_date = None
+
+        if start_date:
+            try:
+                parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+
+        if end_date:
+            try:
+                parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
+
+        # Validate date range
+        if parsed_start_date and parsed_end_date and parsed_end_date < parsed_start_date:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="end_date cannot be before start_date")
+        query_params = request.query_params
+        statuss = query_params.get("query[status]")
+
+        result = await vendor_manager.vendor_all_bookings(
+            request=request,
+            page=page,
+            limit=limit,
+            search=search,
+            statuss=statuss,
+            current_user=current_user,
+            start_date=parsed_start_date,
+            end_date=parsed_end_date,
+        )
+        return success({"message": "Vendor bookings retrieved successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        print(ex)
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

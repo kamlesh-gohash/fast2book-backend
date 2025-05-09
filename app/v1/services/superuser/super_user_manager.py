@@ -501,7 +501,7 @@ class SuperUserManager:
             # Prepare the response
             user_data = {
                 "id": str(user.id),  # Convert ObjectId to string
-                "first_name": user.first_name.capitalize(),
+                "first_name": user.first_name,
                 "last_name": user.last_name.capitalize(),
                 "email": user.email.lower(),
                 "roles": user.roles,
@@ -578,7 +578,7 @@ class SuperUserManager:
                 #     created_at_ist = created_at_utc.astimezone(ist_timezone)  # Convert to IST
                 #     admin["created_at"] = created_at_ist.isoformat()
                 admin["id"] = str(admin.pop("_id"))  # Convert ObjectId to string
-                admin["first_name"] = admin["first_name"].capitalize()
+                admin["first_name"] = admin["first_name"]
                 admin["last_name"] = admin["last_name"].capitalize()
                 admin["email"] = admin["email"]
                 admin["status"] = admin.get("status", "unknown")
@@ -622,7 +622,7 @@ class SuperUserManager:
             if admin is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
             admin["id"] = str(admin.pop("_id"))  # Convert ObjectId to string
-            admin["first_name"] = admin["first_name"].capitalize()
+            admin["first_name"] = admin["first_name"]
             admin["last_name"] = admin["last_name"].capitalize()
             admin["email"] = admin["email"]
             admin["status"] = admin.get("status", "unknown")
@@ -680,7 +680,7 @@ class SuperUserManager:
 
             # Convert _id to string and format other fields
             updated_costumer["id"] = str(updated_costumer.pop("_id"))
-            updated_costumer["first_name"] = updated_costumer["first_name"].capitalize()
+            updated_costumer["first_name"] = updated_costumer["first_name"]
             updated_costumer["last_name"] = updated_costumer["last_name"].capitalize()
             updated_costumer["email"] = updated_costumer["email"]
             updated_costumer["phone"] = updated_costumer["phone"]
