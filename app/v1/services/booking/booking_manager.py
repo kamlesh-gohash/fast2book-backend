@@ -143,7 +143,6 @@ class BookingManager:
                     charge_amount = float(charge_value)
                 else:
                     charge_amount = 0.0
-                    print(f"Unsupported charge type for {config_name}: {charge_type}")
 
                 # Assign the calculated amount to GST or Platform Fee
                 if config_name == "GST":
@@ -1122,22 +1121,30 @@ class BookingManager:
                 total_amount = int(total_charges * 100)
                 booking_data["amount"] = total_charges
                 vendor_amount = amount
-                razorpay_order = razorpay_client.order.create(
-                    {
-                        "amount": total_amount,
-                        "currency": "INR",
-                        "receipt": f"temp_booking_{temp_order_id}",
-                        "payment_capture": 1,
-                        "transfers": [
-                            {
-                                "account": vendor.get("account_id"),
-                                "amount": vendor_amount,
-                                "currency": "INR",
-                                "on_hold": False,
-                            }
-                        ],
-                    }
-                )
+                account_id = vendor.get("account_id")
+                transfer_data = []
+                if isinstance(account_id, str) and account_id.startswith("acc_"):
+                    transfer_data.append(
+                        {
+                            "account": account_id,
+                            "amount": vendor_amount,
+                            "currency": "INR",
+                            "on_hold": False,
+                        }
+                    )
+                else:
+                    print("Invalid account_id: ")
+
+                razorpay_payload = {
+                    "amount": total_amount,
+                    "currency": "INR",
+                    "receipt": f"temp_booking_{temp_order_id}",
+                    "payment_capture": 1,
+                }
+                if transfer_data:
+                    razorpay_payload["transfers"] = transfer_data
+
+                razorpay_order = razorpay_client.order.create(razorpay_payload)
                 user_data = await user_collection.find_one({"_id": ObjectId(current_user.id)})
                 if not user_data:
                     raise HTTPException(status_code=404, detail="User not found")

@@ -258,7 +258,6 @@ async def refresh_token(request: RefreshTokenRequest):
     try:
         # Verify the refresh token
         payload = verify_token(request.refresh_token)
-
         # Get the user email from the token payload
         user_email = payload.get("sub")
 
@@ -744,19 +743,56 @@ async def get_user_ticket_list(
         )
 
 
-@router.get("/notification-list", status_code=status.HTTP_200_OK)
-async def get_user_notification(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-    user_manager: UserManager = Depends(get_user_manager),
+class DeleteUserRequest(BaseModel):
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+
+
+@router.post("/delete-user-otp/", status_code=status.HTTP_200_OK)
+async def delete_user(
+    request: DeleteUserRequest, background_tasks: BackgroundTasks, user_manager: UserManager = Depends(get_user_manager)
 ):
     try:
-        result = await user_manager.get_notification_list(request=request, current_user=current_user)
-        return success({"message": "User notification list found successfully", "data": result})
+        result = await user_manager.delete_user(
+            email=request.email, phone=request.phone, background_tasks=background_tasks
+        )
+        return success({"message": "Otp sent successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
-        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+class DeleteOtpVerifyRequest(BaseModel):
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    otp: Optional[str] = None
+    otp_type: Optional[str] = None
+    reason: Optional[str] = None
+    description: Optional[str] = None
+
+
+@router.post("/delete-otp-verify", status_code=status.HTTP_200_OK)
+async def delete_otp_verify(request: DeleteOtpVerifyRequest, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        result = await user_manager.delete_otp_verify(
+            email=request.email,
+            phone=request.phone,
+            otp=request.otp,
+            otp_type=request.otp_type,
+            reason=request.reason,
+            description=request.description,
+        )
+        return success({"message": "User deleted successfully", "data": None})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as ex:
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},

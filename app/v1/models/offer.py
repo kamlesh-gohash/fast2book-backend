@@ -35,7 +35,7 @@ class OfferForEnum(str, Enum):
 
 
 class Offer(BaseModel):
-    offer_for: List[OfferForEnum]  # Updated to use OfferForEnum    offer_name: str
+    offer_for: List[OfferForEnum]
     display_text: str
     terms: List[str] = Field(default_factory=list)
     offer_type: List[OfferTypeEnum] = Field(default_factory=list)

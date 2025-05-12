@@ -646,18 +646,22 @@ async def user_monthly_booking_count(
 
 @router.get("/super-admin-monthly-booking", status_code=status.HTTP_200_OK)
 async def super_admin_monthly_booking_count(
+    current_user: User = Depends(get_current_user),
     start_date: str = Query(..., description="Start date in YYYY-MM-DD format"),
     end_date: str = Query(..., description="End date in YYYY-MM-DD format"),
     booking_manager: BookingManager = Depends(get_booking_manager),
 ):
     try:
-        result = await booking_manager.super_admin_monthly_booking(start_date=start_date, end_date=end_date)
+        result = await booking_manager.super_admin_monthly_booking(
+            current_user=current_user, start_date=start_date, end_date=end_date
+        )
         return success({"message": "Monthly booking count found successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
+        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

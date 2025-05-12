@@ -63,6 +63,7 @@ async def send_email(to_email: str, source: str, context: dict = None, cc_email:
         "Login With Otp",
         "APP Link",
         "Vendor Create",
+        "Delete User",
     }
     payment_emails = {
         "Order Placed",
@@ -137,6 +138,7 @@ async def send_email(to_email: str, source: str, context: dict = None, cc_email:
         "Booking Notification": project_root / "templates/email/booking_notification.html",
         "Booking Cancelled": project_root / "templates/email/booking_cancel.html",
         "Booking Cancelled Vendor": project_root / "templates/email/booking_cancel_email_to_vendor.html",
+        "Delete User": project_root / "templates/email/delete_user.html",
     }
 
     # Get the template path based on the source
@@ -200,6 +202,7 @@ async def send_email(to_email: str, source: str, context: dict = None, cc_email:
         "Booking Notification": "New Booking",
         "Booking Cancelled": "Booking Cancelled",
         "Booking Cancelled Vendor": "Booking Cancelled Vendor",
+        "Delete User": "Otp For Delete User",
     }
     msg["Subject"] = subject_map.get(source, "Welcome")  # Default subject
 

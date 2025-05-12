@@ -1178,52 +1178,6 @@ async def cancel_subscription(
         )
 
 
-# @router.post("/pause-subscration/{subscription_id}", status_code=status.HTTP_200_OK)
-# async def pause_subscription(
-#     request: Request,
-#     subscription_id: str,
-#     pause_immediately: bool = True,
-#     current_user: User = Depends(get_current_user),
-#     vendor_manager: VendorManager = Depends(get_vendor_manager),
-# ):
-#     try:
-#         result = await vendor_manager.pause_subscription(
-#             request=request, current_user=current_user, subscription_id=subscription_id, pause_immediately=pause_immediately
-#         )
-#         return success({"message": "Subscription paused successfully", "data": result})
-#     except HTTPException as http_ex:
-#         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
-#     except ValueError as ex:
-#         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
-#     except Exception as ex:
-#         return internal_server_error(
-#             {"message": "An unexpected error occurred", "error": str(ex)},
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#         )
-# @router.post("/resume-subscration/{subscription_id}", status_code=status.HTTP_200_OK)
-# async def resume_subscription(
-#     request: Request,
-#     subscription_id: str,
-#     resume_at:bool = True,
-#     current_user: User = Depends(get_current_user),
-#     vendor_manager: VendorManager = Depends(get_vendor_manager),
-# ):
-#     try:
-#         result = await vendor_manager.resume_subscription(
-#             request=request, current_user=current_user, subscription_id=subscription_id, resume_at=resume_at
-#         )
-#         return success({"message": "Subscription resumed successfully", "data": result})
-#     except HTTPException as http_ex:
-#         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
-#     except ValueError as ex:
-#         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
-#     except Exception as ex:
-#         return internal_server_error(
-#             {"message": "An unexpected error occurred", "error": str(ex)},
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#         )
-
-
 @router.post("/manage-subscription", status_code=status.HTTP_200_OK)
 async def manage_subscription_endpoint(
     request: Request,
