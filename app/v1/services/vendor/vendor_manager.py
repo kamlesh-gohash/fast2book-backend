@@ -2318,7 +2318,6 @@ class VendorManager:
             period = plan_details.get("period", "monthly").lower()
 
             if period not in ["daily", "weekly", "monthly", "yearly"]:
-                print(f"Unsupported interval type: {period}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported interval type: {period}"
                 )
@@ -2471,10 +2470,8 @@ class VendorManager:
             }
 
         except HTTPException as e:
-            print(e)
             raise e
         except Exception as ex:
-            print(ex)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {str(ex)}",
@@ -3391,11 +3388,24 @@ class VendorManager:
                 )
 
             updated_booking = await booking_collection.find_one({"_id": ObjectId(booking_id)})
-            return {
-                "booking_id": str(updated_booking["_id"]),
-                "status": updated_booking["booking_status"],
-                "updated_at": updated_booking.get("updated_at"),
-            }
+
+            if updated_booking:
+                updated_booking["id"] = str(updated_booking["_id"])
+                updated_booking.pop("_id")
+                updated_booking["service_id"] = str(updated_booking["service_id"])
+                updated_booking.pop("service_id")
+                updated_booking["category_id"] = str(updated_booking["category_id"])
+                updated_booking.pop("category_id")
+                updated_booking["vendor_id"] = str(updated_booking["vendor_id"])
+                updated_booking.pop("vendor_id")
+                updated_booking["user_id"] = str(updated_booking["user_id"])
+                updated_booking.pop("user_id")
+                updated_booking["vendor_user_id"] = (
+                    str(updated_booking["vendor_user_id"]) if updated_booking.get("vendor_user_id") else None
+                )
+                updated_booking.pop("vendor_user_id")
+
+            return updated_booking
 
         except HTTPException:
             raise
@@ -4037,7 +4047,6 @@ class VendorManager:
 
     async def cancel_subscription(self, request: Request, current_user: User, cancel_at_cycle_end: bool = False):
         try:
-            print(cancel_at_cycle_end, "cancel_at_cycle_end")
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
@@ -4052,7 +4061,6 @@ class VendorManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
 
             razorpay_cancel_flag = 1 if cancel_at_cycle_end else 0
-            print(razorpay_cancel_flag, "razorpay_cancel_flag")
             try:
                 razorpay_client.subscription.cancel(subscription_id, data={"cancel_at_cycle_end": razorpay_cancel_flag})
             except Exception as e:
@@ -4091,131 +4099,6 @@ class VendorManager:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
-
-    # async def pause_subscription(self, request: Request, current_user: User, subscription_id: str, pause_immediately: bool = True):
-    #     try:
-    #         # Check if the user has the "vendor" role
-    #         if "vendor" not in [role.value for role in current_user.roles]:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_403_FORBIDDEN,
-    #                 detail="You do not have permission to access this page"
-    #             )
-
-    #         try:
-    #             subscription = razorpay_client.subscription.fetch(subscription_id)
-    #         except Exception as e:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST,
-    #                 detail=f"Failed to fetch subscription: {str(e)}"
-    #             )
-    #         if subscription.get("status") != "active":
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST,
-    #                 detail="Only active subscriptions can be paused"
-    #             )
-
-    #         if pause_immediately:
-    #             try:
-    #                 razorpay_client.subscription.pause(subscription_id, pause_at="now")
-    #             except Exception as e:
-    #                 raise HTTPException(
-    #                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #                     detail=f"Failed to pause Razorpay subscription: {str(e)}"
-    #                 )
-    #         vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
-    #         if not vendor:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_404_NOT_FOUND,
-    #                 detail="Vendor not found"
-    #             )
-    #         await vendor_collection.update_one(
-    #         {"_id": ObjectId(current_user.vendor_id)},
-    #         {"$set": {
-    #             "is_subscription": False,
-    #             "subscription_pause": True
-    #         }}
-    #         )
-    #         # else:
-    #             # Return billing cycle end date for scheduled pause
-    #             # billing_cycle_end = subscription.get("current_end", None)
-    #             # if not billing_cycle_end:
-    #             #     raise HTTPException(
-    #             #         status_code=status.HTTP_400_BAD_REQUEST,
-    #             #         detail="Cannot determine billing cycle end date"
-    #             #     )
-    #             # # Note: Actual scheduling of the pause should be handled externally
-    #             # return {
-    #             #     "message": "Subscription pause scheduled for the end of the billing cycle",
-    #             #     "billing_cycle_end": billing_cycle_end
-    #             # }
-
-    #         return vendor
-
-    #     except HTTPException:
-    #         raise
-    #     except Exception as ex:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #             detail=f"An unexpected error occurred: {str(ex)}"
-    #         )
-
-    # async def resume_subscription(self, request: Request, current_user: User, subscription_id: str,resume_at:bool = True):
-    #     try:
-    #         if "vendor" not in [role.value for role in current_user.roles]:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_403_FORBIDDEN,
-    #                 detail="You do not have permission to access this page"
-    #             )
-    #         try:
-    #             subscription = razorpay_client.subscription.fetch(subscription_id)
-    #         except Exception as e:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST,
-    #                 detail=f"Failed to fetch subscription: {str(e)}"
-    #             )
-    #         if subscription.get("status") != "paused":
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST,
-    #                 detail="Only paused subscriptions can be resumed"
-    #             )
-    #         if resume_at:
-    #             try:
-    #                 razorpay_client.subscription.resume(subscription_id, resume_at="now")
-    #             except Exception as e:
-    #                 raise HTTPException(
-    #                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #                     detail=f"Failed to resume Razorpay subscription: {str(e)}"
-    #                 )
-    #         vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
-    #         if not vendor:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_404_NOT_FOUND,
-    #                 detail="Vendor not found"
-    #             )
-    #         await vendor_collection.update_one(
-    #         {"_id": ObjectId(current_user.vendor_id)},
-    #         {"$set": {
-    #             "is_subscription": True
-    #         }}
-    #         )
-    #         # else:
-    #             # Return billing cycle end date for scheduled resume
-    #             # billing_cycle_end = subscription.get("current_end", None)
-    #             # if not billing_cycle_end:
-    #             #     raise HTTPException(
-    #             #         status_code=status.HTTP_400_BAD_REQUEST,
-    #             #         detail="Cannot determine billing cycle end date"
-    #             #     )
-
-    #         return vendor
-
-    #     except HTTPException as ex:
-    #         raise ex
-    #     except Exception as ex:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #             detail=f"An unexpected error occurred: {str(ex)}"
-    #         )
 
     async def manage_subscription(self, request: Request, current_user: User, action: str, immediate: bool = True):
         try:

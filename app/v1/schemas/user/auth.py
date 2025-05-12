@@ -374,7 +374,7 @@ class UpdateProfileRequest(BaseModel):
     def validate(self):
         try:
             data = self.dict(exclude_none=True)
-            change_password_validator.validate(data)
+            update_profile_validator.validate(data)
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
@@ -398,7 +398,7 @@ class LinkRequest(BaseModel):
     def validate(self):
         try:
             data = self.dict(exclude_none=True)
-            change_password_validator.validate(data)
+            link_request_validator.validate(data)
         except zon.error.ZonError as e:
             error_message = ", ".join([f"{issue.message} for value '{issue.value}'" for issue in e.issues])
             return validation_error({"message": f"Validation Error: {error_message}"})
