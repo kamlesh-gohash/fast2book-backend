@@ -26,6 +26,7 @@ from app.v1.models import (
     blog_collection,
     booking_collection,
     category_collection,
+    deleted_user_collection,
     search_query_collection,
     services_collection,
     support_collection,
@@ -2684,9 +2685,138 @@ class UserManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def get_notification_list(self, current_user: User):
+    async def delete_user(
+        self, email: Optional[EmailStr] = None, phone: Optional[str] = None, background_tasks: BackgroundTasks = None
+    ):
         try:
-            pass
+
+            if email:
+                user = await User.find_one(User.email == email)
+                if user is None:
+                    raise HTTPException(status_code=404, detail="User not found with the provided email.")
+
+                if not "user" in user.roles:
+                    raise HTTPException(status_code=400, detail="User is not a customer.")
+
+                otp = generate_otp()
+                source = "Delete User"
+                context = {"otp": otp, "name": user.first_name}
+
+                background_tasks.add_task(send_email, to_email=user.email, source=source, context=context)
+                await user_collection.update_one(
+                    {"email": email},
+                    {
+                        "$set": {
+                            "delete_otp": otp,
+                            "delete_otp_expiry": datetime.utcnow() + timedelta(minutes=10),
+                        }
+                    },
+                )
+
+                return user
+
+            if phone:
+                user = await User.find_one(User.phone == phone)
+                if user is None:
+                    raise HTTPException(status_code=404, detail="User not found with the provided phone.")
+
+                if not "user" in user.roles:
+                    raise HTTPException(status_code=400, detail="User is not a customer.")
+
+                otp = generate_otp()
+
+                send_sms_on_phone(phone, otp, expiry_minutes=10)
+                await user_collection.update_one(
+                    {"phone": phone},
+                    {
+                        "$set": {
+                            "delete_otp": otp,
+                            "delete_otp_expiry": datetime.utcnow() + timedelta(minutes=10),
+                        }
+                    },
+                )
+
+                return user
+
+            raise HTTPException(status_code=400, detail="Either email or phone must be provided.")
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def delete_otp_verify(
+        self,
+        email: Optional[EmailStr] = None,
+        phone: Optional[str] = None,
+        otp: Optional[str] = None,
+        otp_type: Optional[str] = None,
+        reason: Optional[str] = None,
+        description: Optional[str] = None,
+    ):
+        try:
+            if email:
+                user = await user_collection.find_one({"email": email})
+                if user is None:
+                    raise HTTPException(status_code=404, detail="User not found with the provided email.")
+
+                if not "user" in user.get("roles"):
+                    raise HTTPException(status_code=400, detail="User is not a customer.")
+
+                if user.get("delete_otp") != otp:
+                    raise HTTPException(status_code=400, detail="Invalid OTP.")
+
+                if user.get("delete_otp_expiry") < datetime.utcnow():
+                    raise HTTPException(status_code=400, detail="OTP is expired.")
+
+                deleted_user_data = {
+                    "original_user_id": str(user["_id"]),
+                    "email": user.get("email"),
+                    "phone": user.get("phone"),
+                    "roles": user.get("roles", []),
+                    "user_data": user,  # Store all user data
+                    "reason": reason or "User-initiated deletion",
+                    "description": description or "User requested account deletion via OTP verification.",
+                    "deleted_at": datetime.utcnow(),
+                }
+
+                # Insert into deleted_users collection
+                await deleted_user_collection.insert_one(deleted_user_data)
+                await booking_collection.delete_many({"user_id": ObjectId(user.get("_id"))})
+                await user_collection.delete_one({"email": email})
+                return {"message": "User deleted successfully."}
+
+            if phone:
+                user = await user_collection.find_one({"phone": phone})
+                if user is None:
+                    raise HTTPException(status_code=404, detail="User not found with the provided phone.")
+
+                if not "user" in user.roles:
+                    raise HTTPException(status_code=400, detail="User is not a customer.")
+
+                if user.get("delete_otp") != otp:
+                    raise HTTPException(status_code=400, detail="Invalid OTP.")
+
+                if user.get("delete_otp_expiry") < datetime.utcnow():
+                    raise HTTPException(status_code=400, detail="OTP is expired.")
+                deleted_user_data = {
+                    "original_user_id": str(user["_id"]),
+                    "email": user.get("email"),
+                    "phone": user.get("phone"),
+                    "roles": user.get("roles", []),
+                    "user_data": user,  # Store all user data
+                    "reason": reason or "User-initiated deletion",
+                    "description": description or "User requested account deletion via OTP verification.",
+                    "deleted_at": datetime.utcnow(),
+                }
+
+                await deleted_user_collection.insert_one(deleted_user_data)
+                await booking_collection.delete_many({"user_id": ObjectId(user.get("_id"))})
+                await user_collection.delete_one({"phone": phone})
+                return {"message": "User deleted successfully."}
+
+            raise HTTPException(status_code=400, detail="Either email or phone must be provided.")
         except HTTPException:
             raise
         except Exception as ex:
