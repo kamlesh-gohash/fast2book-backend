@@ -1182,13 +1182,13 @@ async def cancel_subscription(
 async def manage_subscription_endpoint(
     request: Request,
     action: str,
-    immediate: bool = True,
+    cancel_at_cycle_end: bool = True,
     current_user: User = Depends(get_current_user),
     vendor_manager: VendorManager = Depends(get_vendor_manager),
 ):
     try:
         result = await vendor_manager.manage_subscription(
-            request=request, current_user=current_user, action=action, immediate=immediate
+            request=request, current_user=current_user, action=action, cancel_at_cycle_end=cancel_at_cycle_end
         )
         return success({"message": result["message"], "data": result["vendor"]})
     except HTTPException as http_ex:

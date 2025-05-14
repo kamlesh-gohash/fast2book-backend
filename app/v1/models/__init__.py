@@ -43,6 +43,7 @@ transfer_amount_collection = get_model("transfer_amount")
 billing_collection = get_model("BillingAddress")
 offer_collection = get_model("offers")
 deleted_user_collection = get_model("deleted_users")
+vendor_offers_collection = get_model("vendor_offers")
 
 
 __all__ = {
@@ -73,4 +74,5 @@ __all__ = {
     "billing_collection": billing_collection,
     "offer_collection": offer_collection,
     "deleted_user_collection": deleted_user_collection,
+    "vendor_offers_collection": vendor_offers_collection,
 }

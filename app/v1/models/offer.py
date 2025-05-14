@@ -18,33 +18,21 @@ class DiscountTypeEnum(str, Enum):
     PERCENTAGE = "percentage"
 
 
-class PaymentMethodEnum(str, Enum):
-    CARD = "card"
-    UPI = "upi"
-    WALLET = "wallet"
-
-
-class OfferTypeEnum(str, Enum):
-    INSTANT = "instant"
-    CASHBACK = "cashback"
-
-
-class OfferForEnum(str, Enum):
-    VENDOR = "vendor"
-    USER = "user"
+# class OfferTypeEnum(str, Enum):
+#     INSTANT = "instant"
+#     CASHBACK = "cashback"
 
 
 class Offer(BaseModel):
-    offer_for: List[OfferForEnum]
+    offer_for: str
+    offer_name: str
     display_text: str
-    terms: List[str] = Field(default_factory=list)
-    offer_type: List[OfferTypeEnum] = Field(default_factory=list)
+    terms: str
+    # offer_type: List[OfferTypeEnum] = Field(default_factory=list)
     discount_type: DiscountTypeEnum
     minimum_order_amount: int
     discount_worth: int
     maximum_discount: int
-    payment_method: List[PaymentMethodEnum] = Field(default_factory=list)
-    issuer: str
     starting_date: datetime
     ending_date: datetime
     max_usage: int
@@ -54,3 +42,23 @@ class Offer(BaseModel):
 
     class Settings:
         name = "offer"
+
+
+class VendorOffer(BaseModel):
+    vendor_id: str
+    offer_name: str
+    display_text: str
+    terms: str
+    discount_type: DiscountTypeEnum
+    minimum_order_amount: int
+    discount_worth: int
+    maximum_discount: int
+    starting_date: datetime
+    ending_date: datetime
+    max_usage: int
+    status: StatusEnum = Field(default=StatusEnum.Active)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "vendor_offer"
