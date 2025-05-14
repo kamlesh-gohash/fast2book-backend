@@ -4100,7 +4100,9 @@ class VendorManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def manage_subscription(self, request: Request, current_user: User, action: str, immediate: bool = True):
+    async def manage_subscription(
+        self, request: Request, current_user: User, action: str, cancel_at_cycle_end: bool = True
+    ):
         try:
             if action not in ["pause", "resume"]:
                 raise HTTPException(
@@ -4115,7 +4117,8 @@ class VendorManager:
             vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
-            subscription_id = vendor.get("razorpay_subscription_id", None)
+
+            subscription_id = vendor.get("razorpay_subscription_id")
             if not subscription_id:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subscription ID not found")
 
@@ -4126,47 +4129,12 @@ class VendorManager:
                     status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to fetch subscription: {str(e)}"
                 )
 
-            # Optional: Reinstate active status check for pause if needed
-            # if action == "pause" and subscription.get("status") != "active":
-            #     raise HTTPException(
-            #         status_code=status.HTTP_400_BAD_REQUEST,
-            #         detail="Only active subscriptions can be paused"
-            #     )
             if action == "resume" and subscription.get("status") != "paused":
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="Only paused subscriptions can be resumed"
                 )
 
-            if immediate:
-                try:
-                    if action == "pause":
-                        razorpay_client.subscription.pause(subscription_id, data={"pause_at": "now"})
-                        await vendor_collection.update_one(
-                            {"_id": ObjectId(current_user.vendor_id)},
-                            {
-                                "$set": {
-                                    "is_subscription": False,
-                                }
-                            },
-                        )
-                    else:
-                        razorpay_client.subscription.resume(subscription_id, data={"resume_at": "now"})
-                        await vendor_collection.update_one(
-                            {"_id": ObjectId(current_user.vendor_id)},
-                            {
-                                "$set": {
-                                    "is_subscription": True,
-                                }
-                            },
-                        )
-                    # Fetch updated vendor document
-                    updated_vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
-                except Exception as e:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to {action} Razorpay subscription: {str(e)}",
-                    )
-            else:
+            if cancel_at_cycle_end:
                 try:
                     billing_cycle_end = subscription.get("current_end")
                     if not billing_cycle_end:
@@ -4183,15 +4151,33 @@ class VendorManager:
                         resume_vendor_subscription.apply_async(
                             args=[str(current_user.vendor_id), subscription_id], eta=eta
                         )
-                    # Use existing vendor document for response (no immediate update)
-                    updated_vendor = vendor
+                    updated_vendor = vendor  # No immediate update, use existing vendor
                 except Exception as e:
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"Failed to schedule {action}: {str(e)}",
                     )
+            else:
+                try:
+                    if action == "pause":
+                        razorpay_client.subscription.pause(subscription_id, data={"pause_at": "now"})
+                        await vendor_collection.update_one(
+                            {"_id": ObjectId(current_user.vendor_id)}, {"$set": {"is_subscription": False}}
+                        )
+                    else:  # resume
+                        razorpay_client.subscription.resume(subscription_id, data={"resume_at": "now"})
+                        await vendor_collection.update_one(
+                            {"_id": ObjectId(current_user.vendor_id)}, {"$set": {"is_subscription": True}}
+                        )
+                    updated_vendor = await vendor_collection.find_one({"_id": ObjectId(current_user.vendor_id)})
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to {action} Razorpay subscription: {str(e)}",
+                    )
 
-            action_type = "immediately" if immediate else "at the end of the billing cycle"
+            # Fix the action_type logic: "immediately" when cancel_at_cycle_end is False
+            action_type = "immediately" if not cancel_at_cycle_end else "at the end of the billing cycle"
             return {
                 "message": f"Subscription {action}d {action_type}",
                 "vendor": {
