@@ -485,6 +485,7 @@ class VendorSubscriptionRequest(BaseModel):
     schedule_change_at: Optional[str] = None
     expire_by: Optional[datetime] = None
     billing_address: Optional[BillingAddress] = Field(None, description="Billing address for the subscription")
+    offer_code: Optional[str] = None
 
     @root_validator(pre=True)
     def check_required_fields(cls, values):

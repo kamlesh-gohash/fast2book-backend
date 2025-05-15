@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Dict, List, Optional
+
+import pytz
 
 from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 
@@ -19,7 +21,7 @@ class OfferManager:
 
     async def create_offer(self, current_user: User, offer_request: CreateOfferRequest):
         try:
-
+            # Parse and convert dates to datetime objects
             try:
                 start_dt = datetime.fromisoformat(offer_request.starting_date.replace("Z", "+00:00"))
                 end_dt = datetime.fromisoformat(offer_request.ending_date.replace("Z", "+00:00"))
@@ -29,10 +31,13 @@ class OfferManager:
                     detail=f"Invalid date format for starting_date or ending_date: {str(e)}",
                 )
 
+            # Validate date range
             if end_dt < start_dt:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="ending_date cannot be before starting_date"
                 )
+
+            # Check for existing offer
             existing_offer = await offer_collection.find_one(
                 {"offer_name": offer_request.offer_name, "offer_for": offer_request.offer_for}
             )
@@ -42,30 +47,30 @@ class OfferManager:
                     detail=f"An offer with the name '{offer_request.offer_name}' already exists for {offer_request.offer_for}",
                 )
 
+            # Prepare offer data with datetime objects
             offer_data = {
                 "offer_for": offer_request.offer_for,
+                "created_by": str(current_user.id),
+                "is_super_admin": "admin" in [role.value for role in current_user.roles],  # Fixed condition
                 "offer_name": offer_request.offer_name,
                 "display_text": offer_request.display_text,
                 "terms": offer_request.terms,
-                # "offer_type": offer_request.offer_type,
                 "discount_type": offer_request.discount_type,
                 "minimum_order_amount": offer_request.minimum_order_amount,
                 "discount_worth": offer_request.discount_worth,
                 "maximum_discount": offer_request.maximum_discount,
-                # "payment_method": offer_request.payment_method,
-                # "issuer": offer_request.issuer,
-                "starting_date": offer_request.starting_date,
-                "ending_date": offer_request.ending_date,
+                "starting_date": start_dt,  # Store as datetime (ISODate in MongoDB)
+                "ending_date": end_dt,  # Store as datetime (ISODate in MongoDB)
                 "max_usage": offer_request.max_usage,
                 "status": offer_request.status,
-                "created_at": offer_request.created_at,
-                "updated_at": offer_request.updated_at,
+                "created_at": offer_request.created_at or datetime.now(),
+                "updated_at": offer_request.updated_at or datetime.now(),
             }
 
             # Insert into MongoDB
             result = await offer_collection.insert_one(offer_data)
             return_value = {"id": str(result.inserted_id), **offer_data}
-            return_value.pop("_id")
+            return_value.pop("_id", None)  # Ensure _id is removed if present
             return return_value
         except HTTPException as e:
             raise e
@@ -78,8 +83,8 @@ class OfferManager:
         try:
 
             skip = max((page - 1) * limit, 0)
-            query = {}
-
+            query = {"is_super_admin": True}
+            print(query, "query")
             # Search query
             if search:
                 search = search.strip()
@@ -101,7 +106,7 @@ class OfferManager:
                 {"$unset": "_id"},
             ]
             offers = await offer_collection.aggregate(pipeline).to_list(length=limit)
-
+            print(offers)
             total_offers = await offer_collection.count_documents(query)
             total_pages = (total_offers + limit - 1) // limit
             has_prev_page = page > 1
@@ -246,22 +251,32 @@ class OfferManager:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
             )
 
-    async def get_all_offer(self, current_user: User):
+    async def get_all_offer_for_user(self, current_user: User, vendor_id: str):
         try:
-            match_condition = (
-                {"offer_for": "user", "status": "active"}
-                if "user" in current_user.roles
-                else {"offer_for": "vendor", "status": "active"}
-            )
+            current_date = datetime.now(pytz.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+            next_day = current_date + timedelta(days=1)
+            match_condition = {
+                "status": "active",
+                "offer_for": "user",
+                "starting_date": {"$lte": next_day},
+                "ending_date": {"$gte": current_date},
+                "$or": [
+                    {"is_super_admin": True},
+                    {"created_by": vendor_id},
+                ],
+            }
+            print(match_condition, "match_condition")
+            matched_offers = await offer_collection.find(match_condition).to_list(length=None)
+            print(matched_offers, "matched_offers")
 
-            pipeline = [
+            offer_pipeline = [
                 {"$match": match_condition},
                 {"$set": {"id": {"$toString": "$_id"}}},
                 {"$unset": "_id"},
-                {"$limit": 100},
             ]
 
-            offers = await offer_collection.aggregate(pipeline).to_list(length=100)
+            offers = await offer_collection.aggregate(offer_pipeline).to_list(length=None)
+            print(offers, "offers")
 
             return offers
         except HTTPException as e:
@@ -336,8 +351,7 @@ class OfferManager:
     ):
         try:
             skip = max((page - 1) * limit, 0)
-            query = {"vendor_id": current_user.id}
-
+            query = {"created_by": str(current_user.id)}
             # Search query
             if search:
                 search = search.strip()
@@ -359,7 +373,6 @@ class OfferManager:
                 {"$unset": "_id"},
             ]
             vendor_offers = await offer_collection.aggregate(pipeline).to_list(length=limit)
-
             total_offers = await offer_collection.count_documents(query)
             total_pages = (total_offers + limit - 1) // limit
             has_prev_page = page > 1
@@ -391,9 +404,7 @@ class OfferManager:
 
     async def get_vendor_offer(self, vendor_offer_id: str, current_user: User):
         try:
-            vendor_offer = await offer_collection.find_one(
-                {"_id": ObjectId(vendor_offer_id), "vendor_id": current_user.id}
-            )
+            vendor_offer = await offer_collection.find_one({"_id": ObjectId(vendor_offer_id)})
             if not vendor_offer:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor offer not found")
             vendor_offer["id"] = str(vendor_offer["_id"])
@@ -413,7 +424,7 @@ class OfferManager:
             if vendor_offer_request.offer_name:
                 existing_offer = await offer_collection.find_one(
                     {
-                        "vendor_id": current_user.id,
+                        "created_by": str(current_user.id),
                         "offer_name": vendor_offer_request.offer_name,
                         "_id": {"$ne": ObjectId(vendor_offer_id)},
                     }
@@ -423,54 +434,35 @@ class OfferManager:
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"An offer with the name '{vendor_offer_request.offer_name}' already exists",
                     )
-            vendor_offer = await offer_collection.find_one(
-                {"_id": ObjectId(vendor_offer_id), "vendor_id": current_user.id}
+            vendor_offer = await vendor_offers_collection.find_one(
+                {"_id": ObjectId(vendor_offer_id), "vendor_id": str(current_user.id)}
             )
             if not vendor_offer:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor offer not found")
-            vendor_offer["offer_name"] = (
-                vendor_offer_request.offer_name if vendor_offer_request.offer_name else vendor_offer["offer_name"]
-            )
-            vendor_offer["display_text"] = (
-                vendor_offer_request.display_text if vendor_offer_request.display_text else vendor_offer["display_text"]
-            )
-            vendor_offer["terms"] = vendor_offer_request.terms if vendor_offer_request.terms else vendor_offer["terms"]
-            vendor_offer["discount_type"] = (
-                vendor_offer_request.discount_type
-                if vendor_offer_request.discount_type
-                else vendor_offer["discount_type"]
-            )
-            vendor_offer["minimum_order_amount"] = (
-                vendor_offer_request.minimum_order_amount
-                if vendor_offer_request.minimum_order_amount
-                else vendor_offer["minimum_order_amount"]
-            )
-            vendor_offer["discount_worth"] = (
-                vendor_offer_request.discount_worth
-                if vendor_offer_request.discount_worth
-                else vendor_offer["discount_worth"]
-            )
-            vendor_offer["maximum_discount"] = (
-                vendor_offer_request.maximum_discount
-                if vendor_offer_request.maximum_discount
-                else vendor_offer["maximum_discount"]
-            )
-            vendor_offer["starting_date"] = (
-                vendor_offer_request.starting_date
-                if vendor_offer_request.starting_date
-                else vendor_offer["starting_date"]
-            )
-            vendor_offer["ending_date"] = (
-                vendor_offer_request.ending_date if vendor_offer_request.ending_date else vendor_offer["ending_date"]
-            )
-            vendor_offer["max_usage"] = (
-                vendor_offer_request.max_usage if vendor_offer_request.max_usage else vendor_offer["max_usage"]
-            )
-            vendor_offer["status"] = (
-                vendor_offer_request.status if vendor_offer_request.status else vendor_offer["status"]
-            )
+            if vendor_offer_request.offer_name is not None:
+                vendor_offer["offer_name"] = vendor_offer_request.offer_name
+            if vendor_offer_request.display_text is not None:
+                vendor_offer["display_text"] = vendor_offer_request.display_text.strip()
+            if vendor_offer_request.terms is not None:
+                vendor_offer["terms"] = vendor_offer_request.terms.strip()
+            if vendor_offer_request.status is not None:
+                vendor_offer["status"] = vendor_offer_request.status
+            if vendor_offer_request.discount_type is not None:
+                vendor_offer["discount_type"] = vendor_offer_request.discount_type
+            if vendor_offer_request.minimum_order_amount is not None:
+                vendor_offer["minimum_order_amount"] = vendor_offer_request.minimum_order_amount
+            if vendor_offer_request.discount_worth is not None:
+                vendor_offer["discount_worth"] = vendor_offer_request.discount_worth
+            if vendor_offer_request.maximum_discount is not None:
+                vendor_offer["maximum_discount"] = vendor_offer_request.maximum_discount
+            if vendor_offer_request.starting_date is not None:
+                vendor_offer["starting_date"] = vendor_offer_request.starting_date
+            if vendor_offer_request.ending_date is not None:
+                vendor_offer["ending_date"] = vendor_offer_request.ending_date
+            if vendor_offer_request.max_usage is not None:
+                vendor_offer["max_usage"] = vendor_offer_request.max_usage
             vendor_offer["updated_at"] = datetime.utcnow()
-            await offer_collection.update_one({"_id": ObjectId(vendor_offer_id)}, {"$set": vendor_offer})
+            await vendor_offers_collection.update_one({"_id": ObjectId(vendor_offer_id)}, {"$set": vendor_offer})
             vendor_offer["id"] = str(vendor_offer["_id"])
             vendor_offer.pop("_id")
             return vendor_offer
@@ -483,13 +475,46 @@ class OfferManager:
 
     async def delete_vendor_offer(self, vendor_offer_id: str, current_user: User):
         try:
-            vendor_offer = await offer_collection.find_one(
-                {"_id": ObjectId(vendor_offer_id), "vendor_id": current_user.id}
+            vendor_offer = await vendor_offers_collection.find_one(
+                {"_id": ObjectId(vendor_offer_id), "vendor_id": str(current_user.id)}
             )
             if not vendor_offer:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor offer not found")
-            await offer_collection.delete_one({"_id": ObjectId(vendor_offer_id)})
+            await vendor_offers_collection.delete_one(
+                {"_id": ObjectId(vendor_offer_id), "vendor_id": str(current_user.id)}
+            )
             return vendor_offer
+        except HTTPException as e:
+            raise e
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def get_offer_for_vendor(self, current_user: User) -> List[Dict[str, Any]]:
+        try:
+            # Use UTC to match MongoDB's ISODate
+            current_date = datetime.now(pytz.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+            next_day = current_date + timedelta(days=1)
+
+            match_condition = {
+                "offer_for": "vendor",
+                "status": "active",
+                "starting_date": {"$lte": next_day},  # Include offers starting today
+                "ending_date": {"$gte": current_date},  # Include offers ending today or later
+            }
+
+            # Debug: Check matched documents before aggregation
+            matched_offers = await offer_collection.find(match_condition).to_list(length=None)
+
+            offer_pipeline = [
+                {"$match": match_condition},
+                {"$set": {"id": {"$toString": "$_id"}}},
+                {"$unset": "_id"},
+            ]
+
+            offers = await offer_collection.aggregate(offer_pipeline).to_list(length=None)
+            return offers
         except HTTPException as e:
             raise e
         except Exception as ex:

@@ -57,6 +57,7 @@ class CreateBookingRequest(BaseModel):
     booking_order_id: Optional[str] = None
     amount: Optional[float] = None
     vendor_user_id: Optional[str] = None
+    offer_code: Optional[str] = None
 
     def validate(self):
         try:

@@ -25,6 +25,7 @@ from app.v1.models import (
     User,
     booking_collection,
     category_collection,
+    offer_collection,
     payment_collection,
     plan_collection,
     services_collection,
@@ -2290,29 +2291,74 @@ class VendorManager:
         self, current_user: User, vendor_subscription_request: VendorSubscriptionRequest
     ):
         try:
-
             if "vendor" not in [role.value for role in current_user.roles]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page"
                 )
 
-            # Fetch the vendor's details
             current_user_id = str(current_user.vendor_id)
             vendor = await vendor_collection.find_one({"_id": ObjectId(current_user_id)})
             if not vendor:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
 
-            # Fetch the new plan details
             plan_details = razorpay_client.plan.fetch(vendor_subscription_request.plan_id)
             if not plan_details:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
 
-            # Ensure plan_details["item"] is a dictionary
             if isinstance(plan_details["item"], str):
                 plan_details["item"] = json.loads(plan_details["item"])
 
-            # Now you can safely access plan_details["item"]["amount"]
-            new_plan_amount = int(plan_details["item"]["amount"])
+            original_amount = int(plan_details["item"]["amount"])
+            adjusted_amount = original_amount  # Will be updated if offer is applied
+
+            offer_data = None
+            discount_applied = 0
+            if vendor_subscription_request.offer_code:
+
+                offer_data = await offer_collection.find_one(
+                    {
+                        "offer_name": vendor_subscription_request.offer_code,
+                        "offer_for": "vendor",
+                        "status": "active",
+                    }
+                )
+                if not offer_data:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="Offer code is invalid or not active"
+                    )
+
+                max_usage = int(offer_data.get("max_usage", 0))
+                if max_usage <= 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Offer has been used by the maximum allowed users",
+                    )
+
+                minimum_order_amount = float(offer_data.get("minimum_order_amount", 0))
+                original_amount_rupees = original_amount / 100  # Convert paise to rupees
+                if original_amount_rupees < minimum_order_amount:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Plan amount ({original_amount_rupees}) is below the minimum order amount ({minimum_order_amount})",
+                    )
+
+                discount_type = offer_data.get("discount_type")
+                discount_worth = float(offer_data.get("discount_worth", 0))
+                maximum_discount = float(offer_data.get("maximum_discount", float("inf")))
+                discount_applied_rupees = 0
+
+                if discount_type == "flat":
+                    discount_applied_rupees = min(discount_worth, original_amount_rupees)
+                elif discount_type == "percentage":
+                    discount_applied_rupees = min((discount_worth / 100) * original_amount_rupees, maximum_discount)
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid discount type: {discount_type}"
+                    )
+                discount_applied = int(discount_applied_rupees * 100)  # Convert to paise
+                adjusted_amount = max(original_amount - discount_applied, 0)  # Ensure non-negative
+                print(adjusted_amount, "adjusted_amount")
+                await offer_collection.update_one({"_id": offer_data["_id"]}, {"$set": {"max_usage": max_usage - 1}})
 
             interval = plan_details.get("interval", 1)
             period = plan_details.get("period", "monthly").lower()
@@ -2338,25 +2384,21 @@ class VendorManager:
                 "customer_notify": True,
             }
 
-            # Check if the vendor has an active subscription
             if vendor.get("razorpay_subscription_id"):
-                # Fetch the current subscription details from Razorpay
                 current_subscription_id = vendor["razorpay_subscription_id"]
                 try:
                     current_subscription = razorpay_client.subscription.fetch(current_subscription_id)
                     if current_subscription["status"] == "active":
-                        # Fetch current plan details to determine the period
                         current_plan_id = current_subscription["plan_id"]
                         current_plan_details = razorpay_client.plan.fetch(current_plan_id)
                         current_period = current_plan_details.get("period", "monthly").lower()
                         current_interval = current_plan_details.get("interval", 1)
 
-                        # Calculate the end of the current billing period
                         current_start_date = datetime.fromtimestamp(current_subscription["start_at"])
                         if current_period == "weekly":
                             period_duration = timedelta(weeks=current_interval)
                         elif current_period == "monthly":
-                            period_duration = timedelta(days=30 * current_interval)  # Approximate month
+                            period_duration = timedelta(days=30 * current_interval)
                         elif current_period == "daily":
                             period_duration = timedelta(days=current_interval)
                         elif current_period == "yearly":
@@ -2367,20 +2409,17 @@ class VendorManager:
                                 detail=f"Unsupported current plan period: {current_period}",
                             )
 
-                        # Estimate the end of the current billing period
                         current_period_end = current_start_date + period_duration
                         while current_period_end < datetime.now():
-                            current_period_end += period_duration  # Move to the current active period
+                            current_period_end += period_duration
                         next_period_start = current_period_end
 
-                        # Fallback: Cancel current subscription and schedule new one
+                        # Schedule new subscription
                         razorpay_subscription_data["start_at"] = int(next_period_start.timestamp())
                         try:
-                            # Cancel current subscription at the end of the current period
                             razorpay_client.subscription.cancel(
                                 current_subscription_id, data={"cancel_at_cycle_end": 1}
                             )
-                            # Create new subscription starting at the next period
                             updated_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
                         except Exception as e:
                             raise HTTPException(
@@ -2388,7 +2427,7 @@ class VendorManager:
                                 detail=f"Failed to schedule new subscription: {str(e)}",
                             )
 
-                        # Update vendor's billing address if provided
+                        # Update vendor data
                         # vendor_update_data = {
                         #     "razorpay_subscription_id": updated_subscription["id"]
                         # }
@@ -2409,18 +2448,19 @@ class VendorManager:
                         return {
                             "subscription_id": updated_subscription["id"],
                             "message": "Subscription plan scheduled to change at the next billing cycle",
-                            "amount": new_plan_amount,
+                            "original_amount": original_amount,
+                            "discount_applied": discount_applied,
+                            "adjusted_amount": adjusted_amount,
                             "currency": plan_details["item"].get("currency", "INR"),
+                            "offer_code": vendor_subscription_request.offer_code,
                         }
                 except Exception as e:
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"Failed to fetch current subscription details: {str(e)}",
                     )
-            else:
-                adjusted_amount = int(plan_details["item"]["amount"])
 
-            # Create a new subscription with the adjusted amount
+            # Create new subscription
             try:
                 razorpay_subscription = razorpay_client.subscription.create(data=razorpay_subscription_data)
             except Exception as e:
@@ -2429,7 +2469,7 @@ class VendorManager:
                     detail=f"Failed to create Razorpay subscription: {str(e)}",
                 )
 
-            # Create a new order for the adjusted amount
+            # Create Razorpay order with adjusted amount
             order_data = {
                 "amount": adjusted_amount,
                 "currency": "INR",
@@ -2437,36 +2477,40 @@ class VendorManager:
                 "notes": {
                     "subscription_id": razorpay_subscription["id"],
                     "vendor_id": str(vendor["_id"]),
+                    "offer_code": vendor_subscription_request.offer_code or "none",
                 },
                 "payment_capture": 1,
             }
-
+            print(order_data, "order_data")
             try:
                 razorpay_order = razorpay_client.order.create(data=order_data)
+                print(razorpay_order, "razorpay_order")
             except Exception as e:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to create Razorpay order: {str(e)}",
                 )
-
-            # Update the vendor's subscription details
-            vendor_update_data = {
-                "razorpay_order_id": razorpay_order["id"],
-            }
+            vendor_update_data = {}
             if vendor_subscription_request.billing_address:
                 vendor_update_data["billing_address"] = vendor_subscription_request.billing_address.dict(
                     exclude_none=True
                 )
 
             result = await vendor_collection.update_one({"_id": vendor["_id"]}, {"$set": vendor_update_data})
-            if result.modified_count == 0:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update vendor")
+            # if result.modified_count == 0:
+            #     raise HTTPException(
+            #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            #         detail="Failed to update vendor"
+            #     )
 
             return {
                 "subscription_id": razorpay_subscription["id"],
                 "order_id": razorpay_order["id"],
-                "amount": order_data["amount"],
+                "original_amount": original_amount,
+                "discount_applied": discount_applied,
+                "amount": adjusted_amount,
                 "currency": order_data["currency"],
+                "offer_code": vendor_subscription_request.offer_code,
             }
 
         except HTTPException as e:
@@ -4357,6 +4401,86 @@ class VendorManager:
                     "prev": prev_page,
                     "next": next_page,
                 },
+            }
+
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def apply_offer_for_vendor(
+        self, request: Request, current_user: User, offer_code: str, plan_id: str
+    ) -> Dict[str, Any]:
+        try:
+            current_date = datetime.now(pytz.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+            next_day = current_date + timedelta(days=1)
+            offer_data = await offer_collection.find_one(
+                {
+                    "offer_name": offer_code,
+                    "status": "active",
+                }
+            )
+            if not offer_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Offer code is invalid or not active"
+                )
+
+            max_usage = int(offer_data.get("max_usage", 0))
+            if max_usage <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Offer has been used by the maximum allowed users"
+                )
+
+            if not plan_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Plan ID is required")
+            plan_details = razorpay_client.plan.fetch(plan_id)
+            if not plan_details:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+            original_amount = int(plan_details["item"]["amount"]) / 100
+
+            minimum_order_amount = float(offer_data.get("minimum_order_amount", 0))
+            if original_amount < minimum_order_amount:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Plan amount ({original_amount}) is below the minimum order amount ({minimum_order_amount})",
+                )
+
+            discount_type = offer_data.get("discount_type")
+            discount_worth = float(offer_data.get("discount_worth", 0))
+            maximum_discount = float(offer_data.get("maximum_discount", float("inf")))
+            discounted_amount = original_amount
+            discount_applied = 0
+
+            if discount_type == "flat":
+                discount_applied = min(discount_worth, original_amount)
+                discounted_amount = original_amount - discount_applied
+            elif discount_type == "percentage":
+                discount_applied = min(
+                    (discount_worth / 100) * original_amount,  # Calculate percentage
+                    maximum_discount,  # Cap at max discount
+                )
+                discounted_amount = original_amount - discount_applied
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid discount type: {discount_type}"
+                )
+
+            discounted_amount = max(discounted_amount, 0)
+
+            # await offer_collection.update_one(
+            #     {"_id": offer_data["_id"]},
+            #     {"$set": {"max_usage": max_usage - 1}}
+            # )
+
+            return {
+                "offer_name": offer_data["offer_name"],
+                "original_amount": original_amount,
+                "discount_applied": discount_applied,
+                "discounted_amount": discounted_amount,
+                "plan_id": plan_id,
             }
 
         except HTTPException:

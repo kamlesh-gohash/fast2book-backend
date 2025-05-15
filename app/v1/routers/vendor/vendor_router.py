@@ -1216,7 +1216,6 @@ async def is_subscration(
     except ValueError as ex:
         return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
     except Exception as ex:
-        print(ex)
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1272,6 +1271,31 @@ async def vendor_all_bookings_endpoint(
             end_date=parsed_end_date,
         )
         return success({"message": "Vendor bookings retrieved successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        print(ex)
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.post("/apply-offer", status_code=status.HTTP_200_OK)
+async def apply_offer_for_vendor(
+    request: Request,
+    offer_code: str,
+    plan_id: str,
+    current_user: User = Depends(get_current_user),
+    vendor_manager: VendorManager = Depends(get_vendor_manager),
+):
+    try:
+        result = await vendor_manager.apply_offer_for_vendor(
+            request=request, current_user=current_user, offer_code=offer_code, plan_id=plan_id
+        )
+        return success({"message": "Offer applyed successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
