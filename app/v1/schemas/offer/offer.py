@@ -8,7 +8,7 @@ import zon
 from pydantic import BaseModel, EmailStr, Field, root_validator, validator
 
 from app.v1.models.category import StatusEnum
-from app.v1.models.offer import DiscountTypeEnum
+from app.v1.models.offer import DiscountTypeEnum, OfferForEnum
 from app.v1.models.user import CustomValidationError, StatusEnum
 from app.v1.utils.response.response_format import validation_error
 
@@ -16,7 +16,7 @@ from app.v1.utils.response.response_format import validation_error
 create_offer_validator = (
     zon.record(
         {
-            "offer_for": zon.string().min(1).max(50),
+            "offer_for": zon.enum(OfferForEnum),
             "offer_name": zon.string().min(1).max(50),
             "display_text": zon.string().min(1).max(200),
             "discount_type": zon.enum(DiscountTypeEnum),
@@ -50,7 +50,9 @@ create_offer_validator = (
 
 # Pydantic model for creating an offer
 class CreateOfferRequest(BaseModel):
-    offer_for: str
+    offer_for: OfferForEnum = Field(default=OfferForEnum.User)
+    created_by: Optional[str] = None
+    is_super_admin: bool = False
     offer_name: str
     display_text: str
     terms: str
@@ -166,7 +168,6 @@ class CreateVendorOffer(BaseModel):
 
 update_vendor_offer_validator = zon.record(
     {
-        "vendor_id": zon.string().min(1).max(50).optional(),
         "offer_name": zon.string().min(1).max(50).optional(),
         "display_text": zon.string().min(1).max(200).optional(),
         "terms": zon.string().min(1).max(200).optional(),
@@ -183,7 +184,6 @@ update_vendor_offer_validator = zon.record(
 
 
 class UpdateVendorOffer(BaseModel):
-    vendor_id: Optional[str] = None
     offer_name: Optional[str] = None
     display_text: Optional[str] = None
     terms: Optional[str] = None
@@ -194,7 +194,7 @@ class UpdateVendorOffer(BaseModel):
     starting_date: Optional[str] = None
     ending_date: Optional[str] = None
     max_usage: Optional[int] = None
-    status: Optional[StatusEnum] = StatusEnum.Active
+    status: Optional[StatusEnum] = None
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     def validate(self):

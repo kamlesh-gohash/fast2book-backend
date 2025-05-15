@@ -311,6 +311,7 @@ async def booking_payment(
             service_id=booking_data.service_id,
             category_id=booking_data.category_id,
             vendor_user_id=booking_data.vendor_user_id,
+            offer_code=booking_data.offer_code,
             background_tasks=background_tasks,
         )
 

@@ -11,6 +11,7 @@ import aiohttp
 import bcrypt
 import geocoder
 import httpx
+import pytz
 
 from bcrypt import gensalt, hashpw
 from beanie import Link
@@ -27,6 +28,8 @@ from app.v1.models import (
     booking_collection,
     category_collection,
     deleted_user_collection,
+    offer_collection,
+    payment_collection,
     search_query_collection,
     services_collection,
     support_collection,
@@ -2817,6 +2820,127 @@ class UserManager:
                 return {"message": "User deleted successfully."}
 
             raise HTTPException(status_code=400, detail="Either email or phone must be provided.")
+        except HTTPException:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(ex)}"
+            )
+
+    async def apply_offer_for_user(self, request: Request, current_user: User, offer_code: str, vendor_id: str):
+        try:
+            # Current date in UTC (May 15, 2025, 5:19 PM IST = 11:49 AM UTC)
+            current_date = datetime.now(pytz.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+            next_day = current_date + timedelta(days=1)  # 2025-05-16 00:00:00 UTC
+
+            # Fetch offer
+            offer_data = await offer_collection.find_one(
+                {
+                    "offer_name": offer_code,
+                    "status": "active",
+                    "offer_for": "user",
+                }
+            )
+            if not offer_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Offer code is invalid, not active, or not applicable for users",
+                )
+
+            # Check max_usage
+            max_usage = int(offer_data.get("max_usage", 0))
+            if max_usage <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Offer has been used by the maximum allowed users"
+                )
+
+            # Fetch booking amount (simplified book_appointment logic)
+            # vendor = await vendor_collection.find_one({"_id": ObjectId(vendor_id)})
+            # if not vendor:
+            #     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+
+            # Fetch vendor user (default to primary user)
+            vendor_user = await user_collection.find_one({"_id": ObjectId(vendor_id)})
+            if not vendor_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor user not found")
+
+            # Get fees (base amount)
+            amount = float(vendor_user.get("fees", 0.0))
+            if not isinstance(amount, (int, float)):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid fees value")
+
+            # Fetch payment configuration
+            payment_configs = await payment_collection.find({"status": "active"}).to_list(length=None)
+            if not payment_configs:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
+
+            # Calculate GST and platform fees
+            gst_amount = 0.0
+            platform_fee = 0.0
+            for config in payment_configs:
+                charge_type = config.get("charge_type")
+                charge_value = config.get("charge_value", 0.0)
+                config_name = config.get("name")
+                charge_amount = (charge_value / 100) * amount if charge_type == "percentage" else float(charge_value)
+                if config_name == "GST":
+                    gst_amount = charge_amount
+                elif config_name == "Platform Fees":
+                    platform_fee = charge_amount
+
+            # Total amount (base + taxes)
+            original_amount = amount + gst_amount + platform_fee
+
+            # Validate minimum order amount
+            minimum_order_amount = float(offer_data.get("minimum_order_amount", 0))
+            if original_amount < minimum_order_amount:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Order amount ({original_amount}) is below the minimum order amount ({minimum_order_amount})",
+                )
+
+            # Apply discount
+            discount_type = offer_data.get("discount_type")
+            discount_worth = float(offer_data.get("discount_worth", 0))
+            maximum_discount = float(offer_data.get("maximum_discount", float("inf")))
+            discounted_amount = original_amount
+            discount_applied = 0
+
+            if discount_type == "flat":
+                discount_applied = min(discount_worth, original_amount)
+                discounted_amount = original_amount - discount_applied
+            elif discount_type == "percentage":
+                discount_applied = min((discount_worth / 100) * original_amount, maximum_discount)
+                discounted_amount = original_amount - discount_applied
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid discount type: {discount_type}"
+                )
+
+            # Ensure non-negative amount
+            discounted_amount = max(discounted_amount, 0)
+
+            # Update max_usage
+            # await offer_collection.update_one(
+            #     {"_id": offer_data["_id"]},
+            #     {"$set": {"max_usage": max_usage - 1}}
+            # )
+
+            # Optional: Track user-specific usage
+            # user_usage = current_user.get("used_offers", 0) + 1
+            # await user_collection.update_one(
+            #     {"_id": ObjectId(current_user.id)},
+            #     {"$set": {"used_offers": user_usage}}
+            # )
+
+            return {
+                "offer_name": offer_data["offer_name"],
+                "original_amount": original_amount,
+                "discount_applied": discount_applied,
+                "discounted_amount": discounted_amount,
+                "vendor_id": vendor_id,
+                "message": "Offer applied successfully",
+            }
+
         except HTTPException:
             raise
         except Exception as ex:

@@ -798,3 +798,28 @@ async def delete_otp_verify(request: DeleteOtpVerifyRequest, user_manager: UserM
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@router.post("/apply-offer", status_code=status.HTTP_200_OK)
+async def apply_offer_for_user(
+    request: Request,
+    offer_code: str,
+    vendor_id: str,
+    current_user: User = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    try:
+        result = await user_manager.apply_offer_for_user(
+            request=request, current_user=current_user, offer_code=offer_code, vendor_id=vendor_id
+        )
+        return success({"message": "Offer applyed successfully", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        print(ex)
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

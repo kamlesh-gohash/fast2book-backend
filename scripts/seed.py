@@ -25,6 +25,7 @@ async def seed_data():
             password=hashed_password,
             user_role=2,
             phone="9928821641",
+            roles=["admin"],
             created_at=datetime.utcnow(),
             menu=DEFAULT_MENU_STRUCTURE,
         )

@@ -132,13 +132,14 @@ async def delete_offer(
         )
 
 
-@router.get("/get-all-offer", status_code=status.HTTP_200_OK)
-async def get_all_offer(
+@router.get("/get-all-offer-for-user", status_code=status.HTTP_200_OK)
+async def get_all_offer_for_user(
+    vendor_id: str,
     current_user: User = Depends(get_current_user),
     offer_manager: OfferManager = Depends(get_offer_manager),
 ):
     try:
-        result = await offer_manager.get_all_offer(current_user=current_user)
+        result = await offer_manager.get_all_offer_for_user(current_user=current_user, vendor_id=vendor_id)
         return success({"message": "All offers fetched successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
@@ -252,6 +253,25 @@ async def delete_vendor_offer(
     try:
         result = await offer_manager.delete_vendor_offer(vendor_offer_id=vendor_offer_id, current_user=current_user)
         return success({"message": "Vendor offer deleted successfully", "data": None})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_401_UNAUTHORIZED)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/get-offer-for-vendor", status_code=status.HTTP_200_OK)
+async def get_offer_for_vendor(
+    current_user: User = Depends(get_current_user),
+    offer_manager: OfferManager = Depends(get_offer_manager),
+):
+    try:
+        result = await offer_manager.get_offer_for_vendor(current_user=current_user)
+        return success({"message": "Offer for vendor fetched successfully", "data": result})
     except HTTPException as http_ex:
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as ex:
