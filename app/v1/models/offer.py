@@ -18,14 +18,16 @@ class DiscountTypeEnum(str, Enum):
     PERCENTAGE = "percentage"
 
 
-# class OfferTypeEnum(str, Enum):
-#     INSTANT = "instant"
-#     CASHBACK = "cashback"
+class OfferForEnum(str, Enum):
+    Vendor = "vendor"
+    User = "user"
 
 
 class Offer(BaseModel):
-    offer_for: str
+    offer_for: OfferForEnum = Field(default=OfferForEnum.User)
     offer_name: str
+    created_by: str
+    is_super_admin: bool = False
     display_text: str
     terms: str
     # offer_type: List[OfferTypeEnum] = Field(default_factory=list)

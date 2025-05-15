@@ -21,6 +21,7 @@ from app.v1.models import (
     booking_collection,
     category_collection,
     notification_collection,
+    offer_collection,
     payment_collection,
     services_collection,
     slots_collection,
@@ -924,10 +925,13 @@ class BookingManager:
         service_id: str,
         category_id: str,
         vendor_user_id: Optional[str] = None,
+        offer_code: Optional[str] = None,
         background_tasks: BackgroundTasks = None,
     ):
         try:
-            # Fetch all required data concurrently
+            current_date = datetime.now(pytz.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+            next_day = current_date + timedelta(days=1)
+
             async def fetch_service():
                 return await services_collection.find_one({"_id": ObjectId(service_id)})
 
@@ -966,23 +970,14 @@ class BookingManager:
                 raise HTTPException(status_code=404, detail="Vendor User not found")
             if vendor_user_id and not vendor_user:
                 raise HTTPException(status_code=404, detail="Vendor User not found")
-            if transfer_amount:
-                try:
-                    # Handle dictionary case
-                    transfer_value = (
-                        transfer_amount.get("value", 90)
-                        if isinstance(transfer_amount, dict)
-                        else getattr(transfer_amount, "value", 90)
-                    )
-                except AttributeError:
-                    transfer_value = 90
-            else:
-                transfer_value = 90
+            transfer_value = (
+                transfer_amount.get("value", 90)
+                if transfer_amount and isinstance(transfer_amount, dict)
+                else getattr(transfer_amount, "value", 90) if transfer_amount else 90
+            )
 
-            # Validate booking slot
             booking_datetime = datetime.strptime(booking_date, "%Y-%m-%d")
             day_of_week = booking_datetime.strftime("%A")
-
             availability_slots = (
                 vendor_user.get("availability_slots", [])
                 if vendor_user
@@ -1018,7 +1013,6 @@ class BookingManager:
                     status_code=400, detail=f"Slot {standardized_slot} is not available on {day_of_week}"
                 )
 
-            # Check existing bookings
             async def check_booking_count():
                 return await booking_collection.count_documents(
                     {
@@ -1054,8 +1048,76 @@ class BookingManager:
                 )
 
             is_payment_required = vendor.get("is_payment_required", True)
-            fees = vendor_user.get("fees", 0) if vendor_user else vendor_user_obj.get("fees", 0)
+            fees = float(vendor_user.get("fees", 0) if vendor_user else vendor_user_obj.get("fees", 0))
 
+            # Calculate base amount and taxes
+            amount = fees
+            payment_configs = await payment_collection.find({"status": "active"}).to_list(length=None)
+            if not payment_configs:
+                raise HTTPException(status_code=404, detail="Payment configuration not found")
+
+            gst_amount = 0.0
+            platform_fee = 0.0
+            for config in payment_configs:
+                charge_type = config.get("charge_type")
+                charge_value = config.get("charge_value", 0.0)
+                config_name = config.get("name")
+                charge_amount = (charge_value / 100) * amount if charge_type == "percentage" else float(charge_value)
+                if config_name == "GST":
+                    gst_amount = charge_amount
+                elif config_name == "Platform Fees":
+                    platform_fee = charge_amount
+
+            # Total amount before discount
+            original_amount = amount + platform_fee + gst_amount
+            adjusted_amount = original_amount  # Will be updated if offer is applied
+            discount_applied = 0
+
+            # Apply offer if provided
+            offer_data = None
+            if offer_code:
+                offer_data = await offer_collection.find_one(
+                    {
+                        "offer_name": offer_code,
+                        "offer_for": "user",
+                        "status": "active",
+                    }
+                )
+                if not offer_data:
+                    raise HTTPException(
+                        status_code=400, detail="Offer code is invalid, not active, or not applicable for users"
+                    )
+
+                max_usage = int(offer_data.get("max_usage", 0))
+                if max_usage <= 0:
+                    raise HTTPException(status_code=400, detail="Offer has been used by the maximum allowed users")
+
+                minimum_order_amount = float(offer_data.get("minimum_order_amount", 0))
+                if original_amount < minimum_order_amount:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Order amount ({original_amount}) is below the minimum order amount ({minimum_order_amount})",
+                    )
+
+                discount_type = offer_data.get("discount_type")
+                discount_worth = float(offer_data.get("discount_worth", 0))
+                maximum_discount = float(offer_data.get("maximum_discount", float("inf")))
+                discount_applied_rupees = 0
+
+                if discount_type == "flat":
+                    discount_applied_rupees = min(discount_worth, original_amount)
+                elif discount_type == "percentage":
+                    discount_applied_rupees = min((discount_worth / 100) * original_amount, maximum_discount)
+                else:
+                    raise HTTPException(status_code=400, detail=f"Invalid discount type: {discount_type}")
+
+                discount_applied = discount_applied_rupees
+                adjusted_amount = max(original_amount - discount_applied, 0)
+
+                # Update max_usage
+                await offer_collection.update_one({"_id": offer_data["_id"]}, {"$set": {"max_usage": max_usage - 1}})
+
+            # Prepare booking data
             temp_order_id = str(uuid.uuid4())[:8]
             booking_data = {
                 "user_id": str(current_user.id),
@@ -1064,63 +1126,21 @@ class BookingManager:
                 "category_id": str(ObjectId(category_id)),
                 "time_slot": standardized_slot,
                 "booking_date": booking_date,
-                "amount": fees,
+                "originalACO": original_amount,
+                "discount_applied": discount_applied,
+                "amount": adjusted_amount,
                 "booking_status": "pending",
                 "payment_status": "pending",
                 "vendor_user_id": str(ObjectId(vendor_user_id)) if vendor_user_id else None,
                 "created_at": datetime.utcnow().isoformat(),
                 "temp_order_id": temp_order_id,
+                "offer_code": offer_code,
             }
 
             if is_payment_required:
-                # payment_config = await payment_collection.find_one({"name": "Razorpay"})
-                # if not payment_config:
-                #     raise HTTPException(status_code=404, detail="Payment configuration not found")
-
-                # admin_charge_type = payment_config.get("charge_type")
-                # admin_charge_value = payment_config.get("charge_value")
-                amount = float(fees)
-                # admin_charge = (
-                #     (admin_charge_value / 100) * amount
-                #     if admin_charge_type == "percentage"
-                #     else admin_charge_value if admin_charge_type == "fixed" else 0
-                # )
-                # total_charges = amount + admin_charge
-                payment_configs = await payment_collection.find({"status": "active"}).to_list(length=None)
-                if not payment_configs:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment configuration not found")
-
-                # Initialize GST and Platform Fees
-                gst_amount = 0.0
-                platform_fee = 0.0
-
-                # Process each payment config entry
-                for config in payment_configs:
-                    charge_type = config.get("charge_type")
-                    charge_value = config.get("charge_value", 0.0)
-                    config_name = config.get("name")
-
-                    # Calculate the charge based on the charge_type
-                    if charge_type == "percentage":
-                        charge_amount = (charge_value / 100) * amount
-                    elif charge_type == "fixed":
-                        charge_amount = float(charge_value)
-                    else:
-                        charge_amount = 0.0
-
-                    # Assign the calculated amount to GST or Platform Fee
-                    if config_name == "GST":
-                        gst_amount = charge_amount
-                    elif config_name == "Platform Fees":
-                        platform_fee = charge_amount
-                    else:
-                        print(f"Unknown config name: {config_name}")
-
-                # Calculate total amount by adding base amount, platform fee, and GST
-                total_charges = amount + platform_fee + gst_amount
-                total_amount = int(total_charges * 100)
-                booking_data["amount"] = total_charges
-                vendor_amount = amount
+                # Create Razorpay order with adjusted amount
+                total_amount = int(adjusted_amount * 100)  # Convert to paise
+                vendor_amount = int(amount * 100)  # Base amount for vendor transfer
                 account_id = vendor.get("account_id")
                 transfer_data = []
                 if isinstance(account_id, str) and account_id.startswith("acc_"):
@@ -1132,8 +1152,6 @@ class BookingManager:
                             "on_hold": False,
                         }
                     )
-                else:
-                    print("Invalid account_id: ")
 
                 razorpay_payload = {
                     "amount": total_amount,
@@ -1145,6 +1163,8 @@ class BookingManager:
                     razorpay_payload["transfers"] = transfer_data
 
                 razorpay_order = razorpay_client.order.create(razorpay_payload)
+
+                # User and vendor notification setup
                 user_data = await user_collection.find_one({"_id": ObjectId(current_user.id)})
                 if not user_data:
                     raise HTTPException(status_code=404, detail="User not found")
@@ -1160,6 +1180,9 @@ class BookingManager:
                     "time_slot": standardized_slot,
                     "user_name": f"{current_user.first_name} {current_user.last_name}",
                     "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
+                    "original_amount": original_amount,
+                    "discount_applied": discount_applied,
+                    "adjusted_amount": adjusted_amount,
                 }
                 vendor_context = {
                     "vendor_name": f"{vendor_user.get('first_name', '')} {vendor_user.get('last_name', '')}",
@@ -1173,6 +1196,7 @@ class BookingManager:
                     "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                 }
 
+                # Background tasks for notifications (uncomment if needed)
                 # if payment_confirmation_enabled:
                 #     background_tasks.add_task(
                 #         send_email, to_email=current_user.email, source="Booking Confirmation", context=user_context
@@ -1189,12 +1213,15 @@ class BookingManager:
                     "data": {
                         "order_id": temp_order_id,
                         "razorpay_order_id": razorpay_order["id"],
-                        "amount": total_amount / 100,
+                        "original_amount": original_amount,
+                        "discount_applied": discount_applied,
+                        "amount": adjusted_amount,
                         "currency": "INR",
                         "booking_data": booking_data,
                     }
                 }
             else:
+                # Non-payment case
                 db_booking_data = {
                     "user_id": ObjectId(current_user.id),
                     "vendor_id": ObjectId(vendor_id),
@@ -1202,22 +1229,25 @@ class BookingManager:
                     "category_id": ObjectId(category_id),
                     "time_slot": standardized_slot,
                     "booking_date": booking_date,
-                    "amount": fees,
+                    "original_amount": original_amount,
+                    "discount_applied": discount_applied,
+                    "amount": adjusted_amount,
                     "booking_status": "pending",
                     "payment_status": "paid",
                     "vendor_user_id": ObjectId(vendor_user_id) if vendor_user_id else None,
                     "created_at": datetime.utcnow(),
+                    "offer_code": offer_code,
                 }
                 booking_result = await booking_collection.insert_one(db_booking_data)
                 booking_id = booking_result.inserted_id
 
+                # Notification setup
                 user_data = await user_collection.find_one({"_id": ObjectId(current_user.id)})
                 if not user_data:
                     raise HTTPException(status_code=404, detail="User not found")
 
                 notification_settings = user_data.get("notification_settings", {})
                 payment_confirmation_enabled = notification_settings.get("payment_confirmation", True)
-
                 user_context = {
                     "booking_id": str(booking_id),
                     "vendor_name": f"{vendor_user.get('first_name', '')} {vendor_user.get('last_name', '')}",
@@ -1228,6 +1258,9 @@ class BookingManager:
                     "time_slot": standardized_slot,
                     "user_name": f"{current_user.first_name} {current_user.last_name}",
                     "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
+                    "original_amount": original_amount,
+                    "discount_applied": discount_applied,
+                    "adjusted_amount": adjusted_amount,
                 }
                 vendor_context = {
                     "booking_id": str(booking_id),
@@ -1242,6 +1275,7 @@ class BookingManager:
                     "location": vendor.get("location", {}).get("formatted_address", "Not specified"),
                 }
 
+                # Push notifications
                 try:
                     device_token = user_data.get("device_token")
                     web_subscription = user_data.get("web_token")
@@ -1280,7 +1314,7 @@ class BookingManager:
                         send_push_notification,
                         subscriptions=subscriptions,
                         title="Booking Confirmed",
-                        body=f"You got new booking from {user_data.get('first_name')} on {booking_date} at {standardized_slot} .",
+                        body=f"You got new booking from {user_data.get('first_name')} on {booking_date} at {standardized_slot}.",
                         data={"booking_id": str(booking_id), "type": "booking_confirmed"},
                         api_type="booking",
                     )
@@ -1288,7 +1322,7 @@ class BookingManager:
                         {
                             "user_id": vendor.get("_id"),
                             "message_title": "Booking Confirmed",
-                            "message": f"You got new booking from {user_data.get('first_name')} on {booking_date} at {standardized_slot} .",
+                            "message": f"You got new booking from {user_data.get('first_name')} on {booking_date} at {standardized_slot}.",
                             "user_image_url": user_data.get("user_image_url"),
                             "seen": False,
                             "sent": True,
@@ -1296,12 +1330,14 @@ class BookingManager:
                         }
                     )
                 except Exception as e:
-                    # Log the error but don't interrupt the flow
                     print(f"Failed to send push notification: {str(e)}")
+
                 return {
                     "data": {
                         "order_id": str(booking_id),
-                        "amount": fees,
+                        "original_amount": original_amount,
+                        "discount_applied": discount_applied,
+                        "amount": adjusted_amount,
                         "currency": "INR",
                         "payment_status": "paid",
                     }
