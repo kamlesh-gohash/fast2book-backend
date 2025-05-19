@@ -84,7 +84,6 @@ class OfferManager:
 
             skip = max((page - 1) * limit, 0)
             query = {"is_super_admin": True}
-            print(query, "query")
             # Search query
             if search:
                 search = search.strip()
@@ -106,7 +105,6 @@ class OfferManager:
                 {"$unset": "_id"},
             ]
             offers = await offer_collection.aggregate(pipeline).to_list(length=limit)
-            print(offers)
             total_offers = await offer_collection.count_documents(query)
             total_pages = (total_offers + limit - 1) // limit
             has_prev_page = page > 1
@@ -265,9 +263,7 @@ class OfferManager:
                     {"created_by": vendor_id},
                 ],
             }
-            print(match_condition, "match_condition")
             matched_offers = await offer_collection.find(match_condition).to_list(length=None)
-            print(matched_offers, "matched_offers")
 
             offer_pipeline = [
                 {"$match": match_condition},
@@ -276,7 +272,6 @@ class OfferManager:
             ]
 
             offers = await offer_collection.aggregate(offer_pipeline).to_list(length=None)
-            print(offers, "offers")
 
             return offers
         except HTTPException as e:

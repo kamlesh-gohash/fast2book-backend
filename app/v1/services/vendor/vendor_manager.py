@@ -2357,7 +2357,6 @@ class VendorManager:
                     )
                 discount_applied = int(discount_applied_rupees * 100)  # Convert to paise
                 adjusted_amount = max(original_amount - discount_applied, 0)  # Ensure non-negative
-                print(adjusted_amount, "adjusted_amount")
                 await offer_collection.update_one({"_id": offer_data["_id"]}, {"$set": {"max_usage": max_usage - 1}})
 
             interval = plan_details.get("interval", 1)
@@ -2481,10 +2480,8 @@ class VendorManager:
                 },
                 "payment_capture": 1,
             }
-            print(order_data, "order_data")
             try:
                 razorpay_order = razorpay_client.order.create(data=order_data)
-                print(razorpay_order, "razorpay_order")
             except Exception as e:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
