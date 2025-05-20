@@ -84,6 +84,8 @@ async def get_current_user_by_google(
     first_name: str,
     last_name: str,
     picture: str,
+    device_token: Optional[str] = None,
+    web_token: Optional[str] = None,
 ):
     """Get the current authenticated user from a Google OAuth access token."""
     try:
@@ -116,6 +118,9 @@ async def get_current_user_by_google(
                     "status": "active",
                     "roles": ["user"],
                     "notification_settings": DEFAULT_NOTIFICATION_PREFERENCES,
+                    "device_token": device_token,
+                    "web_token": web_token,
+                    "created_at": datetime.utcnow(),
                 }
                 result = await user_collection.insert_one(user)
                 user_id = str(result.inserted_id)  # Convert ObjectId to string
