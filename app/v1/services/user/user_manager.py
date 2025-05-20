@@ -1630,8 +1630,8 @@ class UserManager:
 
             return {"items": active_vendors, "total_pages": total_pages, "total_items": total_vendors}
 
-        except HTTPException:
-            raise
+        except HTTPException as e:
+            raise e
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -1903,6 +1903,8 @@ class UserManager:
             first_name = payload.get("given_name", "Unknown")
             last_name = payload.get("family_name", "Unknown")
             picture = payload.get("picture", "")
+            device_token = payload.get("device_token", "")
+            web_token = payload.get("web_token", "")
 
             # Validate required fields
 
@@ -1914,6 +1916,8 @@ class UserManager:
                 first_name=first_name,
                 last_name=last_name,
                 picture=picture,
+                device_token=device_token,
+                web_token=web_token,
             )
 
             if not current_user:
