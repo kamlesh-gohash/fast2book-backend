@@ -129,7 +129,15 @@ async def get_current_user_by_google(
                 # Update the user if they already exist
                 await user_collection.update_one(
                     {"email": email},
-                    {"$set": {"first_name": first_name, "last_name": last_name, "picture": picture}},
+                    {
+                        "$set": {
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "picture": picture,
+                            "web_token": web_token,
+                            "device_token": device_token,
+                        }
+                    },
                 )
 
             # Remove sensitive fields
