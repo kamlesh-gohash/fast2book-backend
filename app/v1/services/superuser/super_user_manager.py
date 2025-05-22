@@ -126,7 +126,7 @@ class SuperUserManager:
                     {"email": email}, {"$set": {"login_otp": otp, "login_otp_expires": otp_expires}}
                 )
                 source = "Login With Otp"
-                context = {"otp": otp}
+                context = {"otp": otp, "first_name": user.get("first_name")}
                 to_email = email
                 await send_email(to_email, source, context)
                 return {"message": "OTP sent successfully"}

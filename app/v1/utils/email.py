@@ -173,7 +173,6 @@ async def send_email(to_email: str, source: str, context: dict = None, cc_email:
 
     # Create plain text version by stripping HTML tags
     plain_text_content = strip_tags(html_content)
-
     # Set up the email
     msg = MIMEMultipart("alternative")
     msg["From"] = from_email
