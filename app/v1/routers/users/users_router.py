@@ -748,7 +748,7 @@ class DeleteUserRequest(BaseModel):
     phone: Optional[str] = None
 
 
-@router.post("/delete-user-otp/", status_code=status.HTTP_200_OK)
+@router.post("/delete-user-otp", status_code=status.HTTP_200_OK)
 async def delete_user(
     request: DeleteUserRequest, background_tasks: BackgroundTasks, user_manager: UserManager = Depends(get_user_manager)
 ):
