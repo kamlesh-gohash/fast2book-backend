@@ -162,6 +162,111 @@ async def get_current_user_by_google(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
+async def get_current_user_by_apple(
+    request: Request,
+    token: str,
+    email: str,
+    first_name: str,
+    last_name: str,
+    picture: str,
+    apple_user_id: str,
+    device_token: Optional[str] = None,
+    web_token: Optional[str] = None,
+):
+    """Get the current authenticated user from an Apple Sign In token."""
+    try:
+        # Fetch or create the user in your database using Apple ID
+        user = await user_collection.find_one({"apple_id": apple_user_id})
+        
+        if not user:
+            # If user doesn't exist with Apple ID, check by email
+            user = await user_collection.find_one({"email": email})
+            
+            if not user:
+                # Create a new user if they don't exist
+                user = {
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "picture": picture,
+                    "provider": "apple",
+                    "apple_id": apple_user_id,
+                    "is_active": True,
+                    "status": "active",
+                    "roles": ["user"],
+                    "notification_settings": DEFAULT_NOTIFICATION_PREFERENCES,
+                    "device_token": device_token,
+                    "web_token": web_token,
+                    "created_at": datetime.utcnow(),
+                }
+                result = await user_collection.insert_one(user)
+                user["id"] = str(result.inserted_id)
+            else:
+                # Update existing user with Apple ID
+                await user_collection.update_one(
+                    {"email": email},
+                    {
+                        "$set": {
+                            "apple_id": apple_user_id,
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "picture": picture,
+                            "provider": "apple",
+                            "web_token": web_token,
+                            "device_token": device_token,
+                            "is_active": True,
+                            "status": "active"
+                        }
+                    },
+                )
+                user = await user_collection.find_one({"email": email})
+        else:
+            # Update the user if they already exist with Apple ID
+            await user_collection.update_one(
+                {"apple_id": apple_user_id},
+                {
+                    "$set": {
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "picture": picture,
+                        "web_token": web_token,
+                        "device_token": device_token
+                    }
+                },
+            )
+            user = await user_collection.find_one({"apple_id": apple_user_id})
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found after creation/update")
+
+        if user.get("status") != "active":
+            raise HTTPException(status_code=401, detail="User account is not active")
+
+        # Create tokens
+        access_token = create_access_token(data={"sub": user["email"]})
+        refresh_token = create_refresh_token(data={"sub": user["email"]})
+
+        # Format the response
+        user_data = user.copy()
+        user_data["id"] = str(user_data["_id"])
+        user_data.pop("_id", None)
+        user_data.pop("password", None)
+
+        return {
+            "user_data": user_data,
+            "access_token": access_token,
+            "refresh_token": refresh_token
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Authentication error: {str(e)}"
+        )
+
+
 async def get_token_from_header(authorization: Optional[str] = Header(None)) -> str:
     if authorization is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token not provided")

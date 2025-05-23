@@ -484,6 +484,22 @@ async def google_login(request: Request, payload: dict, user_manager: UserManage
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+@router.post("/apple-login", status_code=status.HTTP_200_OK)
+async def apple_login(request: Request, payload: dict, user_manager: UserManager = Depends(get_user_manager)):
+    try:
+        print("payload", payload)
+        result = await user_manager.apple_login(request=request, payload=payload)
+        return success({"message": "Apple login successful", "data": result})
+    except HTTPException as http_ex:
+        return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
+    except ValueError as ex:
+        return failure({"message": str(ex)}, status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as ex:
+        return internal_server_error(
+            {"message": "An unexpected error occurred", "error": str(ex)},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
 
 @router.get("/blog-list", status_code=status.HTTP_200_OK)
 async def blog_list(
