@@ -74,12 +74,15 @@ jobs:
             --build-arg CLIENT_X509_CERT_URL="${{ secrets.CLIENT_X509_CERT_URL }}" \
             --build-arg UNIVERSE_DOMAIN="${{ secrets.UNIVERSE_DOMAIN }}" \
             --build-arg TYPE="${{ vars.TYPE }}" \
+            --build-arg APPLE_CLIENT_ID="${{ secrets.APPLE_CLIENT_ID }}" \
+            --build-arg APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}" \
+            --build-arg APPLE_KEY_ID="${{ secrets.APPLE_KEY_ID }}" \
             -t $AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/fast2book-backend:latest \
             --load .
 
       - name: List Docker images
         run: docker images
-        
+
       - name: Push Docker image to AWS ECR
         run: |
           docker push $AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/fast2book-backend:latest
@@ -137,4 +140,7 @@ jobs:
             -e CLIENT_X509_CERT_URL="${{ secrets.CLIENT_X509_CERT_URL }}" \
             -e UNIVERSE_DOMAIN="${{ secrets.UNIVERSE_DOMAIN }}" \
             -e TYPE="${{ vars.TYPE }}" \
+            -e APPLE_CLIENT_ID="${{ secrets.APPLE_CLIENT_ID }}" \
+            -e APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}" \
+            -e APPLE_KEY_ID="${{ secrets.APPLE_KEY_ID }}" \
             $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/fast2book-backend:latest
