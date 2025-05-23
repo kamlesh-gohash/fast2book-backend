@@ -679,6 +679,7 @@ class UserManager:
                     data={"sub": str(user.get("phone"))}, is_mobile=is_mobile
                 )  # Pass is_mobile
                 refresh_token = create_refresh_token(data={"sub": str(user.get("phone"))})
+
                 return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
 
             raise HTTPException(status_code=400, detail="Either email or phone must be provided")
@@ -1933,6 +1934,51 @@ class UserManager:
                 detail=f"An unexpected error occurred: {str(ex)}",
             )
 
+    async def apple_login(self, request: Request, payload: dict):
+        """Handle Apple Sign In authentication."""
+        try:
+            token = payload.get("access_token")
+            email = payload.get("email")
+            first_name = payload.get("given_name", "Unknown")
+            last_name = payload.get("family_name", "Unknown")
+            picture = payload.get("picture", "")
+            device_token = payload.get("device_token", "")
+            web_token = payload.get("web_token", "")
+            apple_user_id = payload.get("id")
+
+            # Validate required fields
+            if not apple_user_id:
+                raise HTTPException(status_code=400, detail="Apple user ID is required")
+            
+            if not email:
+                raise HTTPException(status_code=400, detail="Email is required")
+
+            # Get or create the user
+            current_user = await get_current_user_by_apple(
+                request=request,
+                token=token,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                picture=picture,
+                device_token=device_token,
+                web_token=web_token,
+                apple_user_id=apple_user_id
+            )
+
+            if not current_user:
+                raise HTTPException(status_code=401, detail="Unauthorized")
+
+            return current_user
+
+        except HTTPException as ex:
+            raise
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {str(ex)}",
+            )
+
     async def blog_list(self, page: int = 1, limit: int = 10, search: str = None, category: str = None) -> dict:
         """
         Get list of all active blogs, optionally filtered by search term and category.
@@ -2247,8 +2293,14 @@ class UserManager:
                                                 "_id": {"$toString": "$_id"},
                                                 "first_name": 1,
                                                 "last_name": 1,
+                                                "email": 1,
+                                                "phone": 1,
+                                                "roles": 1,
                                                 "user_image": 1,
                                                 "user_image_url": 1,
+                                                "specialization": 1,
+                                                "fees": 1,
+                                                "availability_slots": 1,
                                             }
                                         },
                                     ],
