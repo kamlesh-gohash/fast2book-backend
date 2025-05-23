@@ -21,7 +21,7 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import BackgroundTasks, Body, HTTPException, Request, status
 from motor.motor_asyncio import AsyncIOMotorCollection  # Ensure this import for Motor
 
-from app.v1.middleware.auth import get_current_user, get_current_user_by_google
+from app.v1.middleware.auth import get_current_user, get_current_user_by_google, get_current_user_by_apple
 from app.v1.models import (
     User,
     blog_collection,
