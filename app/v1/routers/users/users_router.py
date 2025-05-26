@@ -484,6 +484,7 @@ async def google_login(request: Request, payload: dict, user_manager: UserManage
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+
 @router.post("/apple-login", status_code=status.HTTP_200_OK)
 async def apple_login(request: Request, payload: dict, user_manager: UserManager = Depends(get_user_manager)):
     try:
