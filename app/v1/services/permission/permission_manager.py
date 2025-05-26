@@ -27,7 +27,10 @@ class PermissionManager:
             # if current_user.user_role != 2:
             #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this page ")
 
-            query = {"roles": {"$regex": "^admin$", "$options": "i"}}
+            query = {
+                "roles": {"$regex": "^admin$", "$options": "i"},
+                "user_role": {"$ne": 2},  # Exclude users with user_role == 2
+            }
             admin_list = await user_collection.find(query).to_list(length=100)
 
             processed_admin_list = []

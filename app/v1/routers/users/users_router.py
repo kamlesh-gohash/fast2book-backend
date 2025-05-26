@@ -484,10 +484,10 @@ async def google_login(request: Request, payload: dict, user_manager: UserManage
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+
 @router.post("/apple-login", status_code=status.HTTP_200_OK)
 async def apple_login(request: Request, payload: dict, user_manager: UserManager = Depends(get_user_manager)):
     try:
-        print("payload", payload)
         result = await user_manager.apple_login(request=request, payload=payload)
         return success({"message": "Apple login successful", "data": result})
     except HTTPException as http_ex:
