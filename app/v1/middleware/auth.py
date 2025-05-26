@@ -226,9 +226,9 @@ async def get_current_user_by_apple(
                 {"apple_id": apple_user_id},
                 {
                     "$set": {
-                        "first_name": first_name,
-                        "last_name": last_name,
-                        "picture": picture,
+                        # "first_name": first_name,
+                        # "last_name": last_name,
+                        # "picture": picture,
                         "web_token": web_token,
                         "device_token": device_token,
                     }
