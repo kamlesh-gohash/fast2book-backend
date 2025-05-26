@@ -64,7 +64,6 @@ async def seed_categorys():
     ]
 
     for category in categories:
-        print(f"Seeding category: {category['name']}")
         # Check if the category already exists
         existing_category = await category_collection.count_documents({"name": category["name"]})
         if existing_category == 0:
@@ -99,7 +98,6 @@ async def seed_payment_types():
     ]
 
     for method in payment_methods:
-        print(f"Seeding payment type: {method['name']}")
         # Check if the payment type already exists
         existing_method = await payment_collection.count_documents({"name": method["name"]})
         if existing_method == 0:
