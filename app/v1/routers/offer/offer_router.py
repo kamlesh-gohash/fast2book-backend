@@ -138,6 +138,7 @@ async def get_all_offer_for_user(
     current_user: User = Depends(get_current_user),
     offer_manager: OfferManager = Depends(get_offer_manager),
 ):
+
     try:
         result = await offer_manager.get_all_offer_for_user(current_user=current_user, vendor_id=vendor_id)
         return success({"message": "All offers fetched successfully", "data": result})
