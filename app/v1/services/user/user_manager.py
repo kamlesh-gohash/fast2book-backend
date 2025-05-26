@@ -21,7 +21,7 @@ from bson import ObjectId  # Import ObjectId to work with MongoDB IDs
 from fastapi import BackgroundTasks, Body, HTTPException, Request, status
 from motor.motor_asyncio import AsyncIOMotorCollection  # Ensure this import for Motor
 
-from app.v1.middleware.auth import get_current_user, get_current_user_by_google, get_current_user_by_apple
+from app.v1.middleware.auth import get_current_user, get_current_user_by_apple, get_current_user_by_google
 from app.v1.models import (
     User,
     blog_collection,
@@ -1949,9 +1949,9 @@ class UserManager:
             # Validate required fields
             if not apple_user_id:
                 raise HTTPException(status_code=400, detail="Apple user ID is required")
-            
-            if not email:
-                raise HTTPException(status_code=400, detail="Email is required")
+
+            # if not email:
+            #     raise HTTPException(status_code=400, detail="Email is required")
 
             # Get or create the user
             current_user = await get_current_user_by_apple(
@@ -1963,7 +1963,7 @@ class UserManager:
                 picture=picture,
                 device_token=device_token,
                 web_token=web_token,
-                apple_user_id=apple_user_id
+                apple_user_id=apple_user_id,
             )
 
             if not current_user:

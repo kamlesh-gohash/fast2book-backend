@@ -177,11 +177,11 @@ async def get_current_user_by_apple(
     try:
         # Fetch or create the user in your database using Apple ID
         user = await user_collection.find_one({"apple_id": apple_user_id})
-        
+
         if not user:
             # If user doesn't exist with Apple ID, check by email
             user = await user_collection.find_one({"email": email})
-            
+
             if not user:
                 # Create a new user if they don't exist
                 user = {
@@ -215,7 +215,7 @@ async def get_current_user_by_apple(
                             "web_token": web_token,
                             "device_token": device_token,
                             "is_active": True,
-                            "status": "active"
+                            "status": "active",
                         }
                     },
                 )
@@ -230,7 +230,7 @@ async def get_current_user_by_apple(
                         "last_name": last_name,
                         "picture": picture,
                         "web_token": web_token,
-                        "device_token": device_token
+                        "device_token": device_token,
                     }
                 },
             )
@@ -252,19 +252,12 @@ async def get_current_user_by_apple(
         user_data.pop("_id", None)
         user_data.pop("password", None)
 
-        return {
-            "user_data": user_data,
-            "access_token": access_token,
-            "refresh_token": refresh_token
-        }
+        return {"user_data": user_data, "access_token": access_token, "refresh_token": refresh_token}
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Authentication error: {str(e)}"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Authentication error: {str(e)}")
 
 
 async def get_token_from_header(authorization: Optional[str] = Header(None)) -> str:
