@@ -1950,8 +1950,8 @@ class UserManager:
             if not apple_user_id:
                 raise HTTPException(status_code=400, detail="Apple user ID is required")
             
-            if not email:
-                raise HTTPException(status_code=400, detail="Email is required")
+            # if not email:
+            #     raise HTTPException(status_code=400, detail="Email is required")
 
             # Get or create the user
             current_user = await get_current_user_by_apple(

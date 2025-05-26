@@ -542,7 +542,10 @@ class SuperUserManager:
                 )
 
             skip = max((page - 1) * limit, 0)
-            query = {"roles": {"$regex": "^admin$", "$options": "i"}}
+            query = {
+            "roles": {"$regex": "^admin$", "$options": "i"},
+            "user_role": {"$ne": 2}  # Exclude users with user_role == 2
+        }
 
             if search:
                 search = search.strip()
