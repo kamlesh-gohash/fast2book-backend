@@ -15,6 +15,7 @@ import requests
 
 from bs4 import BeautifulSoup
 from fastapi import HTTPException
+from twilio.rest import Client as TwilioClient
 
 from app.v1.models import email_monitor_collection
 from app.v1.models.email_monitor import EmailMonitor, EmailStatus
@@ -282,13 +283,67 @@ async def send_sms_on_phone(to_phone: str, otp: str, expiry_minutes: int = 10):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def send_sms_on_phone(
+    to_phone: str,
+    otp: str,
+    expiry_minutes: int = 10,
+):
+    try:
+        formatted_phone = f"+91{to_phone}"
+        message = f"Your OTP for login to Fast2Book is {otp}. This OTP is valid for {expiry_minutes} minutes. Do not share this with anyone. - Fast2Book"
+
+        # Send SMS via Twilio
+        if os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN"):
+            twilio_client = TwilioClient(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+
+            # Send SMS via Twilio
+            message = twilio_client.messages.create(
+                body=message, from_=os.getenv("TWILIO_PHONE_NUMBER"), to=formatted_phone  # Your Twilio phone number
+            )
+
+            return {
+                "message": "OTP sent successfully via Twilio",
+                "otp": otp,
+                "provider_response": {
+                    "sid": message.sid,
+                    "status": message.status,
+                    "date_created": str(message.date_created),
+                },
+            }
+
+        else:
+            raise HTTPException(status_code=400, detail="Invalid SMS provider specified. Choose 'aws' or 'twilio'")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 async def send_app_link(to_phone: str, app_link: str):
     try:
         formatted_phone = f"+{to_phone}"
         message = f"Your Fast2Book App Link is {app_link}. Do not share this with anyone. - Fast2Book"
-        # Send SMS
-        response = sns_client.publish(PhoneNumber=formatted_phone, Message=message)
-        return {"message": "OTP sent successfully", "otp": app_link, "sns_response": response}
+
+        # Send SMS via Twilio
+        if os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN"):
+            twilio_client = TwilioClient(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+
+            # Send SMS via Twilio
+            response = twilio_client.messages.create(
+                body=message, from_=os.getenv("TWILIO_PHONE_NUMBER"), to=formatted_phone  # Your Twilio phone number
+            )
+
+            return {
+                "message": "App link sent successfully via Twilio",
+                "app_link": app_link,
+                "provider_response": {
+                    "sid": response.sid,
+                    "status": response.status,
+                    "date_created": str(response.date_created),
+                },
+            }
+
+        else:
+            raise HTTPException(status_code=400, detail="Twilio credentials not found")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

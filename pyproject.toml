@@ -36,6 +36,7 @@ geocoder = "^1.38.1"
 firebase-admin = "^6.7.0"
 celery = "^5.5.2"
 redis = "^6.0.0"
+twilio = "^9.6.1"
 
 
 [tool.poetry.group.dev.dependencies]

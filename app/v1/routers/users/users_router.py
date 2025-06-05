@@ -1,8 +1,9 @@
 import logging
+import uuid
 
 import httpx
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Path, Query, Request, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport import requests
@@ -553,6 +554,9 @@ async def get_blog(
         )
 
 
+LINK_STORAGE = {}
+
+
 @router.get("/get-app-link", status_code=status.HTTP_200_OK)
 async def send_link(background_tasks: BackgroundTasks, email: str = Query(None), phone: str = Query(None)):
     try:
@@ -562,25 +566,25 @@ async def send_link(background_tasks: BackgroundTasks, email: str = Query(None),
                 detail="Either email or phone must be provided",
             )
 
-        # Send link via email
+        # Generate a unique link ID
+        link_id = str(uuid.uuid4())
+        LINK_STORAGE[link_id] = {"email": email, "phone": phone}
+        # Create a dynamic redirect URL
+        app_link = f"https://fast2book.com/app-link/{link_id}"
         if email:
             source = "APP Link"
             to_email = email
-            link = "https://fast2book.com/"
-            context = {"to_email": email, "link": link}
+            context = {"to_email": email, "link": app_link}
             background_tasks.add_task(send_email, to_email=to_email, source=source, context=context)
 
         # Send link via SMS
         if phone:
             to_phone = phone
-            expiry_minutes = 10
-            app_link = "https://fast2book.com/"
             await send_app_link(to_phone, app_link)
 
-        return success({"message": "Link sent successfully", "data": None})
+        return success({"message": "Link sent successfully", "data": {"app_link": app_link}})
 
     except HTTPException as http_ex:
-        # Explicitly handle HTTPException and return its response
         return failure({"message": http_ex.detail, "data": None}, status_code=http_ex.status_code)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=validation_error(str(e)))
@@ -588,6 +592,35 @@ async def send_link(background_tasks: BackgroundTasks, email: str = Query(None),
         return internal_server_error(
             {"message": "An unexpected error occurred", "error": str(ex)},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@router.get("/redirect/{link_id}", status_code=status.HTTP_200_OK)
+async def redirect_to_store(link_id: str, user_agent: Optional[str] = Header(default=None)):
+    try:
+        if link_id not in LINK_STORAGE:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired link")
+
+        device_type = "unknown"
+        redirect_url = "https://fast2book.com"
+        if user_agent:
+            user_agent = user_agent.lower()
+            if "iphone" in user_agent or "ipad" in user_agent:
+                device_type = "ios"
+                redirect_url = "https://apps.apple.com/us/app/fast2book/id6745785902"
+            elif "android" in user_agent:
+                device_type = "android"
+                redirect_url = "https://play.google.com/store/apps/details?id=com.innovestech.fast2book"
+            elif any(d in user_agent for d in ["windows", "macintosh", "x11", "linux"]):
+                device_type = "desktop"
+                redirect_url = "https://fast2book.com"
+        return success({"message": "Link redirected successfully", "data": {"redirect_url": redirect_url}})
+
+    except HTTPException as http_ex:
+        raise
+    except Exception as ex:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during redirection"
         )
 
 
