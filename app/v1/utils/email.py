@@ -260,8 +260,6 @@ async def send_email(to_email: str, source: str, context: dict = None, cc_email:
         return {"status": "FAILURE", "message": error_message}
 
 
-
-
 async def send_sms_on_phone(
     to_phone: str,
     otp: str,
@@ -280,7 +278,7 @@ Do not share this with anyone.
 
 Thank you,
 Team Fast2Book""",
-                to=formatted_phone
+                to=formatted_phone,
             )
             return {
                 "message": "OTP sent successfully via Twilio",
@@ -309,13 +307,13 @@ async def send_app_link(to_phone: str, app_link: str):
         #     )
 
         formatted_phone = f"+{to_phone}"
-        
+
         # Create properly formatted multi-line message
         message_body = f"""Your Fast2Book App Link is {app_link}.
 Do not share this with anyone.
 Thank you,
 Team Fast2Book"""
-        print(message_body,'message_body')
+        print(message_body, "message_body")
 
         # Get Twilio credentials
         account_sid = os.getenv("TWILIO_ACCOUNT_SID")
@@ -323,22 +321,15 @@ Team Fast2Book"""
         messaging_sid = os.getenv("TWILIO_MESSAGING_SERVICE_SID")
 
         if not all([account_sid, auth_token, messaging_sid]):
-            raise HTTPException(
-                status_code=500,
-                detail="Twilio credentials not configured properly"
-            )
+            raise HTTPException(status_code=500, detail="Twilio credentials not configured properly")
 
         # Initialize Twilio client
         client = TwilioClient(account_sid, auth_token)
 
         try:
             # Send message using Messaging Service
-            message = client.messages.create(
-                messaging_service_sid=messaging_sid,
-                body=message_body,
-                to=formatted_phone
-            )
-            print(message,'message')
+            message = client.messages.create(messaging_service_sid=messaging_sid, body=message_body, to=formatted_phone)
+            print(message, "message")
 
             return {
                 "status": "success",
@@ -347,21 +338,15 @@ Team Fast2Book"""
                     "sid": message.sid,
                     "status": message.status,
                     "to": message.to,
-                    "date_created": message.date_created.isoformat()
-                }
+                    "date_created": message.date_created.isoformat(),
+                },
             }
 
         except TwilioRestException as e:
             print(e)
-            raise HTTPException(
-                status_code=400,
-                detail=f"Twilio API error: {e.msg}"
-            )
+            raise HTTPException(status_code=400, detail=f"Twilio API error: {e.msg}")
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to send app link: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to send app link: {str(e)}")
