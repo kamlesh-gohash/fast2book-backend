@@ -260,27 +260,6 @@ async def send_email(to_email: str, source: str, context: dict = None, cc_email:
         return {"status": "FAILURE", "message": error_message}
 
 
-# AWS SNS Configuration (Set your credentials in environment variables or AWS config)
-AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID", "your-access-key")
-AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "your-secret-key")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-# Initialize SNS client
-sns_client = boto3.client(
-    "sns", aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY, region_name=AWS_REGION
-)
-
-
-async def send_sms_on_phone(to_phone: str, otp: str, expiry_minutes: int = 10):
-    try:
-        formatted_phone = f"+91{to_phone}"
-        message = f"Your OTP for login to Fast2Book is {otp}. This OTP is valid for {expiry_minutes} minutes. Do not share this with anyone. - Fast2Book"
-
-        # Send SMS
-        response = sns_client.publish(PhoneNumber=formatted_phone, Message=message)
-        return {"message": "OTP sent successfully", "otp": otp, "sns_response": response}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def send_sms_on_phone(
@@ -290,17 +269,19 @@ async def send_sms_on_phone(
 ):
     try:
         formatted_phone = f"+91{to_phone}"
-        message = f"Your OTP for login to Fast2Book is {otp}. This OTP is valid for {expiry_minutes} minutes. Do not share this with anyone. - Fast2Book"
-
-        # Send SMS via Twilio
         if os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN"):
             twilio_client = TwilioClient(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
 
-            # Send SMS via Twilio
             message = twilio_client.messages.create(
-                body=message, from_=os.getenv("TWILIO_PHONE_NUMBER"), to=formatted_phone  # Your Twilio phone number
-            )
+                messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID"),
+                body=f"""Your OTP for login to Fast2Book is {otp}. 
+This OTP is valid for {expiry_minutes} minutes. 
+Do not share this with anyone.
 
+Thank you,
+Team Fast2Book""",
+                to=formatted_phone
+            )
             return {
                 "message": "OTP sent successfully via Twilio",
                 "otp": otp,
@@ -320,30 +301,67 @@ async def send_sms_on_phone(
 
 async def send_app_link(to_phone: str, app_link: str):
     try:
+        # Validate phone number
+        # if not to_phone.startswith("91") or len(to_phone) != 12:
+        #     raise HTTPException(
+        #         status_code=400,
+        #         detail="Phone number must start with 91 and be 12 digits total"
+        #     )
+
         formatted_phone = f"+{to_phone}"
-        message = f"Your Fast2Book App Link is {app_link}. Do not share this with anyone. - Fast2Book"
+        
+        # Create properly formatted multi-line message
+        message_body = f"""Your Fast2Book App Link is {app_link}.
+Do not share this with anyone.
+Thank you,
+Team Fast2Book"""
+        print(message_body,'message_body')
 
-        # Send SMS via Twilio
-        if os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN"):
-            twilio_client = TwilioClient(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+        # Get Twilio credentials
+        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        messaging_sid = os.getenv("TWILIO_MESSAGING_SERVICE_SID")
 
-            # Send SMS via Twilio
-            response = twilio_client.messages.create(
-                body=message, from_=os.getenv("TWILIO_PHONE_NUMBER"), to=formatted_phone  # Your Twilio phone number
+        if not all([account_sid, auth_token, messaging_sid]):
+            raise HTTPException(
+                status_code=500,
+                detail="Twilio credentials not configured properly"
             )
 
+        # Initialize Twilio client
+        client = TwilioClient(account_sid, auth_token)
+
+        try:
+            # Send message using Messaging Service
+            message = client.messages.create(
+                messaging_service_sid=messaging_sid,
+                body=message_body,
+                to=formatted_phone
+            )
+            print(message,'message')
+
             return {
-                "message": "App link sent successfully via Twilio",
-                "app_link": app_link,
+                "status": "success",
+                "message": "App link sent successfully",
                 "provider_response": {
-                    "sid": response.sid,
-                    "status": response.status,
-                    "date_created": str(response.date_created),
-                },
+                    "sid": message.sid,
+                    "status": message.status,
+                    "to": message.to,
+                    "date_created": message.date_created.isoformat()
+                }
             }
 
-        else:
-            raise HTTPException(status_code=400, detail="Twilio credentials not found")
+        except TwilioRestException as e:
+            print(e)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Twilio API error: {e.msg}"
+            )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send app link: {str(e)}"
+        )
