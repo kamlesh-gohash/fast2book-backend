@@ -34,7 +34,7 @@ pytz = "^2025.1"
 aiohttp = "^3.11.16"
 geocoder = "^1.38.1"
 firebase-admin = "^6.7.0"
-celery = "^5.5.2"
+celery = "^5.5.3"
 redis = "^6.0.0"
 twilio = "^9.6.1"
 
