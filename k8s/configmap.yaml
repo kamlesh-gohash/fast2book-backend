@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fast2book-config
+data:
+  ENV: "production"
+  DB_HOST: "postgres"
