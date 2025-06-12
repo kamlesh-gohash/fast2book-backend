@@ -6,7 +6,7 @@ metadata:
     nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   rules:
-    - host: fast2book.yourdomain.com
+    - host: fast2book.kamlesh.shop
       http:
         paths:
           - path: /
