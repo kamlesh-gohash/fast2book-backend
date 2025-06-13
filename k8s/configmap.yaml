@@ -3,5 +3,12 @@ kind: ConfigMap
 metadata:
   name: fast2book-config
 data:
-  ENV: "production"
-  DB_HOST: "postgres"
+  DEBUG: "False"
+  FRONT_URL: "http://localhost:3000"
+  EMAIL_HOST: "smtp.zeptomail.com"
+  EMAIL_PORT: "465"
+  EMAIL_USER: "noreply@fast2book.com"
+  AWS_S3_BUCKET_NAME: "fast2book"
+  AWS_S3_REGION: "us-east-1"
+  PORT: "5000"
+  TYPE: "service_account"
